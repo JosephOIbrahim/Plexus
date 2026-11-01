@@ -1,144 +1,209 @@
-  
-    PLEXUS
-
-    working title  ·  cognitive production network  ·  brooklyn ny
-
-  
-
-  
-    the one-liner
-    Projects that talk to each other while they run.
-
-
-  
-
-  
-    
-      
-      
-      
-      
-      A
-      B
-      SHARED LAYER
-      
-    
-    two live sessions · one crossing · the x in plexus is the product
-
-
-  
-
-  
-    thirty seconds
-    Every production tool on earth seals a project in a jar. PLEXUS makes projects layers in one living stage, built on OpenUSD: a look-dev session and a shot can reference each other's live state while both are running, and changes cross the boundary the moment they're made.
-
-
-    Intelligence sits on the stage like a nervous system. Agents are dormant by default — a cheap predicate wakes one, it acts within a budget, it sleeps. Deterministic recipes handle the routine; a model call is the exception, never the hot path.
-
-
-    And the engine? ComfyUI is demoted from application to cargo hold — an interchangeable organ that executes what the network decides, with full provenance on every asset it returns. The stage describes everything and embeds nothing heavy: state, memory, and provenance live in the composition; pixels and weights stay on disk, referenced and hashed. The intelligence no longer lives in a graph editor. It lives in the composition.
-
-
-    The market already priced the principle: 2026's largest exit in this category went to sixteen people grounding AI in a production's own footage. PLEXUS grounds one level deeper — in the production's living structure — on a substrate that is nobody's product: OpenUSD, the ISO-track open standard its industry alliance now calls the 3D data layer for agentic AI. The spec, never a vendor.
-
-
-  
-
-  
-    the inversion — three moves
-    
-      Jar → Layer
-
-
-      A project stops being a sealed file and becomes a layer stack other projects can reference — live, with arbitration by composition strength instead of locks.
-
-
-    
-
-    
-      Resident → Event-driven
-
-
-      No always-on copilot burning tokens. Neurons watch a scope, wake on a predicate, act once, go quiet. A nervous system, not a group chat.
-
-
-    
-
-    
-      Engine → Organ
-
-
-      Execution backends satisfy a small contract and become swappable. Every custom node the ComfyUI community ships becomes inherited capability, day one.
-
-
-    
-
-  
-
-  
-    the map — four seats, three taken
-    		ComfyUI		The swarm. Day-one model support, indie velocity, chaos as a feature. Owns execution. State model: workflow JSON.
-
-		Foundry × Griptape		The enterprise seat. Curated models, compliance, studio distribution. Owns the vetted pipeline — and can't demote its own center.
-
-		Netflix × InterPositive		The vertically integrated seat. A project-grounded primitive, bought for $587M and made exclusive — off the open market, and a starting gun for every rival strategic.
-
-		PLEXUS		The open seat: composition as the runtime, grounded in the production itself. Agent-native, engine-agnostic, and the only one where projects are alive to each other. Rides the swarm instead of fighting it.
-
-
-
-
-  
-
-  
-    what the market paid for this principle — 2026
-    		February		Griptape → Foundry. Undisclosed. Bought for orchestration and distribution into studios.
-
-		April		ComfyUI. $30M at a $500M valuation — priced on four million users and a 60,000-node swarm.
-
-		March		InterPositive → Netflix. $587M cash for sixteen people, pre-revenue, in stealth. The largest check went to grounding, not generation — proof of primitive outranks traction.
-
-
-
-
-  
-
-  
-    the tailwind — 2026
-    The industry converged on the thesis this year: the OpenUSD alliance named the substrate the data layer for agentic AI, and the world-model coalitions signed the video companies VFX already works with. PLEXUS is the explicit half of that wave — and every session it runs emits the grounded data the implicit half trains on. The exhaust is a product.
-
-
-  
-
-  
-    what we can film that nobody else can
-    Two sessions side by side. An attribute changes in Project A. Project B updates mid-flight, a dormant agent wakes, authors one opinion, and sleeps — every step attributable from the stage alone. Ninety seconds, one continuous take.
-
-
-  
-
-  
-    deliberately not
-    		not a new node editor
-
-		not new samplers or model loaders
-
-		not an enterprise curation platform
-
-		not a general agent framework
-
-		not a resident copilot
-
-		not multi-user — multi-project, one operator
-
-
-
-
-  
-
-  
-    joseph o. ibrahim · solo build
-
-    openusd core spec (iso-track) · comfy-cozy · synapse · moneta
-
-  
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PLEXUS — a cognitive production network</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FAFAF8; --ink:#111113; --soft:#55555A;
+    --line:#E3E3DE; --accent:#1F3AF2;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:'Archivo',sans-serif; font-weight:400;
+    font-size:17px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:900px; margin:0 auto; padding:0 32px;}
+  .mono{font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.08em; text-transform:uppercase;}
+
+  /* masthead */
+  header{display:flex; justify-content:space-between; align-items:baseline;
+    padding:28px 0 20px; border-bottom:1px solid var(--ink);}
+  .wordmark{font-weight:900; font-stretch:112%; font-size:20px; letter-spacing:.02em;}
+  .wordmark span{color:var(--accent);}
+  header .mono{color:var(--soft);}
+
+  /* hero */
+  .hero{padding:88px 0 40px;}
+  .hero h1{
+    font-weight:900; font-stretch:118%;
+    font-size:clamp(44px,8.2vw,84px);
+    line-height:.98; letter-spacing:-.015em;
+    text-wrap:balance; max-width:14ch;
+  }
+  .hero h1 em{font-style:normal; color:var(--accent);}
+  .hero .mono{display:block; margin-bottom:22px; color:var(--soft);}
+
+  /* signature diagram */
+  .wire{padding:56px 0 8px;}
+  .wire svg{width:100%; height:auto; display:block;}
+  .wire .cap{margin-top:10px; color:var(--soft);}
+  @keyframes travel{
+    0%{offset-distance:0%; opacity:0;}
+    6%{opacity:1;}
+    46%{offset-distance:50%;}
+    54%{offset-distance:50%; r:7;}
+    94%{opacity:1;}
+    100%{offset-distance:100%; opacity:0;}
+  }
+  .pulse{
+    fill:var(--accent);
+    offset-path:path('M 60 60 L 420 60 L 780 60');
+    animation:travel 5.2s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion:reduce){ .pulse{animation:none; offset-distance:50%;} }
+
+  /* pitch */
+  .pitch{padding:56px 0; border-top:1px solid var(--line);}
+  .pitch p{font-size:22px; line-height:1.55; font-weight:340; max-width:62ch;}
+  .pitch p + p{margin-top:1.1em;}
+  .pitch strong{font-weight:640;}
+
+  .label{display:block; color:var(--accent); margin-bottom:26px;}
+
+  /* inversion */
+  .inv{padding:56px 0; border-top:1px solid var(--line);
+    display:grid; grid-template-columns:repeat(3,1fr); gap:40px;}
+  .inv .label{grid-column:1/-1; margin-bottom:0;}
+  .inv h3{font-weight:800; font-stretch:110%; font-size:19px; margin-bottom:8px;}
+  .inv h3 s{text-decoration-color:var(--accent); text-decoration-thickness:2px;}
+  .inv p{color:var(--soft); font-size:15px;}
+
+  /* map */
+  .map{padding:56px 0; border-top:1px solid var(--line);}
+  .map table{width:100%; border-collapse:collapse; margin-top:4px;}
+  .map th{text-align:left; padding:10px 16px 10px 0; font-weight:500;}
+  .map td{padding:14px 16px 14px 0; border-top:1px solid var(--line);
+    vertical-align:top; font-size:15.5px;}
+  .map td:first-child{font-weight:700; white-space:nowrap;}
+  .map tr.us td{border-top:2px solid var(--ink);}
+  .map tr.us td:first-child{color:var(--accent);}
+
+  /* film */
+  .film{padding:56px 0; border-top:1px solid var(--line);}
+  .film p{font-size:22px; font-weight:340; max-width:62ch; line-height:1.55;}
+
+  /* not */
+  .not{padding:56px 0; border-top:1px solid var(--line);}
+  .not ul{list-style:none; display:grid; grid-template-columns:repeat(2,1fr); gap:10px 40px; max-width:680px;}
+  .not li{font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--soft);
+    padding-left:18px; position:relative;}
+  .not li::before{content:"×"; position:absolute; left:0; color:var(--accent);}
+
+  footer{padding:36px 0 60px; border-top:1px solid var(--ink);
+    display:flex; justify-content:space-between; gap:24px; flex-wrap:wrap;}
+  footer .mono{color:var(--soft);}
+
+  @media(max-width:680px){
+    .inv{grid-template-columns:1fr;}
+    .not ul{grid-template-columns:1fr;}
+    .pitch p,.film p{font-size:19px;}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="wordmark">PLE<span>X</span>US</div>
+    <div class="mono">working title &nbsp;·&nbsp; cognitive production network &nbsp;·&nbsp; brooklyn ny</div>
+  </header>
+
+  <section class="hero">
+    <span class="mono">the one-liner</span>
+    <h1>Projects that <em>talk to each other</em> while they run.</h1>
+  </section>
+
+  <section class="wire" aria-label="Two live projects exchanging state through a shared layer">
+    <svg viewBox="0 0 840 120" xmlns="http://www.w3.org/2000/svg" role="img">
+      <line x1="60" y1="60" x2="780" y2="60" stroke="#E3E3DE" stroke-width="1.5"/>
+      <circle cx="60" cy="60" r="26" fill="none" stroke="#111113" stroke-width="1.5"/>
+      <circle cx="780" cy="60" r="26" fill="none" stroke="#111113" stroke-width="1.5"/>
+      <path d="M 406 46 L 434 74 M 434 46 L 406 74" stroke="#1F3AF2" stroke-width="2" fill="none" stroke-linecap="square"/>
+      <text x="60" y="65" text-anchor="middle" font-family="IBM Plex Mono" font-size="13" fill="#111113">A</text>
+      <text x="780" y="65" text-anchor="middle" font-family="IBM Plex Mono" font-size="13" fill="#111113">B</text>
+      <text x="420" y="112" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" letter-spacing="1.5" fill="#55555A">SHARED LAYER</text>
+      <circle class="pulse" r="5"/>
+    </svg>
+    <p class="cap mono">two live sessions · one crossing · the x in plexus is the product</p>
+  </section>
+
+  <section class="pitch">
+    <span class="label mono">thirty seconds</span>
+    <p>Every production tool on earth seals a project in a jar. PLEXUS makes projects <strong>layers in one living stage</strong>, built on OpenUSD: a look-dev session and a shot can reference each other's live state while both are running, and changes cross the boundary the moment they're made.</p>
+    <p>Intelligence sits on the stage like a nervous system. Agents are <strong>dormant by default</strong> — a cheap predicate wakes one, it acts within a budget, it sleeps. Deterministic recipes handle the routine; a model call is the exception, never the hot path.</p>
+    <p>And the engine? ComfyUI is demoted from application to <strong>cargo hold</strong> — an interchangeable organ that executes what the network decides, with full provenance on every asset it returns. The stage describes everything and embeds nothing heavy: state, memory, and provenance live in the composition; pixels and weights stay on disk, referenced and hashed. The intelligence no longer lives in a graph editor. It lives in the composition.</p>
+    <p>The market already priced the principle: 2026's largest exit in this category went to sixteen people grounding AI in a production's own footage. PLEXUS grounds one level deeper — <strong>in the production's living structure</strong> — on a substrate that is nobody's product: OpenUSD, the ISO-track open standard its industry alliance now calls the 3D data layer for agentic AI. The spec, never a vendor.</p>
+  </section>
+
+  <section class="inv">
+    <span class="label mono">the inversion — three moves</span>
+    <div>
+      <h3><s>Jar</s> → Layer</h3>
+      <p>A project stops being a sealed file and becomes a layer stack other projects can reference — live, with arbitration by composition strength instead of locks.</p>
+    </div>
+    <div>
+      <h3><s>Resident</s> → Event-driven</h3>
+      <p>No always-on copilot burning tokens. Neurons watch a scope, wake on a predicate, act once, go quiet. A nervous system, not a group chat.</p>
+    </div>
+    <div>
+      <h3><s>Engine</s> → Organ</h3>
+      <p>Execution backends satisfy a small contract and become swappable. Every custom node the ComfyUI community ships becomes inherited capability, day one.</p>
+    </div>
+  </section>
+
+  <section class="map">
+    <span class="label mono">the map — four seats, three taken</span>
+    <table>
+      <tr><td>ComfyUI</td><td>The swarm. Day-one model support, indie velocity, chaos as a feature. Owns execution. State model: workflow JSON.</td></tr>
+      <tr><td>Foundry × Griptape</td><td>The enterprise seat. Curated models, compliance, studio distribution. Owns the vetted pipeline — and can't demote its own center.</td></tr>
+      <tr><td>Netflix × InterPositive</td><td>The vertically integrated seat. A project-grounded primitive, bought for $587M and made exclusive — off the open market, and a starting gun for every rival strategic.</td></tr>
+      <tr class="us"><td>PLEXUS</td><td>The open seat: composition as the runtime, grounded in the production itself. Agent-native, engine-agnostic, and the only one where projects are alive to each other. Rides the swarm instead of fighting it.</td></tr>
+    </table>
+  </section>
+
+  <section class="map">
+    <span class="label mono">what the market paid for this principle — 2026</span>
+    <table>
+      <tr><td>February</td><td><strong>Griptape → Foundry.</strong> Undisclosed. Bought for orchestration and distribution into studios.</td></tr>
+      <tr><td>April</td><td><strong>ComfyUI.</strong> $30M at a $500M valuation — priced on four million users and a 60,000-node swarm.</td></tr>
+      <tr class="us"><td>March</td><td><strong>InterPositive → Netflix.</strong> $587M cash for sixteen people, pre-revenue, in stealth. The largest check went to grounding, not generation — proof of primitive outranks traction.</td></tr>
+    </table>
+  </section>
+
+  <section class="pitch">
+    <span class="label mono">the tailwind — 2026</span>
+    <p>The industry converged on the thesis this year: the OpenUSD alliance named the substrate the data layer for agentic AI, and the world-model coalitions signed the video companies VFX already works with. PLEXUS is the <strong>explicit half</strong> of that wave — and every session it runs emits the grounded data the implicit half trains on. The exhaust is a product.</p>
+  </section>
+
+  <section class="film">
+    <span class="label mono">what we can film that nobody else can</span>
+    <p>Two sessions side by side. An attribute changes in Project A. Project B updates mid-flight, a dormant agent wakes, authors one opinion, and sleeps — every step attributable from the stage alone. Ninety seconds, one continuous take.</p>
+  </section>
+
+  <section class="not">
+    <span class="label mono">deliberately not</span>
+    <ul>
+      <li>not a new node editor</li>
+      <li>not new samplers or model loaders</li>
+      <li>not an enterprise curation platform</li>
+      <li>not a general agent framework</li>
+      <li>not a resident copilot</li>
+      <li>not multi-user — multi-project, one operator</li>
+    </ul>
+  </section>
+
+  <footer>
+    <div class="mono">joseph o. ibrahim · solo build</div>
+    <div class="mono">openusd core spec (iso-track) · comfy-cozy · synapse · moneta</div>
+  </footer>
+
+</div>
+</body>
+</html>
