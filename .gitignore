@@ -71,3 +71,6 @@ ui/web/**/*.br
 ui/web/**/*.gz
 node_pack/*/web/**/*.br
 node_pack/*/web/**/*.gz
+
+# plexus-loop harness state (lock, worktrees, reviews)
+.plexus_loop/

@@ -1,0 +1,48 @@
+# First Plexus mission (Blueprint v5.2 §11 Phase 0, §12).
+# It scores the frozen acceptance tests T1 to T8 and refuses to start until
+# tests/acceptance exists. Claude writes and revises mission files; the local
+# worker only makes attempts inside one.
+
+[mission]
+name = "acceptance"
+goal = "Make the frozen Plexus acceptance tests in tests/acceptance (T1 to T8, from PLEXUS_SPEC.md) pass, one honest step at a time."
+requires = ["tests/acceptance"]
+focus = ["plexus/**", "crates/**", "Cargo.toml", "Cargo.lock"]
+frozen = ["tests/acceptance/**", "harness/**", "docs/plexus/**", "PLEXUS_SPEC.md", ".github/**", "pyproject.toml"]
+context = ["PLEXUS_SPEC.md", "docs/plexus/PLEXUS_BLUEPRINT_v5.md"]
+
+[metric]
+kind = "pytest_failures"
+target = "tests/acceptance"
+direction = "lower"
+min_delta = 1
+
+[[gates]]
+name = "unit"
+cmd = ["python", "-m", "pytest", "-q", "-x", "tests", "--ignore=tests/acceptance", "-m", "not integration"]
+timeout_s = 3600
+
+# Add once the Rust workspace exists:
+# [[gates]]
+# name = "cargo"
+# cmd = ["cargo", "test", "--workspace", "--quiet"]
+# timeout_s = 3600
+
+[worker]
+kind = "ollama"
+model = "qwen3-coder:30b"
+host = "http://127.0.0.1:11434"
+timeout_s = 1800
+context_chars = 60000
+# Any command-line model can stand in instead:
+# kind = "command"
+# cmd = ["your-cli", "--prompt-file", "{prompt_file}"]
+
+[budget]
+attempts = 40
+hours = 6
+max_consecutive_failures = 8
+
+[houdini]
+cpu_threads = 8
+cargo_jobs = 4
