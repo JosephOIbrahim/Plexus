@@ -61,17 +61,19 @@ ready
 
 ---
 
-## 2 · comfy-cozy map
+## 2 · Comfy-Cozy as a reference
+
+Re-labelled after the Nov 1 decision (Comfy-Cozy is an architecture reference only; nothing copied or imported). Verdicts are `cozy-mapper`'s: reference, rebuild in Python, rebuild in Rust, drop. Read from the seeded copy, which matches `G:\Comfy-Cozy` at v5.10.0.
 
 | Module | Verdict | Evidence |
 |---|---|---|
-| `agent/gate/risk_levels.py` | not-needed-this-mission | Five levels READ_ONLY…DESTRUCTIVE (`:20-25`); unknown → REVERSIBLE (`:252`). No path allowlist anywhere in `agent/gate/`; §7.3 is new code in `plexus/membrane/gate.py`. |
-| `agent/engine/_base.py` | not-needed-this-mission | `IAIEngine` (`:41`) is the ComfyUI execution ABC. Phase 2. |
-| `agent/diagnosis` env fingerprint | not-needed-this-mission | Exists (`agent/cli.py:429`, `agent/tools/diagnose_tool.py:14-16`). Phase 2. |
-| `agent/integrations/moneta.py` | not-needed-this-mission | **Brief fact corrected:** it *is* imported, by `agent/integrations/__init__.py:8`, `tests/integration/test_moneta_e2e.py:24` and `tests/test_cozy_persistence.py:585,617,649`. Nothing in `plexus/` or `crates/` will import it. |
-| `agent/stage/cognitive_stage.py` | not-needed as a module; **copy the shape** into `plexus/core/axon.py` | Brief facts hold: `write()` emits `StageEvent` after the mutation (`:389-393`), and nothing registers `Tf.Notice`/`ObjectsChanged` in `agent/`, `cognitive/` or `tests/`. Shape to re-express: bounded queue + `put_nowait` (`_emit`, `:292-311`), one daemon dispatcher thread with a sentinel, subscribers snapshotted under a lock, each callback in try/except (`_dispatch_loop`, `:267-290`), shutdown via sentinel + join (`close_subscribers`, `:233-252`). **It has no debounce or coalescing**; that part is new. Its `StageEvent` fields differ from CONTRACT's. |
-| `cognitive/core/delta.py` | not-needed-this-mission | Stdlib-only dataclass with no `pxr`, no sublayers and no edit targets. Its docstring holds the T8 term `class_type` (`:48-50`). |
-| Sublayer / `def`-ancestor / `Save` helpers | none reusable | No helper defines ancestors as `def`. There are no `.Save(` calls in `agent/` or `cognitive/`. T6's save-on-land is new code. |
+| `agent/gate/risk_levels.py` | reference (lesson: unknown tools default to REVERSIBLE; Plexus blocks them, F9) | Five levels READ_ONLY…DESTRUCTIVE (`:20-25`); unknown → REVERSIBLE (`:252`). No path allowlist anywhere in `agent/gate/`; §7.3 is new code in `plexus/membrane/gate.py`. |
+| `agent/engine/_base.py` | reference | `IAIEngine` (`:41`) is the ComfyUI execution ABC. The Phase 2 organ is new (draft v5.4 B8). |
+| `agent/diagnosis` env fingerprint | reference | Exists (`agent/cli.py:429`, `agent/tools/diagnose_tool.py:14-16`). The new organ produces its own (phase2). |
+| `agent/integrations/moneta.py` | drop | **Brief fact corrected:** it *is* imported, by `agent/integrations/__init__.py:8`, `tests/integration/test_moneta_e2e.py:24` and `tests/test_cozy_persistence.py:585,617,649`. Nothing in `plexus/` or `crates/` will import it. |
+| `agent/stage/cognitive_stage.py` | rebuild in Python as `plexus/core/axon.py`: **restate the idea, copy no code**; avoid its write-side emit | Brief facts hold: `write()` emits `StageEvent` after the mutation (`:389-393`), and nothing registers `Tf.Notice`/`ObjectsChanged` in `agent/`, `cognitive/` or `tests/`. Shape to re-express: bounded queue + `put_nowait` (`_emit`, `:292-311`), one daemon dispatcher thread with a sentinel, subscribers snapshotted under a lock, each callback in try/except (`_dispatch_loop`, `:267-290`), shutdown via sentinel + join (`close_subscribers`, `:233-252`). **It has no debounce or coalescing**; that part is new. Its `StageEvent` fields differ from CONTRACT's. |
+| `cognitive/core/delta.py` | reference | Stdlib-only dataclass with no `pxr`, no sublayers and no edit targets. Its docstring holds the T8 term `class_type` (`:48-50`). |
+| Sublayer / `def`-ancestor / `Save` helpers | no Comfy-Cozy source; written new | No helper defines ancestors as `def`. There are no `.Save(` calls in `agent/` or `cognitive/`. T6's save-on-land is new code. |
 | Import rule | **never import `agent.*` or `cognitive.*` from `plexus/`** | `import agent.stage` pulls `anchors.py:22-31` (CheckpointLoaderSimple, LoraLoader, EmptyLatentImage) and `dag/compute_model_reqs.py:72` (KSampler). T8 greps text only, so it would pass while engine code became reachable. The worker brief states this rule. |
 
 **Brief Q5 (worker reach), settled.** No step below touches `agent/` or `cognitive/`. Phase1 tests import nothing from them. No `focus` change is needed.
@@ -260,6 +262,6 @@ Joe asked for Jev's read on the open decisions, shown before anything is applied
 
 1. ~~**Pull the model**~~ — done Nov 1 on Joe's word: `qwen3-coder:30b` (18 GB) is installed.
 2. **Notice path:** Option A (recommended) or B (§4).
-3. **`unit` gate:** narrow as in §6, or keep the full suite per attempt.
+3. **`unit` gate:** narrow as in §6, or keep the full suite per attempt. The Nov 1 decision weakens the case for the full suite: Plexus imports nothing from the code it tests.
 4. **Mission-file diff and C1–C5:** approve as written, or edit.
 5. **No maturin in `pyproject.toml` this mission** (§7).

@@ -2,7 +2,7 @@
 
 **Six pictures of how Plexus is meant to work.** Each one has a single job, stated above it.
 
-They follow Blueprint v5.3 (`docs/plexus/PLEXUS_BLUEPRINT_v5.md`) and Engineering Spec v2.1 (`PLEXUS_SPEC.md`). Where a diagram shows something not yet decided, it says so in its title.
+They follow Blueprint v5.3 (`docs/plexus/PLEXUS_BLUEPRINT_v5.md`), with the Nov 1 Comfy-Cozy decision (draft v5.4, `BLUEPRINT_v5.4_DRAFT_CHANGES.md` B5), and Engineering Spec v2.1 (`PLEXUS_SPEC.md`). Where a diagram shows something not yet decided, it says so in its title.
 
 GitHub draws these directly. In other viewers, paste a block into [mermaid.live](https://mermaid.live).
 
@@ -38,13 +38,13 @@ flowchart LR
 
 ## 2 · Layers
 
-**Each layer calls only the layer below it, or a contract.** Rust goes where code is hot, long-running or must be exact. Python stays where code must be flexible or already exists.
+**Each layer calls only the layer below it, or a contract.** Rust goes where code is hot, long-running or must be exact. Python stays where code must be flexible, or where what Plexus calls is Python-only: usd-core (Pixar ships no official Rust bindings) and the LLM SDKs.
 
 ```mermaid
 flowchart TB
-    L5["L5 · Surfaces<br/>MCP server · CLI · panel<br/>Python, from Comfy-Cozy"]
+    L5["L5 · Surfaces<br/>MCP server · CLI · panel<br/>Python, written new · Comfy-Cozy as reference"]
     L4["L4 · Organs<br/>ComfyUI organ · any engine behind the organ contract<br/>any language, behind the contract"]
-    L3["L3 · Projection<br/>stage prims to organ intent, pure functions<br/>Python, seeded from Comfy-Cozy"]
+    L3["L3 · Projection<br/>stage prims to organ intent, pure functions<br/>Python, written new · Comfy-Cozy as reference"]
     L2["L2 · Nervous system<br/>scheduler · predicates · budgets · tools<br/>Rust, plexus-core"]
     L1["L1 · Contracts<br/>Safety · Memory · Ledger · Composer<br/>defined in Rust, owned by Plexus"]
     L0["L0 · Substrate<br/>composed stage · writer sublayers · exchange<br/>usd-core 26.5 of record · openusd in shadow"]

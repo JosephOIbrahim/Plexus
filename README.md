@@ -12,7 +12,7 @@ Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents
 
 | Done | Not yet |
 |---|---|
-| Seeded from Comfy-Cozy, with its full history | **Any Plexus runtime code** (`plexus/`, `crates/`) |
+| Repo carries Comfy-Cozy's full history (an architecture reference only) | **Any Plexus runtime code** (`plexus/`, `crates/`) |
 | Blueprint v5.3 and Engineering Spec v2.1 | The four contracts and the Cargo workspace |
 | Phase 1 acceptance tests, written and frozen (11) | A first harness run |
 | The build harness, `harness/plexus_loop/` | |
@@ -50,13 +50,13 @@ flowchart LR
 
 ## How it fits together
 
-**Each layer calls only the layer below it, or a contract.** Rust goes where code is hot, long-running or must be exact. Python stays where code must be flexible or already exists.
+**Each layer calls only the layer below it, or a contract.** Rust goes where code is hot, long-running or must be exact. Python stays where code must be flexible, or where what Plexus calls is Python-only: usd-core (Pixar ships no official Rust bindings) and the LLM SDKs.
 
 ```mermaid
 flowchart TB
-    L5["L5 · Surfaces<br/>MCP server · CLI · panel<br/>Python, from Comfy-Cozy"]
+    L5["L5 · Surfaces<br/>MCP server · CLI · panel<br/>Python, written new · Comfy-Cozy as reference"]
     L4["L4 · Organs<br/>ComfyUI organ · any engine behind the organ contract"]
-    L3["L3 · Projection<br/>stage prims to organ intent, pure functions<br/>Python, seeded from Comfy-Cozy"]
+    L3["L3 · Projection<br/>stage prims to organ intent, pure functions<br/>Python, written new · Comfy-Cozy as reference"]
     L2["L2 · Nervous system<br/>scheduler · predicates · budgets · tools<br/>Rust, plexus-core"]
     L1["L1 · Contracts<br/>Safety · Memory · Ledger · Composer<br/>defined in Rust, owned by Plexus"]
     L0["L0 · Substrate<br/>composed stage · writer sublayers · exchange<br/>usd-core 26.5 of record · openusd in shadow"]
@@ -172,7 +172,7 @@ python -m harness.plexus_loop stop
 | Tool | Version | Why |
 |---|---|---|
 | Python | 3.11 or newer (3.14 is used today) | Host process |
-| usd-core | 26.5 exactly, `pip install -e ".[dev,stage]"` | Composer of record; matches Houdini 22's USD 0.26.5 |
+| usd-core | 26.5 exactly: `pip install usd-core==26.5 pytest` | Composer of record; matches Houdini 22's USD 0.26.5. The root `pyproject.toml` is still the comfy-cozy package until `plexus/` packaging lands. |
 | Rust + maturin | stable Rust, maturin 1.x | Once `crates/` lands, for `plexus._core` |
 | Ollama | with `qwen3-coder:30b` pulled | The harness's default worker |
 
@@ -188,7 +188,7 @@ python -m harness.plexus_loop stop
 | `harness/plexus_loop/` | The build harness, its `program.md` and mission files | Joe, and Claude when Joe says so |
 | `docs/plexus/` | Blueprint v5.3, memory options, diagrams, the Nov 1 package | Joe |
 | `PLEXUS_SPEC.md` | Engineering Spec v2.1 + Patch 01 | Joe |
-| `agent/`, `cognitive/`, `panel/`, … | Comfy-Cozy seed code, now Plexus's own | See `CLAUDE.cozy.md` |
+| `agent/`, `cognitive/`, `panel/`, … | Seeded Comfy-Cozy code, kept as history for now. Plexus doesn't build on it. | Joe decides whether it stays; conventions in `CLAUDE.cozy.md` |
 
 ---
 
@@ -216,9 +216,11 @@ The hooks in `.claude/settings.json` enforce these. `CLAUDE.md` explains them.
 
 ---
 
-## Comfy-Cozy, the seed
+## Comfy-Cozy, the predecessor
 
-Plexus started as a clone of Comfy-Cozy, with its history, and that code is Plexus's own now. **The Comfy-Cozy README moved to [`README.cozy.md`](README.cozy.md).** Its conventions are in [`CLAUDE.cozy.md`](CLAUDE.cozy.md).
+**Plexus is the next generation of Comfy-Cozy, built from the ground up.** Comfy-Cozy (`G:\Comfy-Cozy` on Joe's machine) is an architecture reference only: new Plexus code copies nothing from it and imports nothing from it.
+
+This repo started as a clone of Comfy-Cozy, so it still carries Comfy-Cozy's history and the seeded `agent/` and `cognitive/` code. Plexus doesn't build on that code, and whether it stays is Joe's call. **The Comfy-Cozy README moved to [`README.cozy.md`](README.cozy.md).** Its conventions are in [`CLAUDE.cozy.md`](CLAUDE.cozy.md).
 
 ## License
 

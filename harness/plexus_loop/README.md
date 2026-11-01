@@ -42,4 +42,4 @@ The default is Ollama with `qwen3-coder:30b`, which replies with a unified diff 
 
 ## Costs to know
 
-The `unit` gate in the first mission runs the inherited Comfy-Cozy test suite on every attempt, which takes minutes. That is the price of never keeping a change that breaks something else. Narrow it in the mission file if it gets in the way.
+The `unit` gate in the first mission runs the seeded Comfy-Cozy test suite on every attempt, which takes minutes. Plexus imports nothing from that code, so the suite can only catch repo-wide effects: repo-scanning tests and the harness's own tests. The acceptance plan proposes narrowing it, and Joe decides.

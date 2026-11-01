@@ -21,7 +21,7 @@ allowed-tools: Bash(git *), Bash(python -m harness.plexus_loop *), Bash(python -
 
 Run mission `$ARGUMENTS` exactly as `harness/plexus_loop/program.md` describes. Read `CLAUDE.md`, `program.md`, the mission `.toml`, the brief if there is one, and `tests/acceptance/CONTRACT.md` now.
 
-Setup first: count the frozen tests in the metric target and name the spec IDs they cover. Branch `mission/$ARGUMENTS` off `harness/plexus-loop`. Run `/doctor`. Map comfy-cozy with the `cozy-mapper` agent for every module the brief names. Write `harness/plexus_loop/missions/$ARGUMENTS.plan.md`: ordered changes, each aimed at one frozen test; the scaffolding commits Claude must make first; every decision point reached; any mission-file diff you propose. Paste the `check` output into the plan.
+Setup first: count the frozen tests in the metric target and name the spec IDs they cover. Branch `mission/$ARGUMENTS` off `harness/plexus-loop`. Run `/doctor`. Map Comfy-Cozy as a reference with the `cozy-mapper` agent for every module the brief names: one verdict each (reference, rebuild in Python, rebuild in Rust, drop). Nothing is copied or imported. Write `harness/plexus_loop/missions/$ARGUMENTS.plan.md`: ordered changes, each aimed at one frozen test; the scaffolding commits Claude must make first; every decision point reached; any mission-file diff you propose. Paste the `check` output into the plan.
 
 Then **stop and show Joe the plan**. Do not `run` until he says go.
 

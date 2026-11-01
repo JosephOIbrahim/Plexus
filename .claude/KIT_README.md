@@ -12,11 +12,11 @@ Hooks enforce. CLAUDE.md advises. program.md is the loop. Install with `scripts/
 | `.claude/hooks/guard_stop.py` | refuses to end a turn with frozen tests dirty or Synapse in the diff |
 | `.claude/hooks/session_start.py` | prints branch, frozen count, capsule, last attempts, GPU state |
 | `.claude/agents/reviewer.md` | read-only verdict on every kept attempt |
-| `.claude/agents/cozy-mapper.md` | reuse / wrap / replace per comfy-cozy module (haiku) |
+| `.claude/agents/cozy-mapper.md` | reference / rebuild in Python / rebuild in Rust / drop, per Comfy-Cozy module read as an architecture reference (haiku) |
 | `.claude/commands/mission.md` | `/mission 01` — runs program.md end to end |
 | `.claude/commands/doctor.md` | `/doctor` — environment check, repo-local fixes only |
 | `.claude/commands/report.md` | `/report` — mission report + capsule from the ledger |
 | `harness/plexus_loop/program.md` | Claude's protocol around the harness: setup → plan → stop → run → review → report |
-| `harness/plexus_loop/missions/acceptance.plan-brief.md` | mission `acceptance` brief with the verified comfy-cozy facts and the five things the plan must settle |
+| `harness/plexus_loop/missions/acceptance.plan-brief.md` | mission `acceptance` brief with the comfy-cozy facts (references only, per the Nov 1 decision) and the five things the plan must settle |
 
 Verified against the repo on Nov 1: frozen tests at `tests/acceptance/`, harness verbs `python -m harness.plexus_loop check|run|stop`, blueprint v5.3 at `docs/plexus/PLEXUS_BLUEPRINT_v5.md`, spec at `PLEXUS_SPEC.md`.

@@ -6,10 +6,10 @@
 
 ## Facts verified against comfy-cozy @ 7c04117 (verify they still hold at HEAD; do not re-derive)
 
-- `agent/stage/cognitive_stage.py` emits `StageEvent` from inside `write()`. Nothing in the repo registers `Tf.Notice` / `ObjectsChanged`. CONTRACT.md's `plexus.core.axon.PlexusAxon` is a composition-side observer and must be built new. Reuse the queue + dispatcher-thread shape; not the write-side emit.
-- `agent/gate/risk_levels.py` is a static tool→risk map; unknown tools default to REVERSIBLE. The Rust Safety contract keeps the five levels, default deny. Mission `acceptance` needs only the path allowlist gate (CONTRACT.md §7.3 via `ctx.author`); the classifier is phase 2+.
-- `agent/engine/_base.py` (`IAIEngine`) is the Cozy organ. This mission does not touch it.
-- The run report's environment fingerprint exists (`diagnose` tool, `agent/diagnosis`). Patch 01-B holds; it matters in phase2.
+- `agent/stage/cognitive_stage.py` emits `StageEvent` from inside `write()`. Nothing in the repo registers `Tf.Notice` / `ObjectsChanged`. CONTRACT.md's `plexus.core.axon.PlexusAxon` is a composition-side observer and must be built new. Restate the queue + dispatcher-thread idea in Plexus's own code (copy nothing); avoid the write-side emit.
+- `agent/gate/risk_levels.py` is a static tool→risk map; unknown tools default to REVERSIBLE. The Rust Safety contract keeps the five levels, default deny. Mission `acceptance` needs only the path allowlist gate (CONTRACT.md §7.3 via `ctx.author`); the risk classifier comes later and is Plexus's own (draft v5.4 B19).
+- `agent/engine/_base.py` (`IAIEngine`) is Comfy-Cozy's ComfyUI execution base class: the reference for the Phase 2 organ, which is written new against the organ contract and ComfyUI's own HTTP API (draft v5.4 B8). This mission does not touch it.
+- Comfy-Cozy's environment fingerprint (`diagnose` tool, `agent/diagnosis`) is the reference; the new organ produces its own for Patch 01-B in phase2.
 - `agent/stage/` is ~10k lines of ComfyUI-specific Python. `tests/acceptance/phase2/test_t8_blindness.py` is frozen; read it now to learn its grep scope so new code goes where T8 expects.
 - `agent/integrations/moneta.py` is the old integration, not the Plexus adapter. Nothing imports it.
 

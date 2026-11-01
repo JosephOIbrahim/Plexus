@@ -14,6 +14,6 @@
 - `release.yml` is Comfy-Cozy's pipeline (tag must equal `v` + `agent.__version__`). Retarget or retire it before any Plexus release.
 - README on GitHub shows `main`'s copy until a PR from `harness/plexus-loop` merges.
 - T8 grep scope vs seeded `agent/` code — decide in mission `phase2`. Never import `agent.*` or `cognitive.*` from `plexus/`.
-- `agent/stage` retirement — after T7, delete what the organ adapter does not reach.
+- The seed (`agent/`, `cognitive/`): Joe decides whether it stays. The Phase 2 organ is new (draft B8) and reaches none of it.
 - SALUS / Moneta / Hanish — Joe is leaning toward removing them from the seed entirely.
-- `CLAUDE.cozy.md` — comfy-cozy's old CLAUDE.md, kept for `agent/`/`cognitive/` work; fold or delete later.
+- `CLAUDE.cozy.md` — comfy-cozy's old CLAUDE.md, kept for `agent/`/`cognitive/` work; delete with the seed, or keep as history.
