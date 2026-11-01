@@ -80,7 +80,6 @@ const SpecSchema = {
   properties: {
     item_id:             { type: 'string' },
     kind:                { type: 'string', enum: ['feature', 'fix', 'perf', 'refactor', 'doc'] },
-    synapse_ref:         { type: 'string' },
     target_loci:         { type: 'array', items: { type: 'object', additionalProperties: true } },
     probe:               { type: 'object', additionalProperties: true },
     verified_by:         { type: 'string', enum: ['V1', 'V1-degraded', 'V0'] },
@@ -212,7 +211,7 @@ ROLE: Cartographer (researcher x scout). READ-ONLY. Produce a diff-level spec fo
 ITEM: ${JSON.stringify(item)}
 
 Steps:
-1. Read the Comfy-Cozy target loci named in the item. Read the SYNAPSE reference at C:\\Users\\User\\SYNAPSE if the item cites one.
+1. Read the Comfy-Cozy target loci named in the item.
 2. PROBE the claim to the V1 floor: actually open the files / run the read-only probe command and confirm the gap is real. Record verified_by=V1 (or V1-degraded if a live dependency is unreachable, V0 only if you truly could not probe).
 3. Map the blast radius: every file a minimal fix would touch. Set frozen_zone_contact=true if ANY locus is under agent/stage/** or an owner-gated proprietary file flagged by the brightline guard.
 4. Name the targeted_benchmark (a harness/bench_*.py target) if this is a perf item, else null.

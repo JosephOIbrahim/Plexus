@@ -52,7 +52,9 @@ dev = [
     "ruff>=0.3.0",
 ]
 stage = [
-    "usd-core>=24.0",
+    # Composer of record (Blueprint v5.2 §13.4). Pinned to match USD 0.26.5,
+    # the version Houdini 22 bundles, so layers exchange cleanly.
+    "usd-core==26.5",
 ]
 embed = [
     # Semantic embedding encoder for cognitive memory retrieval (agent/embedder.py).

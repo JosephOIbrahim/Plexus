@@ -1,44 +1,54 @@
-# Where SYNAPSE's memory work plugs into Plexus
+# Plexus memory: what sits behind the Memory contract
 
-Drafted Nov 1, 2026 alongside Blueprint v5.0. These are options, not a decision. The choice is Joe's.
+Drafted Nov 1, 2026. Revised the same day for Blueprint v5.2 and Joe's independence rule. These are options, not a decision. The choice is Joe's.
 
-## What SYNAPSE's memory work actually is
+**The rule this note follows:** SYNAPSE is an architectural reference only. Plexus takes no SYNAPSE code, imports, packages, shared contracts or dependencies. Where an idea below also appears in SYNAPSE, it is stated here in Plexus's own terms, with the reason it fits Plexus.
 
-It's three things, and they travel differently.
+## The contract is Plexus's own
 
-**The contract.** `python/synapse/loop/ports.py` defines MemoryPort (`query_and_filter`), LedgerPort, SafetyPort and StagePort, all returning `PortResult` with status SUCCESS, UNAVAILABLE or BLOCKED. Each one has a defined way to degrade when its substrate is missing. This code has no Houdini in it.
+Plexus defines one Memory contract, in Rust, exposed to Python through `plexus._core`:
 
-**The store.** `python/synapse/memory/` holds the `MemoryStore` interface with a backend flag (`SYNAPSE_MEMORY_BACKEND`: jsonl, moneta or shadow), the in-process Moneta adapter, shadow dual-write with a parity diff, backup-first backfill, and degraded-mode health. A lot of it is shaped by Houdini: the store lives next to the hip file, initialization belongs to Houdini's main thread, and scene memory and VEX capture are Houdini-specific.
+- `recall(scope, query) -> Outcome<Recall>`
+- `remember(scope, record) -> Outcome<Receipt>`
 
-**The lessons.** One handle per storage URI, one owner per handle. The panel observes and never constructs. Shadow first, flag-gated, default off. And never auto-deduplicate a memory store. These came from real incidents (`docs/HANDOFF_MEMORY_DUAL_WRITE.md`).
+Both return the Plexus envelope, `Outcome`, with status `Ok`, `Unavailable` or `Blocked`, a payload and a reason (Blueprint §4). Nothing in the contract names a backend, a file location or a host application.
 
-Comfy-Cozy, which Plexus is seeded from, has its own smaller memory: `agent/memory/session.py`, plus the experience accumulator in `cognitive/experience/` that starts biasing toward what worked after about 30 runs.
+**Absence shape: narrow.** When no memory backend is reachable, `recall` answers from the local stage only and says so in its payload, and `remember` returns `Unavailable` with the record handed back to the caller. A neuron reading memory should keep working on what it can see, because parts of a Plexus network are routinely offline.
 
-## Option 1 · Share the contract, not the code
+Comfy-Cozy, which Plexus is seeded from, already has two memories of its own: the session memory in `agent/memory/session.py`, and the experience accumulator in `cognitive/experience/`, which starts biasing toward what worked after about 30 runs. Under every option below, the accumulator becomes a client of the Memory contract instead of keeping a private store.
 
-Plexus adopts SYNAPSE's port signatures and `PortResult` verbatim, and Moneta sits behind MemoryPort through an adapter that Plexus owns. Comfy-Cozy's experience accumulator becomes a MemoryPort client instead of a private store. Plexus imports nothing from SYNAPSE.
+## Option A · Plexus-local memory first
 
-- **Good:** small and clean. One Moneta adapter shape serves both products. Plexus can build and test with Moneta absent, because MemoryPort narrows to the local stage.
-- **Cost:** Plexus re-earns some of the store hardening (degraded mode, backfill) when it needs it.
+Plexus ships its own small backend behind the contract: an append-only record file per scope, plus an index Plexus rebuilds on start. No Moneta.
 
-## Option 2 · Lift SYNAPSE's MemoryStore into Plexus
+- **Good:** Plexus has working memory on day one with nothing external to install. Every test runs offline.
+- **Cost:** recall is plain lookup with no ranking beyond recency and scope. Plexus will want something better once real projects accumulate history.
 
-Copy or package `python/synapse/memory/` and run Plexus memory through the same `MemoryStore`, backend flag and shadow parity harness.
+## Option B · Moneta through a Plexus-written adapter
 
-- **Good:** the most battle-tested path, available on day one.
-- **Cost:** it brings Houdini-shaped assumptions (hip-dir storage, main-thread ownership, scene memory) into a system with no Houdini. Two products then share one large module, and every change has to keep both green.
+Moneta is a separate repo and a memory engine in its own right. Plexus writes an adapter that implements the Memory contract on top of Moneta's public interface, and nothing else.
 
-## Option 3 · Memory as composition
+- **Good:** Plexus gets a real memory engine without owning one. The adapter is the only place that knows Moneta exists, so Moneta can be absent, swapped or upgraded without any caller changing.
+- **Cost:** Plexus writes and maintains the adapter, including its own degraded mode and any backfill it needs. Moneta's interface has to be read fresh from Moneta's repo when the adapter is written, since this note hasn't checked it.
 
-Moneta's memories become opinions in Plexus's stage: a "past" namespace layered into the exchange stack, so recall happens through Pcp resolution instead of a query. This is the most on-thesis option, since composition is the runtime.
+## Option C · Memory as composition
+
+Memories become opinions in Plexus's stage: a "past" namespace layered into the exchange stack, so recall happens through composition instead of a query. This is the most on-thesis option, because composition is the runtime.
 
 - **Good:** it's the real destination. Projects would remember into each other the same way they compose.
-- **Cost:** as of the September write-up, Moneta writes one-shot `/Memory_<hex>` prims with no composition arcs, so Pcp has nothing to resolve yet. Moneta's Phase 1 stable-slot work is the prerequisite. That status may have moved since.
+- **Cost:** it needs a backend that writes stable, addressable memory prims that composition can resolve. As of the September write-up, Moneta wrote one-shot prims with no composition arcs, and its stable-slot work was the prerequisite. That status may have moved, and should be checked in Moneta's repo before this option is planned.
 
 ## My lean
 
-**Option 1 now, with Option 3 as the destination, and skip Option 2.**
+**Option A now, Option B when Plexus has real history to recall, and Option C as the destination.**
 
-Option 1 costs almost nothing, keeps Plexus buildable while every substrate is absent, and doesn't foreclose Option 3. When Moneta's stable slots land, MemoryPort's adapter can switch from querying to composing without any caller changing. Option 2 would trade a week of saved hardening for a long-term coupling to Houdini-shaped code, and that's the wrong trade for a system whose point is not being Houdini.
+Option A keeps Phase 0 free of every external substrate, which the blueprint asks for. Option B slots in behind the same contract later without a caller changing. Option C stays reachable because the contract never promised a query engine, only `recall` and `remember`.
 
-The SYNAPSE lessons come along under any option. They're in Blueprint v5 §2 and §5.2 as rules, not code.
+## Rules Plexus adopts for memory
+
+These are Plexus rules, each with the reason it fits Plexus. SYNAPSE learned similar lessons, which is why they're worth stating early, but nothing here depends on SYNAPSE.
+
+1. **One handle per store, one owner per handle.** Plexus runs many neurons at once on a tokio scheduler. Two handles writing one store would race, so the scheduler owns the handle and neurons borrow it through the contract.
+2. **Observers never construct.** Any panel, inspector or dashboard reads memory through an existing handle and never opens a store itself. That keeps rule 1 true however many views Plexus grows.
+3. **Backend swaps run in shadow first.** A new backend writes alongside the current one, behind a config flag that defaults off, and a parity diff gates the switch. This is the same discipline the blueprint uses for the openusd composer (§13.4), so Plexus has one way of promoting anything.
+4. **Never auto-deduplicate a memory store.** Two records that look alike can carry different provenance, and provenance is part of Plexus's system of record (F1, F4). Deduplication, if it ever happens, is an explicit, reviewed operation.
