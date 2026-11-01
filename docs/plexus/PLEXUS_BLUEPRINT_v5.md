@@ -354,5 +354,5 @@ The tests pin these, and `tests/acceptance/CONTRACT.md` records them. Each one c
 - **The Spec names modules but not functions.** The tests pin a small Python surface (CONTRACT.md) and leave everything beneath it free, Rust included.
 - **The Spec has no attribute for a flag.** T3 and T5 need a visible flag on the neuron prim, so any attribute whose name starts with `plexus:flag` counts.
 - **The Spec's acceptance gate for §3 had no T-number.** It's tested as T0.
-- **T1 is measured in one process.** That is the Spec's literal "author, notice, B recompose read". T6 runs the writer and the runtime as two processes, but it doesn't require the runtime to notice the other process's writes live. How events cross processes stays open, as Spec and v5 both leave it.
+- **T1 is measured in one process.** That is the Spec's literal "author, notice, B recompose read". T6 runs the writer and the runtime as two processes, but it doesn't require the runtime to notice the other process's writes live. How events cross processes stays open, as Spec and v5 both leave it. **[DECIDED · Joe, Nov 1]** T1 stays single-process. A pending T1b in `tests/acceptance/pending/` covers two processes once the event transport is chosen.
 - **Authored prims must be defined, not just overridden.** Otherwise ordinary traversal skips them, and T6's dump would miss them.

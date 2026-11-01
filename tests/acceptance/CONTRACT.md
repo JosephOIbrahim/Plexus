@@ -4,7 +4,7 @@ These tests turn Engineering Spec v2.1 §3, §9 and §10 (T1 to T8) into code. T
 
 The spec names modules (§2) but not functions. To test behaviour, the tests need a small Python surface, and this file is that surface. Everything below it is free: Python, Rust through `plexus._core`, or both. The tests only ever call what is listed here, read composed values back through plain `pxr`, and author "project A" opinions with plain `Sdf`, so any USD writer counts as a participant.
 
-`phase1/` is the slice (the §3 schema gate and T1 to T6). It is the first harness mission. `phase2/` is T7 and T8, for the mission after it.
+`phase1/` is the slice (the §3 schema gate and T1 to T6). It is the first harness mission. `phase2/` is T7 and T8, for the mission after it. `pending/` holds T1b, the two-process version of T1. It stays skipped and uncounted until the event transport is decided.
 
 ## `plexus.schema`
 
