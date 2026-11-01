@@ -48,7 +48,11 @@ if fz and any(fp.rstrip("/") in cmd.replace("\\", "/") for fp in fz):
         r"(^|[|&;]\s*)(sed\s+-i|perl\s+-i|mv|rm|cp|tee|truncate|python\s+-c|echo)\b",
         r">{1,2}\s*\S*(" + "|".join(re.escape(f.rstrip("/")) for f in fz) + ")",
         r"\bgit\s+(checkout|restore|rm|mv|update-index|clean)\b",
-        r"\b(pytest|python\s+-m\s+pytest)\b[^|&;]*\s(-k|--deselect|--ignore|-p\s+no:)\b",
+        # -k / --deselect with the frozen dir in play = skipping inside the judge. --ignore of a path *inside*
+        # tests/acceptance/ likewise. --ignore=tests/acceptance (the whole dir) is legitimate: it is how the
+        # comfy-cozy suite runs without the judge, and it skips nothing inside it.
+        r"\b(pytest|python\s+-m\s+pytest)\b[^|&;]*\s(-k|--deselect)\b",
+        r"--ignore(-glob)?[= ]\S*tests/acceptance/[^\s/]+",
     )
     if any(re.search(w, cmd, re.IGNORECASE) for w in writers):
         block(
