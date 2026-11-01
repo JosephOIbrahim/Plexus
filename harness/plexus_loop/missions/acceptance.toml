@@ -1,19 +1,20 @@
 # First Plexus mission (Blueprint v5.2 §11 Phase 0, §12).
-# It scores the frozen acceptance tests T1 to T8 and refuses to start until
-# tests/acceptance exists. Claude writes and revises mission files; the local
+# It scores the frozen phase 1 acceptance tests (the schema gate and T1 to T6)
+# and refuses to start until tests/acceptance/phase1 exists. T7 and T8 in
+# phase2 are the next mission. Claude writes and revises mission files; the local
 # worker only makes attempts inside one.
 
 [mission]
 name = "acceptance"
-goal = "Make the frozen Plexus acceptance tests in tests/acceptance (T1 to T8, from PLEXUS_SPEC.md) pass, one honest step at a time."
-requires = ["tests/acceptance"]
+goal = "Make the frozen Plexus phase 1 acceptance tests in tests/acceptance/phase1 (the schema gate and T1 to T6, from PLEXUS_SPEC.md) pass, one honest step at a time. tests/acceptance/CONTRACT.md is the Python surface they call."
+requires = ["tests/acceptance/phase1", "PLEXUS_SPEC.md"]
 focus = ["plexus/**", "crates/**", "Cargo.toml", "Cargo.lock"]
 frozen = ["tests/acceptance/**", "harness/**", "docs/plexus/**", "PLEXUS_SPEC.md", ".github/**", "pyproject.toml"]
-context = ["PLEXUS_SPEC.md", "docs/plexus/PLEXUS_BLUEPRINT_v5.md"]
+context = ["tests/acceptance/CONTRACT.md", "PLEXUS_SPEC.md", "docs/plexus/PLEXUS_BLUEPRINT_v5.md"]
 
 [metric]
 kind = "pytest_failures"
-target = "tests/acceptance"
+target = "tests/acceptance/phase1"
 direction = "lower"
 min_delta = 1
 

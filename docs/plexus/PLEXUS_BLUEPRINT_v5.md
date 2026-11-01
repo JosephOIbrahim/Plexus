@@ -1,7 +1,7 @@
-# PLEXUS · Blueprint v5.2
+# PLEXUS · Blueprint v5.3
 
 **Working title. Refactor of Blueprint v4.0 (Aug 21, 2026).**
-Drafted Nov 1, 2026. v5.1 added Rust. v5.2 locks Joe's two decisions and his rule on SYNAPSE. Status: draft for Joe's review. Nothing here is ratified until he says so.
+Drafted Nov 1, 2026. v5.1 added Rust. v5.2 locks Joe's two decisions and his rule on SYNAPSE. v5.3 reconciles it with the document package Joe sent on Nov 1 (§14). Status: draft for Joe's review. Nothing here is ratified until he says so.
 
 **Thesis (unchanged, his words):** a living network where projects compose into each other while running, agents wake only when needed, and execution engines are interchangeable organs.
 
@@ -34,7 +34,7 @@ Every change from v4.0 carries a tag:
 
 Untagged text is v4.0 carried forward, sometimes tightened.
 
-Two inputs weren't reachable while drafting, and the gaps are named where they matter: `PLEXUS_SPEC.md` (acceptance tests T1 to T8, deferred decisions D1 to D5) and the Sept 9 `Plexus_StarterKit` zip.
+`PLEXUS_SPEC.md` (Engineering Spec v2.1) arrived in Joe's Nov 1 package and now sits at the repo root. Its schemas, predicate grammar, organ contract and acceptance tests are normative, and §14 says how it and this blueprint fit together. The Sept 9 `Plexus_StarterKit` zip is still unread.
 
 ---
 
@@ -175,7 +175,7 @@ v4.0 gave projection to Hanish. In v5 it is a Plexus-owned layer, with the rules
 
 ## 8 · L4 · Organs
 
-The organ contract and the `PlexusOrganJob` / `PlexusOrganResult` schemas carry over from v4.0 §4.1 unchanged: serialized intent in, progress stream, assets with metadata and provenance out, capabilities declared, idempotency keys, cancel and resume.
+The organ contract and the `PlexusOrganJob` / `PlexusOrganResult` schemas carry over from v4.0 §4.1 unchanged: serialized intent in, progress stream, assets with metadata and provenance out, capabilities declared, idempotency keys and cancel. **[v5.3 · from Spec]** Resume is not in the base contract. Spec v2.1 §8.1 (Patch 01-E) drops it because arbitrary graphs can't be checkpointed. An organ whose engine really can resume declares it as a capability string (deferred decision D8).
 
 - **[v5 · from Cozy] The first organ is Comfy-Cozy's ComfyUI path:** local execution, multi-worker endpoint pooling with failover, keyless run reports.
 - **[v5 · new] The organ stays swappable by construction.** An Oct 3 chat noted that Comfy maintains official MCP servers for local and cloud ComfyUI (not re-checked for this draft). If so, either can be a second ComfyUI organ behind the same contract, which is the vendor rule doing its job.
@@ -213,7 +213,7 @@ The reason is independence. The thesis makes execution engines interchangeable o
 
 ## 11 · Roadmap
 
-Phases follow v4.0's order, with Phase 0 changed. Each phase's acceptance tests are the matching T-numbers in `PLEXUS_SPEC.md`. That file wasn't reachable while drafting, so the mapping is left for Joe to confirm.
+Phases follow v4.0's order, with Phase 0 changed. **[v5.3]** Phase 1's acceptance tests are the schema gate and T1 to T6 (Spec §3 and §9). Phase 2's are T7 and T8 (Spec §10). All of them are written and frozen in `tests/acceptance/`.
 
 - **Phase 0 · Seed and contracts. [v5 · fixed]** Was "Moneta base." Now it covers the plexus repo seeded from Comfy-Cozy with its history, the four contracts with honest `Unavailable` adapters, the identity registry, the transaction-layer write path, and the build harness (§12). **[v5 · Rust]** It also stands up the Cargo workspace, the `Outcome` envelope, the identity registry and the intent ledger in `plexus-core`, built into Python with maturin.
 - **Phase 1 · The slice.** Two isolated project layers, one shared exchange stack, one change observer, and one predicate-gated neuron proving live cross-project updates. **[v5 · Rust]** The predicate engine and scheduler are Rust from here on, fed batched stage diffs once per heartbeat.
@@ -239,7 +239,7 @@ The design is small on purpose, because Joe is a solo developer paying per token
 - **Hard stops.** Budgets on attempts and hours, a stop after too many attempts in a row that fail, and a stop file Joe can drop in.
 - **Promotion is Joe's.** The harness commits only to its own branch and writes a review file. Nothing merges by itself.
 
-The first mission scores the count of failing tests in `tests/acceptance` (T1 to T8), which are frozen. It can't start until those tests exist, and it says so rather than running against nothing.
+The first mission scores the count of failing tests in `tests/acceptance/phase1` (the schema gate and T1 to T6), which are frozen. T7 and T8 in `phase2/` are the mission after it. A mission can't start until its tests exist, and it says so rather than running against nothing.
 
 ---
 
@@ -312,3 +312,47 @@ pub trait Composer {
 **The switch.** Configuration names two roles, `composer.record = "usd-core"` and `composer.shadow = "openusd"`. Promotion swaps them. The shadow is never read by a neuron, an organ or a surface.
 
 **The parity test.** On each heartbeat in shadow mode, both composers resolve the same sampled prims and attributes and report their composition errors, and any difference is logged with the layer stack that caused it. `openusd` is promoted when two things are true. First, parity holds with zero differences over a corpus of Joe's real scenes for a run length Joe sets. Second, the `openusd` features Plexus needs (authoring transactions and shared layers) have shipped in a release. Until then, parity is a measured gate, and unmeasured reads unknown.
+
+---
+
+## 14 · How this blueprint and the Nov 1 package fit together **[v5.3]**
+
+Joe's package (`docs/plexus/package-2026-11-01/`) holds Blueprint v2.3 and Engineering Spec v2.1 with Patch 01, from August 14, plus the pitch. Its own README sets the rule: the axioms, schemas, contracts and acceptance tests stand as written, and the later direction (a standalone repo, Rust in composition and orchestration, sibling projects as references only) overrides the reuse framing in Blueprint §6 and Spec §1.
+
+So the two documents split the work. **The Spec is normative for what gets tested:** the four schemas (§3), predicate grammar v0 (§4), the axon and wake pipeline (§5 and §6), the membrane (§7), the organ protocol (§8), T1 to T8 (§9 and §10) and the budgets (§11). **This blueprint is normative for architecture:** the layering, the contracts and their absence shapes, Rust, the composer of record, the harness and the independence rule.
+
+### 14.1 · What stands, and where it lands in v5
+
+| Package | In v5 |
+|---|---|
+| A1 Composition is the runtime; `pxr` and the Core Spec only | F0, L0 and §13.4. `usd-core` 26.5 is the `pxr` of record, and `openusd` runs only in shadow, checked against it. |
+| A2 Projects are layers | L0 and the exchange membrane. Tested by T1. |
+| A3 Event-driven intelligence; foresight advises, never vetoes | F2 and L2. Foresight is ledger precommits (Phase 4). |
+| A4 Engines are organs with an embodiment profile | F3 and §8. |
+| A5 Structural provenance | F4 and L0, stamped as `plexus:sourceLayer` per opinion (tested by T4) and hash-chained per sublayer. |
+| A6 One writer per layer | L0 layer discipline and the one-handle rule. Tested by T4 and T5. |
+| A7 Grounded beats generic | The thesis. No architectural change. |
+| A8 Explicit and implicit world models | Deferred with the foresight gate (D3). |
+| A9 The stage describes, never contains | F8. Tested by T7, where the asset prim holds a path and a hash, never bytes. |
+| Spec §5 debounce of 50 ms | This is the heartbeat in §13.3. One batched diff goes to the Rust predicate engine per window. |
+| Spec §11 budgets | Phase gates. The 50k-prim sublayer rotation and 500-prim write batch came from Moneta's measurements on USD 0.25.5, so Plexus re-measures them on 26.5 with its own benchmark. |
+
+### 14.2 · What the package said that v5 supersedes
+
+- **Thin glue and imports (Spec §1, Blueprint §6).** The package reused Cozy, Synapse and Moneta by importing them, and called a copied file a defect. Now Plexus is cloned from Comfy-Cozy, so that code is Plexus's own. SYNAPSE is a reference only, with nothing imported. Moneta, SALUS and Hanish are optional, behind Plexus-written adapters.
+- **LLM access through Cozy's provider abstraction "imported, not copied" (Spec §1).** The six providers come with the clone and are Plexus's own.
+- **The Houdini organ "via Synapse" (A4, D5).** If Plexus drives Houdini, it uses a Houdini organ that Plexus writes against its own organ protocol, and it imports nothing from SYNAPSE (§8).
+- **License compatibility (D6).** "PLEXUS imports all three" no longer holds. Comfy-Cozy's MIT code comes with its license notice kept. SYNAPSE contributes no code. What's left of D6 is whether a Moneta adapter can ship publicly, and that stays a Phase 5 gate.
+- **Phase 1 "assembled from tested siblings" (Blueprint §6).** It's still small, but it's written in Plexus. A throwaway prototype passed every acceptance test on Nov 1 in about 350 lines of Python, which is a fair read on the distance.
+- **Phase order.** The package runs Paper, Slice, Organ, Triage and Foresight, Simultaneity, then Aperture. v5 keeps v4.0's order, which adds a Seed and contracts phase at 0 and a Safety phase at 3. **Proposed, not decided:** add the package's Aperture as Phase 6 (a minimal stage inspector, README and the public repo, with UI last).
+- **Python ≥ 3.11 (Spec §1).** That stands for Plexus. The seed still says 3.10 because Comfy-Cozy did, and its CI tests 3.10. Both move to 3.11 when `plexus/` lands.
+
+### 14.3 · Gaps in the Spec that the tests had to fill
+
+The tests pin these, and `tests/acceptance/CONTRACT.md` records them. Each one can change if Joe says so.
+
+- **The Spec names modules but not functions.** The tests pin a small Python surface (CONTRACT.md) and leave everything beneath it free, Rust included.
+- **The Spec has no attribute for a flag.** T3 and T5 need a visible flag on the neuron prim, so any attribute whose name starts with `plexus:flag` counts.
+- **The Spec's acceptance gate for §3 had no T-number.** It's tested as T0.
+- **T1 is measured in one process.** That is the Spec's literal "author, notice, B recompose read". T6 runs the writer and the runtime as two processes, but it doesn't require the runtime to notice the other process's writes live. How events cross processes stays open, as Spec and v5 both leave it.
+- **Authored prims must be defined, not just overridden.** Otherwise ordinary traversal skips them, and T6's dump would miss them.
