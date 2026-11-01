@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .mission import Gate, Metric
@@ -21,6 +21,7 @@ class MetricResult:
     total: int | None = None  # tests collected, for pytest_failures
     tail: str = ""
     error: str = ""
+    failing: list[str] = field(default_factory=list)  # junit "classname::name" of every bad test
 
 
 @dataclass
@@ -76,12 +77,16 @@ def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> Metric
             return MetricResult(None, tail=tail, error="pytest report could not be read")
     suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
     total = bad = 0
+    failing: list[str] = []
     for s in suites:
         total += int(s.get("tests", 0))
         bad += int(s.get("failures", 0)) + int(s.get("errors", 0)) + int(s.get("skipped", 0))
+        for case in s.iter("testcase"):
+            if any(child.tag in ("failure", "error", "skipped") for child in case):
+                failing.append(f"{case.get('classname', '')}::{case.get('name', '')}")
     if total == 0:
         return MetricResult(None, total=0, tail=tail, error="no tests collected")
-    return MetricResult(float(bad), total=total, tail=tail)
+    return MetricResult(float(bad), total=total, tail=tail, failing=failing)
 
 
 def _command(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:

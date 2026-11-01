@@ -69,6 +69,27 @@ class HoudiniPolicy:
 
 
 @dataclass(frozen=True)
+class Step:
+    """One plan step: what a single attempt should do, and the tests it aims at."""
+
+    id: str
+    targets: list[str]  # pytest ids or prefixes, e.g. "tests/acceptance/phase1/test_t0_schema_gate.py"
+    text: str
+
+
+@dataclass(frozen=True)
+class RouterSpec:
+    """How the next attempt's step is picked (see router.py)."""
+
+    kind: str = "none"  # "none", "first" or "jev"
+    model: str = "jev-latest"
+    host: str = "https://api.typesafe.ai"
+    api_key_env: str = "TYPESAFE_API_KEY"
+    min_confidence: float = 0.3
+    timeout_s: int = 60
+
+
+@dataclass(frozen=True)
 class Mission:
     name: str
     goal: str
@@ -81,6 +102,8 @@ class Mission:
     houdini: HoudiniPolicy = field(default_factory=HoudiniPolicy)
     requires: list[str] = field(default_factory=list)
     context: list[str] = field(default_factory=list)
+    steps: list[Step] = field(default_factory=list)
+    router: RouterSpec = field(default_factory=RouterSpec)
 
     @property
     def branch(self) -> str:
@@ -178,6 +201,30 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
     h = raw.get("houdini", {})
     houdini = HoudiniPolicy(cpu_threads=int(h.get("cpu_threads", 8)), cargo_jobs=int(h.get("cargo_jobs", 4)))
 
+    steps = []
+    for s in raw.get("steps", []):
+        sid = str(_req(s, "id", "[[steps]]"))
+        targets = [str(x) for x in _req(s, "targets", f"[[steps]] {sid}")]
+        if not targets:
+            raise MissionError(f"[[steps]] {sid}: targets must name at least one test")
+        steps.append(Step(id=sid, targets=targets, text=str(_req(s, "text", f"[[steps]] {sid}"))))
+    if len({s.id for s in steps}) != len(steps):
+        raise MissionError("[[steps]] ids must be unique")
+
+    rt = raw.get("router", {})
+    router = RouterSpec(
+        kind=str(rt.get("kind", "first" if steps else "none")),
+        model=str(rt.get("model", "jev-latest")),
+        host=str(rt.get("host", "https://api.typesafe.ai")),
+        api_key_env=str(rt.get("api_key_env", "TYPESAFE_API_KEY")),
+        min_confidence=float(rt.get("min_confidence", 0.3)),
+        timeout_s=int(rt.get("timeout_s", 60)),
+    )
+    if router.kind not in ("none", "first", "jev"):
+        raise MissionError("[router] kind must be 'none', 'first' or 'jev'")
+    if router.kind != "none" and not steps:
+        raise MissionError("[router] needs [[steps]] to route between")
+
     focus = [str(x) for x in _req(m, "focus", "[mission]")]
     if not focus:
         raise MissionError("[mission] focus must name at least one path")
@@ -193,4 +240,6 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
         houdini=houdini,
         requires=[str(x) for x in m.get("requires", [])],
         context=[str(x) for x in m.get("context", [])],
+        steps=steps,
+        router=router,
     )

@@ -41,12 +41,13 @@ def write_review(path: Path, mission: Mission, r: RunReport) -> None:
         "",
         "## Attempts",
         "",
-        "| # | Kept | Score | Houdini | Device | Why |",
-        "|---|---|---|---|---|---|",
+        "| # | Kept | Score | Step | Houdini | Device | Why |",
+        "|---|---|---|---|---|---|---|",
     ]
     for a in r.attempts:
         score = "" if a.metric is None else f"{a.metric:g}"
         why = a.reason.replace("|", "/")
-        lines.append(f"| {a.n} | {'yes' if a.kept else 'no'} | {score} | {a.houdini} | {a.device} | {why} |")
+        step = (a.route or "").replace("|", "/")
+        lines.append(f"| {a.n} | {'yes' if a.kept else 'no'} | {score} | {step} | {a.houdini} | {a.device} | {why} |")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

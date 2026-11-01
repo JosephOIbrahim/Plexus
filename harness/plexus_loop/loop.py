@@ -26,10 +26,20 @@ from pathlib import Path
 
 from . import gitops
 from .metrics import MetricResult, measure, run_gate
-from .mission import Mission
+from .mission import Mission, Step
 from .profile import Profile, choose_profile
 from .review import write_review
+from .router import Route
+from .router import choose as choose_route
 from .workers import Worker, make_worker
+
+RouteFn = Callable[[Mission, MetricResult | None, list["Attempt"]], Route]
+
+
+def default_route(mission: Mission, last: MetricResult | None, recent: list[Attempt]) -> Route:
+    return choose_route(mission.router, mission.steps,
+                        last.failing if last else [], last.tail if last else "",
+                        [f"step {a.route or '?'}: {a.reason}" for a in recent if not a.kept])
 
 STATE_DIR = ".plexus_loop"
 
@@ -49,6 +59,8 @@ class Attempt:
     metric: float | None = None
     changed: list[str] = field(default_factory=list)
     commit: str = ""
+    route: str = ""  # e.g. "S2 via jev 0.81", empty when the mission has no steps
+    route_note: str = ""
 
 
 @dataclass
@@ -116,7 +128,7 @@ class Lock:
 
 
 def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult | None,
-                 recent: list[Attempt], budget_chars: int) -> str:
+                 recent: list[Attempt], budget_chars: int, step: Step | None = None) -> str:
     lines = [
         f"# Mission: {mission.name}",
         "",
@@ -127,6 +139,18 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
         f"- Never change: {', '.join(mission.frozen) or '(none)'}",
         "- Reply with exactly one unified diff, paths relative to the repo root, inside a ```diff block.",
         "- Make the smallest change that moves the number. Don't skip, delete or weaken tests.",
+    ]
+    if step is not None:
+        lines += [
+            "",
+            f"## This attempt: step {step.id}",
+            f"Aim at: {', '.join(step.targets)}",
+            "",
+            step.text,
+            "",
+            "Do this step only. Later steps get their own attempts.",
+        ]
+    lines += [
         "",
         "## Where it stands",
         (f"Current {mission.metric.direction}-is-better score: {best:g}. "
@@ -166,8 +190,10 @@ def _context_files(mission: Mission, repo: Path) -> list[str]:
 class MissionRun:
     def __init__(self, mission: Mission, repo: Path, worker: Worker | None = None,
                  profile_fn: Callable[[], Profile] | None = None,
-                 clock: Callable[[], float] = time.time, log: Callable[[str], None] = print):
+                 clock: Callable[[], float] = time.time, log: Callable[[str], None] = print,
+                 route_fn: RouteFn | None = None):
         self.mission = mission
+        self.route_fn = route_fn or default_route
         self.repo = gitops.repo_root(repo)
         self.state = self.repo / STATE_DIR
         self.mdir = self.state / mission.name
@@ -260,7 +286,13 @@ class MissionRun:
             wt = wt_root / f"attempt-{n}"
             gitops.add_worktree(self.repo, wt, tip)
             try:
-                prompt = build_prompt(mi, wt, best, last, attempts, mi.worker.context_chars)
+                route = self.route_fn(mi, last, attempts)
+                a.route, a.route_note = route.label(), route.note
+                if route.step is not None:
+                    self.log(f"[plexus-loop] attempt {n}: step {a.route}"
+                             + (f" ({route.note})" if route.note else ""))
+                prompt = build_prompt(mi, wt, best, last, attempts, mi.worker.context_chars,
+                                      step=route.step)
                 res = self.worker.attempt(wt, prompt, profile)
                 a.changed = gitops.changed_paths(wt)
                 if not res.ok:
