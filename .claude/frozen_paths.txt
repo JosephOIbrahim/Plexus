@@ -1,0 +1,4 @@
+# One path prefix or file per line. Relative to repo root. Forward slashes.
+# These are the judge. Hooks block any edit, write, move, delete or redirect into them by Claude.
+# The harness enforces its own (wider) frozen list for the worker in the mission .toml.
+tests/acceptance/
