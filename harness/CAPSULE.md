@@ -1,16 +1,19 @@
 # Capsule — Plexus
 
-**Where we are:** Mile 0 of ~4. Seed is on `main` (comfy-cozy history + blueprint v5.3). `harness/plexus-loop` carries the harness, the frozen tests (18 across phase1+phase2, T1b pending) and CONTRACT.md. Claude Code kit installed (hooks, agents, commands, program.md). No `plexus/` code yet.
+**Where we are:** Mile 1 of ~4. Mission `acceptance` setup is done and the plan is written, committed and pushed: `harness/plexus_loop/missions/acceptance.plan.md` on `mission/acceptance` (`f399183`). Baseline is 11 of 11 phase1 items failing. `/doctor` passed except the model. Nothing has run. The Plexus README and six Mermaid diagrams are on `harness/plexus-loop` (`486f37b`), not yet on `main`. No `plexus/` code yet.
 
-**Next action:** merge the kit PR into `harness/plexus-loop`, open Claude Code in the repo, type `/mission acceptance`. It stops after `/doctor` and again after the plan.
+**Next action:** Joe answers the plan's §8 decisions and says `go`. On go, Claude merges `harness/plexus-loop` into `mission/acceptance`, makes scaffolding commits C1–C5, verifies the pyo3 build on Python 3.14, pushes, then runs the harness.
 
-**Blockers:** `ollama list` showed no `qwen3-coder:30b` on Nov 1 (not pulled, or Ollama down). `/doctor` will ask before pulling.
+**Blockers:**
+- `qwen3-coder:30b` is not pulled. Joe runs `ollama pull qwen3-coder:30b` (about 19 GB). `check` prints `ready` without it, but every attempt would fail.
+- Decisions pending: notice path A or B; narrow the `unit` gate (9 min 29 s → 49 s per attempt); C1–C5 plus the mission-file diff; no maturin in `pyproject.toml` this mission; whether to cut a release at all.
 
-**Energy required:** medium for the plan review; low once the harness is running.
+**Energy required:** medium for the decisions (about 10 minutes of reading the plan); low once the harness is running.
 
 **Ideas parked:**
-- `unit` gate narrowing — Claude proposes the subset, Joe decides.
-- T8 grep scope vs seeded `agent/` code — read `test_t8_blindness.py` during setup; decide in mission `phase2`.
+- `release.yml` is Comfy-Cozy's pipeline (tag must equal `v` + `agent.__version__`). Retarget or retire it before any Plexus release.
+- README on GitHub shows `main`'s copy until a PR from `harness/plexus-loop` merges.
+- T8 grep scope vs seeded `agent/` code — decide in mission `phase2`. Never import `agent.*` or `cognitive.*` from `plexus/`.
 - `agent/stage` retirement — after T7, delete what the organ adapter does not reach.
 - SALUS / Moneta / Hanish — Joe is leaning toward removing them from the seed entirely.
 - `CLAUDE.cozy.md` — comfy-cozy's old CLAUDE.md, kept for `agent/`/`cognitive/` work; fold or delete later.
