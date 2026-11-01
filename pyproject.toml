@@ -2,7 +2,7 @@
 name = "comfy-cozy"
 dynamic = ["version"]
 description = "AI co-pilot for VFX artists using ComfyUI: 134 MCP tools across 6 swappable LLM providers (incl. any OpenAI-compatible endpoint), zero-LLM artist recipes, a default-deny safety gate, reversible LIVRPS edits, EXR-aware vision, workflow.lock provenance, and durable cross-session learning."
-readme = "README.md"
+readme = "README.cozy.md"
 license = {text = "MIT"}
 authors = [{name = "Joseph Ibrahim"}]
 requires-python = ">=3.10"
