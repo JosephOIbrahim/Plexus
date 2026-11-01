@@ -11,9 +11,7 @@
   "permissions": {
     "deny": [
       "Edit(tests/acceptance/**)",
-      "Write(tests/acceptance/**)",
       "Edit(tests/conftest.py)",
-      "Write(tests/conftest.py)",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(git push origin main:*)",
