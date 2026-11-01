@@ -2,8 +2,104 @@
   "mcpServers": {
     "comfyui-agent": {
       "command": "agent",
-      "args": ["mcp"],
+      "args": [
+        "mcp"
+      ],
       "cwd": "G:/Comfy-Cozy"
     }
+  },
+  "permissions": {
+    "deny": [
+      "Edit(tests/acceptance/**)",
+      "Write(tests/acceptance/**)",
+      "Edit(tests/conftest.py)",
+      "Write(tests/conftest.py)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push origin main:*)",
+      "Bash(git push origin master:*)"
+    ],
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git worktree list:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(pytest:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(maturin develop:*)",
+      "Bash(ollama list:*)",
+      "Bash(ollama ps:*)",
+      "Bash(python -m harness.plexus_loop:*)",
+      "Bash(git switch:*)",
+      "Bash(git checkout -b:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git stash:*)",
+      "Bash(git worktree:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git show:*)",
+      "Bash(python --version:*)",
+      "Bash(python -c:*)",
+      "Bash(rustc --version:*)",
+      "Bash(maturin --version:*)",
+      "Bash(tasklist:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(tail:*)",
+      "Bash(head:*)",
+      "Bash(find:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/session_start.py\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_bash.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_edit.py\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_stop.py\""
+          }
+        ]
+      }
+    ]
   }
 }
