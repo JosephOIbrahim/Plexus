@@ -1,0 +1,77 @@
+#usda 1.0
+
+class "PlexusProjectAPI" (
+    customData = {
+        token apiSchemaType = "singleApply"
+    }
+)
+{
+    string plexus:projectId
+    token plexus:status (
+        allowedTokens = ["active", "paused", "archived"]
+    )
+    string plexus:created
+    token plexus:provenancePolicy (
+        allowedTokens = ["strict", "advisory"]
+    )
+}
+
+class "PlexusAssetAPI" (
+    customData = {
+        token apiSchemaType = "singleApply"
+    }
+)
+{
+    asset plexus:assetPath
+    string plexus:sha256
+    string plexus:engine
+    string plexus:engineJobId
+    int64 plexus:seed
+    token plexus:colorspace (
+        allowedTokens = ["acescg", "srgb", "linear", "raw"]
+    )
+    string[] plexus:modelHashes
+    string plexus:sourceLayer
+    string plexus:createdAt
+    string plexus:envFingerprint
+    string plexus:organVersion
+    string plexus:retryOf
+    token plexus:retryReason (
+        allowedTokens = ["none", "quality", "transient", "operator"]
+    )
+}
+
+class "PlexusNeuronAPI" (
+    customData = {
+        token apiSchemaType = "singleApply"
+    }
+)
+{
+    string plexus:scope
+    string plexus:predicate
+    string[] plexus:tools
+    int plexus:budgetWakes
+    double plexus:budgetWindow
+    int plexus:budgetTokens
+    token plexus:state (
+        allowedTokens = ["dormant", "awake", "muted"]
+    )
+    string plexus:lastWake
+}
+
+class "PlexusOrganAPI" (
+    customData = {
+        token apiSchemaType = "singleApply"
+    }
+)
+{
+    string plexus:organId
+    token plexus:kind (
+        allowedTokens = ["comfyui", "houdini", "neuralPreview", "wfm"]
+    )
+    string plexus:endpoint
+    string[] plexus:capabilities
+    token plexus:costHint (
+        allowedTokens = ["free", "cheap", "expensive"]
+    )
+}
