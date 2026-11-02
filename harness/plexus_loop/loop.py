@@ -83,6 +83,33 @@ def syntax_errors(root: Path, paths: list[str]) -> list[str]:
     return out
 
 
+CARRY_CHARS = 40_000  # the most of a dropped attempt's files the next prompt carries
+
+
+def carry_files(root: Path, changed: list[str], mission: Mission, step: Step | None) -> dict[str, str]:
+    """The text of the files a dropped attempt wrote, for the next prompt to hand back.
+
+    Only files in focus and not frozen, readable as UTF-8, the step's own files first, up to
+    CARRY_CHARS in all. A file that would pass the limit is left out whole, never cut.
+    """
+    own = [f for f in (step.files if step else []) if f in changed]
+    order = own + sorted(f for f in changed if f not in own)
+    out: dict[str, str] = {}
+    used = 0
+    for rel in order:
+        if not mission.in_focus(rel) or mission.is_frozen(rel):
+            continue
+        try:
+            text = (root / rel).read_text(encoding="utf-8")
+        except (OSError, UnicodeError, ValueError):
+            continue
+        if used + len(text) > CARRY_CHARS:
+            continue
+        out[rel] = text
+        used += len(text)
+    return out
+
+
 TARGET_FAILURES_MAX = 3  # at most this many target tests lead the feedback
 
 
@@ -143,6 +170,8 @@ class Attempt:
     # The dropped attempt's own step's target tests that failed, each "junit id\nits failure",
     # from the metric's junit report. The next prompt leads with them.
     target_failures: list[str] = field(default_factory=list)
+    # Files this dropped attempt passed every gate with, handed to the next prompt in full.
+    handed_on: list[str] = field(default_factory=list)
     # Ledger diagnostic: the step's files the dropped reply left out. The next prompt does not
     # use it; it lists what is absent from its own fresh worktree, which also lacks what was sent.
     missing: list[str] = field(default_factory=list)
@@ -223,7 +252,10 @@ class Lock:
 
 
 def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult | None,
-                 recent: list[Attempt], budget_chars: int, step: Step | None = None) -> str:
+                 recent: list[Attempt], budget_chars: int, step: Step | None = None,
+                 carried: tuple[int, dict[str, str]] | None = None) -> str:
+    """The worker's prompt. ``carried`` is (attempt number, {path: text}) of the files a dropped
+    attempt that passed every gate wrote; it is shown only when that attempt is the last one."""
     lines = [
         f"# Mission: {mission.name}",
         "",
@@ -292,6 +324,19 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                 lines.append("Fix the cause first. It is usually one rule or one error near the top of that output.")
         elif dropped.syntax:
             lines.append("Fix those files first.")
+    if dropped is not None and carried and carried[0] == dropped.n and carried[1]:
+        files = carried[1]
+        lines += [
+            "",
+            "## Your last attempt's files",
+            f"Attempt {dropped.n} passed every gate. Its files are below; they are gone from the repo, "
+            "because every attempt starts from the last kept commit. Resend every one of them in full, "
+            "as whole-file blocks, with the fix, plus any other file the step needs.",
+        ]
+        for rel, text in files.items():
+            fence = "`" * max(3, _longest_backtick_run(text) + 1)
+            tail = "" if text.endswith("\n") else "\n"
+            lines.append(f"\n{fence}file:{rel}\n{text}{tail}{fence}")
     lines += [
         "",
         "## Where it stands",
@@ -444,6 +489,7 @@ class MissionRun:
         self.log(f"[plexus-loop] {mi.name}: baseline {baseline:g} on {tip[:10]} ({profile.device})")
 
         attempts: list[Attempt] = []
+        carried: tuple[int, dict[str, str]] | None = None  # files of the last gate-passing drop
         consecutive = 0
         stop = "finished"
         n = 0
@@ -479,7 +525,7 @@ class MissionRun:
                     self.log(f"[plexus-loop] attempt {n}: step {a.route}"
                              + (f" ({route.note})" if route.note else ""))
                 prompt = build_prompt(mi, wt, best, last, attempts, mi.worker.context_chars,
-                                      step=route.step)
+                                      step=route.step, carried=carried)
                 t0 = time.monotonic()
                 try:
                     res = self.worker.attempt(wt, prompt, profile)
@@ -524,6 +570,11 @@ class MissionRun:
                         a.syntax = syntax_errors(wt, a.changed)
                         if m is not None and route.step is not None:
                             a.target_failures = target_failures(m, route.step)
+                        if len(a.gates) == len(mi.gates) and all(g["ok"] for g in a.gates):
+                            # It passed every gate: hand its files to the next attempt, which
+                            # starts from tip without them.
+                            carried = (n, carry_files(wt, a.changed, mi, route.step))
+                            a.handed_on = list(carried[1])
                 if not a.kept and route.step is not None:
                     a.missing = missing_files(wt, route.step.files)
             except gitops.GitError as e:
