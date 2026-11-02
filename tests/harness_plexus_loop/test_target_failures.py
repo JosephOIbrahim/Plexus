@@ -74,6 +74,37 @@ def test_metric_records_each_failing_tests_own_message(tmp_path):
     assert "test_t1_target" not in m.tail[-300:]  # the end of the run is about the later tests
 
 
+T_TEARDOWN = '''
+import pytest
+
+@pytest.fixture
+def rt():
+    yield 1
+    raise ValueError("TEARDOWN-BOOM")
+
+def test_call_and_teardown(rt):
+    raise AttributeError("CALL-FAIL-FIRST")
+
+def test_long_traceback():
+    raise AssertionError("LONG-" + "y" * 5000 + "-END")
+'''
+
+
+def test_teardown_error_keeps_the_tests_own_failure_first_and_counts_once(tmp_path):
+    r = _repo(tmp_path)
+    (r / "tests" / "acceptance" / "phase1" / "test_t1_target.py").write_text(T_TEARDOWN)
+    m = measure(Metric(kind="pytest_failures", target="tests/acceptance/phase1/test_t1_target.py"), r, PROFILE)
+    (tid,) = {f for f in m.failing if f.endswith("::test_call_and_teardown")}
+    assert m.failing.count(tid) == 2  # pytest's report repeats the id
+    msg = m.messages[tid]
+    assert "CALL-FAIL-FIRST" in msg and msg.index("CALL-FAIL-FIRST") < msg.index("TEARDOWN-BOOM")
+    long_id = next(f for f in m.failing if f.endswith("::test_long_traceback"))
+    assert "-END" in m.messages[long_id]  # a long traceback keeps its end, where the error is
+    assert all(len(v) <= TEST_MESSAGE_CHARS for v in m.messages.values())
+    picked = target_failures(m, STEP)
+    assert [p.split("\n", 1)[0] for p in picked].count(tid) == 1
+
+
 # -- matching and selection --------------------------------------------------------
 
 def test_failing_targets_matches_files_tests_and_parameters_in_report_order():
@@ -84,6 +115,7 @@ def test_failing_targets_matches_files_tests_and_parameters_in_report_order():
     s = Step("S", ["tests/acceptance/phase1/test_t1_target.py", "tests/acceptance/phase1/test_t2.py::test_x"], "x")
     assert failing_targets(s, failing) == ["tests.acceptance.phase1.test_t1_target::test_target",
                                            "tests.acceptance.phase1.test_t2::test_x[a-b]"]
+    assert failing_targets(s, failing + failing) == failing_targets(s, failing)  # once each
 
 
 def test_target_failures_caps_the_count_and_marks_a_missing_message():

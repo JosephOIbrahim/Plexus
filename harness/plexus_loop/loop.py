@@ -286,7 +286,10 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             detail = dropped.detail[-FEEDBACK_CHARS:]
             fence = "`" * max(3, _longest_backtick_run(detail) + 1)
             lines += ["This is what it printed:", fence, detail.rstrip("\n"), fence]
-            lines.append("Fix the cause first. It is usually one rule or one error near the top of that output.")
+            if dropped.target_failures:
+                lines.append("That is the end of the whole run, for context. Fix the target-test failures above first.")
+            else:
+                lines.append("Fix the cause first. It is usually one rule or one error near the top of that output.")
         elif dropped.syntax:
             lines.append("Fix those files first.")
     lines += [

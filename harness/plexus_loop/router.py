@@ -57,10 +57,12 @@ def _norm(test_id: str) -> str:
 
 
 def failing_targets(step: Step, failing: list[str]) -> list[str]:
-    """The ids in ``failing`` that one of the step's targets names, in ``failing``'s order."""
+    """The ids in ``failing`` that one of the step's targets names, in ``failing``'s order, once each."""
     norms = [_norm(t) for t in step.targets]
     out = []
     for f in failing:
+        if f in out:  # junit repeats an id when a test fails and its teardown errors too
+            continue
         nf = _norm(f)
         if any(nf == nt or nf.startswith(nt + ".") or nf.startswith(nt + "[") for nt in norms):
             out.append(f)

@@ -104,7 +104,12 @@ def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> Metric
             if bad_children:
                 tid = f"{case.get('classname', '')}::{case.get('name', '')}"
                 failing.append(tid)
-                messages[tid] = "\n".join(_case_message(c) for c in bad_children)[-TEST_MESSAGE_CHARS:]
+                # A test that fails and then errors in teardown appears twice under one id: keep
+                # its own failure first and add the teardown after it, never replace it.
+                text = "\n".join(_case_message(c) for c in bad_children)[-TEST_MESSAGE_CHARS:]
+                if tid in messages:  # the first entry is whole (each is at most the cap); clip the rest
+                    text = (messages[tid] + "\n" + text)[:TEST_MESSAGE_CHARS]
+                messages[tid] = text
     if total == 0:
         return MetricResult(None, total=0, tail=tail, error="no tests collected")
     return MetricResult(float(bad), total=total, tail=tail, failing=failing, messages=messages)
