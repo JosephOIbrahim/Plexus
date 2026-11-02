@@ -259,7 +259,10 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
     if not focus:
         raise MissionError("[mission] focus must name at least one path")
     known_fixes = []
-    for k in raw.get("known_fixes", []):
+    raw_fixes = raw.get("known_fixes", [])
+    if not isinstance(raw_fixes, list) or not all(isinstance(k, dict) for k in raw_fixes):
+        raise MissionError("[[known_fixes]] must be a list of tables")
+    for k in raw_fixes:
         match = str(_req(k, "match", "[[known_fixes]]"))
         anchor = str(_req(k, "anchor", "[[known_fixes]]"))
         file = _norm(str(_req(k, "file", "[[known_fixes]]")))

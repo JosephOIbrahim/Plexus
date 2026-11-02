@@ -103,9 +103,18 @@ def known_fix_quotes(mission: Mission, repo: Path, failures: list[str]) -> list[
             lines = (repo / k.file).read_text(encoding="utf-8").splitlines()
         except (OSError, UnicodeError, ValueError):
             continue
-        hit = next((ln.strip() for ln in lines if k.anchor in ln), None)
-        if hit and hit not in out:
-            out.append(hit[:KNOWN_FIX_CHARS])
+        line = next((ln for ln in lines if k.anchor in ln), None)
+        if line is None:
+            continue
+        # Quote from the start of the sentence holding the anchor: a brief line can hold several
+        # facts, and a long line must never cut the fix itself off.
+        at = line.find(k.anchor)
+        cut = line.rfind(". ", 0, at)
+        start = cut + 2 if cut >= 0 else 0
+        body = line[start:].strip()
+        quote = ("…" if start else "") + body[:KNOWN_FIX_CHARS]
+        if quote not in out:
+            out.append(quote)
     return out
 
 

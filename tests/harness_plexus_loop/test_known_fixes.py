@@ -83,7 +83,32 @@ def test_long_lines_are_clipped(tmp_path):
     (r / BRIEF).write_text("- LONG " + "y" * 2000 + "\n")
     m = mission_from_dict(_raw([{"match": "null or expired layer", "file": BRIEF, "anchor": "LONG"}]))
     (q,) = known_fix_quotes(m, r, [NULL_LAYER])
-    assert len(q) == KNOWN_FIX_CHARS
+    assert q.startswith("- LONG") and len(q) == KNOWN_FIX_CHARS
+
+
+def test_a_fix_deep_in_a_long_line_is_quoted_from_its_anchor(tmp_path):
+    r = _repo(tmp_path)
+    (r / BRIEF).write_text("- " + "earlier fact. " * 80 + "ANCHOR: write `a or b(p)` here.\n")
+    m = mission_from_dict(_raw([{"match": "null or expired layer", "file": BRIEF, "anchor": "ANCHOR:"}]))
+    (q,) = known_fix_quotes(m, r, [NULL_LAYER])
+    assert q == "…ANCHOR: write `a or b(p)` here."
+
+
+def test_two_fixes_on_one_line_quote_each_fix_once(tmp_path):
+    r = _repo(tmp_path)
+    (r / BRIEF).write_text("- FIX-A do a. FIX-B do b.\n")
+    m = mission_from_dict(_raw([
+        {"match": "null or expired layer", "file": BRIEF, "anchor": "FIX-A"},
+        {"match": "null or expired layer", "file": BRIEF, "anchor": "FIX-A"},
+        {"match": "ListProxy", "file": BRIEF, "anchor": "FIX-B"}]))
+    q = known_fix_quotes(m, r, [NULL_LAYER, "t\n[failure] ListProxy_SdfSubLayerTypePolicy"])
+    assert q == ["- FIX-A do a. FIX-B do b.", "…FIX-B do b."]
+
+
+def test_known_fixes_must_be_tables():
+    for bad in ("x", ["x"], [1]):
+        with pytest.raises(MissionError, match="list of tables"):
+            mission_from_dict(_raw(bad))
 
 
 def test_the_quote_sits_under_the_target_failure_in_the_prompt(tmp_path):
@@ -111,6 +136,12 @@ def test_every_acceptance_known_fix_resolves_to_one_brief_line():
         lines = (REPO / k.file).read_text(encoding="utf-8").splitlines()
         assert sum(k.anchor in ln for ln in lines) == 1, k.anchor
         re.compile(k.match)
+
+
+def test_the_real_null_layer_quote_carries_the_whole_fix():
+    m = load_mission(REPO / "harness" / "plexus_loop" / "missions" / "acceptance.toml")
+    quotes = known_fix_quotes(m, REPO, ["t\n[failure] Cannot create prim at path '/Exchange' in null or expired layer"])
+    assert any("or Sdf.Layer.CreateNew(p)`" in q and "create_project" in q for q in quotes), quotes
 
 
 @pytest.mark.parametrize("error, anchor", [
