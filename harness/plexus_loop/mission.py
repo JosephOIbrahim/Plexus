@@ -212,9 +212,13 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
         targets = [str(x) for x in _req(s, "targets", f"[[steps]] {sid}")]
         if not targets:
             raise MissionError(f"[[steps]] {sid}: targets must name at least one test")
-        files = [_norm(str(x)) for x in s.get("files", [])]
-        if any(not f or f.startswith("/") or ":" in f or ".." in f.split("/") for f in files):
-            raise MissionError(f"[[steps]] {sid}: files must be repo-relative paths")
+        raw_files = s.get("files", [])
+        if not isinstance(raw_files, list):
+            raise MissionError(f"[[steps]] {sid}: files must be a list of paths")
+        files = [_norm(str(x)) for x in raw_files]
+        if any(not f or f.startswith("/") or f.endswith("/") or ":" in f
+               or any(part in ("", ".", "..") for part in f.split("/")) for f in files):
+            raise MissionError(f"[[steps]] {sid}: files must be repo-relative file paths")
         if len(set(files)) != len(files):
             raise MissionError(f"[[steps]] {sid}: files must not repeat")
         steps.append(Step(id=sid, targets=targets, text=str(_req(s, "text", f"[[steps]] {sid}")),

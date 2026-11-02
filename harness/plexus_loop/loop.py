@@ -124,7 +124,9 @@ class Attempt:
     reply_file: str = ""  # the raw model reply, under .plexus_loop/<mission>/replies/
     detail: str = ""  # output of the failing gate or metric, shown to the next attempt
     syntax: list[str] = field(default_factory=list)  # changed .py files that don't compile, one line each
-    missing: list[str] = field(default_factory=list)  # the step's files absent from the worktree after a drop
+    # Ledger diagnostic: the step's files the dropped reply left out. The next prompt does not
+    # use it; it lists what is absent from its own fresh worktree, which also lacks what was sent.
+    missing: list[str] = field(default_factory=list)
     # Where the time went, in seconds of real (monotonic) time, to a tenth. None means not
     # measured: that step never ran, or the row predates timing. Never read a missing value as 0.
     # wall_s minus the parts is the harness's own work: worktree setup and teardown, building
@@ -228,20 +230,24 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
         ]
         if step.files:
             lines += [f"Files this step writes: {', '.join(step.files)}. "
-                      "Send every one of them that does not exist yet as a whole-file block.", ""]
+                      "Send each new or rewritten file as a whole-file block; every .rs file always is one.", ""]
         lines.append("Do this step only. Later steps get their own attempts.")
+    # Measured in this attempt's fresh worktree at the branch tip, for the step it is on: a
+    # dropped attempt's files are gone, so whatever it sent must be sent again.
+    absent = missing_files(repo, step.files) if step is not None else []
     dropped = recent[-1] if recent and not recent[-1].kept else None
-    if dropped is not None and (dropped.detail or dropped.syntax or dropped.missing):
+    if dropped is not None and (dropped.detail or dropped.syntax or absent):
         lines += [
             "",
             "## Why the last attempt was dropped",
             f"Attempt {dropped.n}" + (f" (step {dropped.route})" if dropped.route else "")
             + f" was dropped: {dropped.reason}.",
         ]
-        if dropped.missing:
-            lines += ["Its step needs these files, and the reply did not include them, so they do not exist. "
-                      "Send each one in full as a whole-file block:"]
-            lines += [f"- {p}" for p in dropped.missing]
+        if absent:
+            lines += [f"Its files are gone: every attempt starts from the last kept commit. Step {step.id} "
+                      "needs these files, and none of them is in the repo. Send each one in full as a "
+                      "whole-file block:"]
+            lines += [f"- {p}" for p in absent]
         if dropped.syntax:
             shown = dropped.syntax[:SYNTAX_MAX]
             lines += ["Python could not compile these files. Fix them first; every .py file must compile:"]
@@ -253,7 +259,7 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             fence = "`" * max(3, _longest_backtick_run(detail) + 1)
             lines += ["This is what it printed:", fence, detail.rstrip("\n"), fence]
             lines.append("Fix the cause first. It is usually one rule or one error near the top of that output.")
-        else:
+        elif dropped.syntax:
             lines.append("Fix those files first.")
     lines += [
         "",
