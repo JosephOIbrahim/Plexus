@@ -1,16 +1,31 @@
-# First Plexus mission (Blueprint v5.2 §11 Phase 0, §12).
+# First Plexus mission (Blueprint v5.3 §11 Phase 1, §12).
 # It scores the frozen phase 1 acceptance tests (the schema gate and T1 to T6)
 # and refuses to start until tests/acceptance/phase1 exists. T7 and T8 in
 # phase2 are the next mission. Claude writes and revises mission files; the local
-# worker only makes attempts inside one.
+# worker only makes attempts inside one. Plan: missions/acceptance.plan.md.
+# Joe's decisions (Nov 1): Option A, narrowed unit gate, this file and C1-C6 as written,
+# no maturin in pyproject.toml, five Jev-routed attempts for the first run.
 
 [mission]
 name = "acceptance"
-goal = "Make the frozen Plexus phase 1 acceptance tests in tests/acceptance/phase1 (the schema gate and T1 to T6, from PLEXUS_SPEC.md) pass, one honest step at a time. tests/acceptance/CONTRACT.md is the Python surface they call."
+goal = "Make the frozen Plexus phase 1 acceptance tests in tests/acceptance/phase1 (the schema gate and T1 to T6, from PLEXUS_SPEC.md) pass, one honest step at a time. tests/acceptance/CONTRACT.md is the Python surface they call; harness/plexus_loop/missions/acceptance.worker.md says how the work is split and what the gates enforce."
 requires = ["tests/acceptance/phase1", "PLEXUS_SPEC.md"]
 focus = ["plexus/**", "crates/**", "Cargo.toml", "Cargo.lock"]
 frozen = ["tests/acceptance/**", "harness/**", "docs/plexus/**", "PLEXUS_SPEC.md", ".github/**", "pyproject.toml"]
-context = ["tests/acceptance/CONTRACT.md", "PLEXUS_SPEC.md", "docs/plexus/PLEXUS_BLUEPRINT_v5.md"]
+context = [
+  "harness/plexus_loop/missions/acceptance.worker.md",
+  "tests/acceptance/CONTRACT.md",
+  "tests/acceptance/_support.py",
+  "tests/acceptance/conftest.py",
+  "tests/acceptance/phase1/test_t0_schema_gate.py",
+  "tests/acceptance/phase1/test_t1_propagation.py",
+  "tests/acceptance/phase1/test_t2_predicate_precision.py",
+  "tests/acceptance/phase1/test_t3_budget.py",
+  "tests/acceptance/phase1/test_t4_provenance.py",
+  "tests/acceptance/phase1/test_t5_gate.py",
+  "tests/acceptance/phase1/test_t6_truth.py",
+  "PLEXUS_SPEC.md",
+]
 
 [metric]
 kind = "pytest_failures"
@@ -18,29 +33,87 @@ target = "tests/acceptance/phase1"
 direction = "lower"
 min_delta = 1
 
+# Gates run in this order before the metric. Cheapest and most structural first.
+[[gates]]
+name = "layers"
+cmd = ["python", "-m", "pytest", "-q", "harness/plexus_loop/guards"]
+timeout_s = 600
+
+[[gates]]
+name = "core"
+cmd = ["python", "harness/plexus_loop/build_core.py"]
+timeout_s = 1800
+
+[[gates]]
+name = "cargo"
+cmd = ["cargo", "test", "--workspace", "--quiet"]
+timeout_s = 1800
+
+# Narrowed on Joe's word (Nov 1): the worker can only change plexus/, crates/ and the
+# Cargo files, which only repo-scanning tests and the harness's own tests can notice.
+# The full comfy-cozy suite (5,158 tests, 9 min 29 s) runs once at mission end.
 [[gates]]
 name = "unit"
-cmd = ["python", "-m", "pytest", "-q", "-x", "tests", "--ignore=tests/acceptance", "-m", "not integration"]
-timeout_s = 3600
-
-# Add once the Rust workspace exists:
-# [[gates]]
-# name = "cargo"
-# cmd = ["cargo", "test", "--workspace", "--quiet"]
-# timeout_s = 3600
+cmd = ["python", "-m", "pytest", "-q", "-x", "-m", "not integration",
+       "tests/harness_plexus_loop", "tests/test_portability_guards.py",
+       "tests/test_workflow_patch_engine_live.py"]
+timeout_s = 1800
 
 [worker]
 kind = "ollama"
 model = "qwen3-coder:30b"
 host = "http://127.0.0.1:11434"
 timeout_s = 1800
-context_chars = 60000
-# Any command-line model can stand in instead:
-# kind = "command"
-# cmd = ["your-cli", "--prompt-file", "{prompt_file}"]
+context_chars = 100000
+num_ctx = 40960
+
+[router]
+kind = "jev"
+model = "jev-latest"
+min_confidence = 0.3
+
+[[steps]]
+id = "S1"
+targets = ["tests/acceptance/phase1/test_t0_schema_gate.py"]
+text = "Schema plugin: plexus/schema/__init__.py with plugin_dir() returning the directory of that file, plus plexus/schema/plugInfo.json and plexus/schema/generatedSchema.usda defining the four codeless single-apply API schemas T0 lists (PlexusProjectAPI, PlexusAssetAPI, PlexusNeuronAPI, PlexusOrganAPI) with exactly the attributes, Sdf types and allowedTokens the test lists. Follow the file shape in the worker brief. No pxr import in plexus/schema."
+
+[[steps]]
+id = "S2"
+targets = ["tests/acceptance/phase1/test_t1_propagation.py"]
+text = "Membrane, stagekit and axon in Python: plexus/membrane/exchange.py (create_exchange, register_participant, participants; registers the schema plugin in-process at import), plexus/core/stagekit.py (create_project: a root layer whose /Exchange references the composed exchange and whose /Project has PlexusProjectAPI with plexus:projectId), and plexus/core/axon.py (StageEvent dataclass; PlexusAxon(stage, debounce_s=0.05) with subscribe, start, cool; a Tf.Notice callback that only copies paths and enqueues; one dispatcher thread that coalesces within the debounce window and calls subscribers outside the callback)."
+
+[[steps]]
+id = "S3"
+targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_bad_predicates_fail_at_registration"]
+text = "Rust grammar-v0 predicate parser in crates/plexus-core/src/predicate.rs (clauses changed, delta, attr, exists joined by AND only; absolute attribute paths; every path inside the scope), exposed from py.rs as compile_predicate(source, scope) and a PredicateError exception; plexus/core/predicate.py re-exporting PredicateError; plexus/core/neuron.py with NeuronRuntime.__init__ (opens the composed exchange as its stage, registers itself as a participant, edit_layer is its own from_<id>.usda) and register(), which compiles the predicate and raises PredicateError for bad syntax or an out-of-scope path."
+
+[[steps]]
+id = "S4"
+targets = ["tests/acceptance/phase1/test_t5_gate.py::test_write_inside_allowlist_lands"]
+text = "Runtime start/stop/wait_idle: on each coalesced StageEvent, filter by the neuron's scope, evaluate the predicate (changed() first), run the action on a worker thread with a ctx whose author() checks the path allowlist (plexus/membrane/gate.py: /Exchange/<participant>/** plus granted paths), defines missing ancestors as def, authors the value and plexus:sourceLayer into the edit layer, and saves the layer. Define /Plexus/Neurons/<name> with PlexusNeuronAPI in the edit layer at register()."
+
+[[steps]]
+id = "S5"
+targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_delta_threshold_and_cache", "tests/acceptance/phase1/test_t4_provenance.py"]
+text = "delta() evaluation with a per-neuron cache in Rust that updates only on a wake (seed at registration, commit_wake after a wake), so sub-threshold changes accumulate; plexus:sourceLayer on the authored prim names the edit layer; the neuron returns to state dormant after each wake and wakes counts on the handle."
+
+[[steps]]
+id = "S6"
+targets = ["tests/acceptance/phase1/test_t5_gate.py::test_write_outside_allowlist_is_dropped_and_flagged"]
+text = "A write outside the allowlist is dropped (nothing lands in any exchange layer) and the neuron prim gets an attribute whose name starts with plexus:flag holding a non-empty value, saved in the edit layer."
+
+[[steps]]
+id = "S7"
+targets = ["tests/acceptance/phase1/test_t3_budget.py"]
+text = "Rust Budget(wakes, window_s) in crates/plexus-core/src/budget.rs with peek(now) and admit(now) returning wake, trip or mute (a sliding window of wake times; three consecutive trips mute), exposed from py.rs; the runtime peeks then admits with the injected clock, and on mute writes plexus:state = muted plus a plexus:flag attribute on the neuron prim in the edit layer, saved."
+
+[[steps]]
+id = "S8"
+targets = ["tests/acceptance/phase1/test_t6_truth.py"]
+text = "Every opinion the runtime authors is saved as it lands, including plexus:state, plexus:lastWake and flags, so a runtime killed mid-session and reopened from disk reproduces all composed state."
 
 [budget]
-attempts = 40
+attempts = 5
 hours = 6
 max_consecutive_failures = 8
 

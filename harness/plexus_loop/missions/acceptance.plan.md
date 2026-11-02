@@ -262,6 +262,8 @@ Joe asked for Jev's read on the open decisions, shown before anything is applied
 
 1. ~~**Pull the model**~~ — done Nov 1 on Joe's word: `qwen3-coder:30b` (18 GB) is installed.
 2. ~~**Notice path**~~ — **Option A**, decided by Joe (Nov 1). Also decided: Joe writes `tests/acceptance/guards/test_layers.py` before `run`; it joins the mission file's `[[gates]]` as `layers`, ahead of `core`.
-3. **`unit` gate:** narrow as in §6, or keep the full suite per attempt. The Nov 1 decision weakens the case for the full suite: Plexus imports nothing from the code it tests.
-4. **Mission-file diff and C1–C5:** approve as written, or edit.
-5. **No maturin in `pyproject.toml` this mission** (§7).
+3. ~~**`unit` gate**~~ — **narrowed as in §6**, decided by Joe (Nov 1). The full suite runs once at mission end.
+4. ~~**Mission-file diff and C1–C6**~~ — **approved as written** by Joe (Nov 1), with `budget.attempts = 5` for the first run and the `layers` gate first. C1–C4 landed as `6a2d0bd`, `fc2d772`, `a3ce57c`, `db7ff02`; C5 is the mission-file commit; C6 (Jev routing) is `282af78`. The pyo3 build was checked first: pyo3 0.30.1 builds in 11.7 s with `CARGO_BUILD_JOBS=4` and `plexus._core` imports on Python 3.14.2.
+5. ~~**Maturin**~~ — **no maturin in `pyproject.toml` this mission**, decided by Joe (Nov 1). `core` builds with cargo and a copy.
+
+**Go: Joe, Nov 1.** The `layers` guard is an interim file at `harness/plexus_loop/guards/test_layers.py` (frozen for the worker under `harness/**`), because Joe's decision put it before M0's run and only Joe writes under `tests/acceptance/`; Joe may move it to `tests/acceptance/guards/`.
