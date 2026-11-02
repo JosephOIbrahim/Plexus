@@ -54,6 +54,24 @@ def test_warnings_are_not_errors_and_code_never_runs(tmp_path):
     assert not marker.exists()
 
 
+def test_degenerate_files_are_reported_not_raised(tmp_path):
+    # A model stuck repeating a token: the compiler raises MemoryError or RecursionError,
+    # which must cost the attempt a line of feedback, never end the run.
+    (tmp_path / "deep.py").write_text("x = " + "1+" * 30000 + "1\n", encoding="utf-8")
+    (tmp_path / "neg.py").write_text("x = " + "-" * 10000 + "1\n", encoding="utf-8")
+    (tmp_path / "attr.py").write_text("x = a" + ".b" * 30000 + "\n", encoding="utf-8")
+    out = syntax_errors(tmp_path, ["deep.py", "neg.py", "attr.py"])
+    assert [o.split(":", 1)[0] for o in out] == ["deep.py", "neg.py", "attr.py"]
+    assert all("\n" not in o and len(o) <= SYNTAX_LINE_CHARS for o in out)
+
+
+def test_syntax_only_feedback_points_at_the_files(tmp_path):
+    a = Attempt(n=1, started=0.0, houdini="off", device="gpu", reason="gate 'layers' failed",
+                syntax=["plexus/a.py:1: invalid syntax"])
+    p = build_prompt(_mission(), _repo(tmp_path), 5, None, [a], 100000)
+    assert "Fix those files first." in p and "near the top of that output" not in p
+
+
 def test_long_source_lines_are_clipped(tmp_path):
     (tmp_path / "long.py").write_text("x = (" + "1 + " * 200 + "\n", encoding="utf-8")
     (out,) = syntax_errors(tmp_path, ["long.py"])

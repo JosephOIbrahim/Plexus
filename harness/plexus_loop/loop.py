@@ -74,10 +74,17 @@ def syntax_errors(root: Path, paths: list[str]) -> list[str]:
             where = f"{rel}:{e.lineno}" if e.lineno else rel
             src_line = (e.text or "").strip()
             line = f"{where}: {e.msg}" + (f": {src_line}" if src_line else "")
-            out.append(line[:SYNTAX_LINE_CHARS])
-        except (ValueError, OSError) as e:  # null bytes, unreadable file
-            out.append(f"{rel}: {e}"[:SYNTAX_LINE_CHARS])
+            out.append(_one_line(line))
+        except Exception as e:  # noqa: BLE001 - a diagnostic must never end the run
+            # ValueError (null bytes), OSError (unreadable), and MemoryError or RecursionError
+            # from the compiler on a degenerate file, such as a token repeated thousands of times.
+            out.append(_one_line(f"{rel}: {type(e).__name__}: {e}"))
     return out
+
+
+def _one_line(text: str) -> str:
+    """Clip to SYNTAX_LINE_CHARS and keep it on one line, so a bullet can never start a fence."""
+    return text.replace("\r", " ").replace("\n", " ")[:SYNTAX_LINE_CHARS]
 
 
 class RefuseToStart(RuntimeError):
@@ -210,7 +217,9 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             detail = dropped.detail[-FEEDBACK_CHARS:]
             fence = "`" * max(3, _longest_backtick_run(detail) + 1)
             lines += ["This is what it printed:", fence, detail.rstrip("\n"), fence]
-        lines.append("Fix the cause first. It is usually one rule or one error near the top of that output.")
+            lines.append("Fix the cause first. It is usually one rule or one error near the top of that output.")
+        else:
+            lines.append("Fix those files first.")
     lines += [
         "",
         "## Where it stands",
