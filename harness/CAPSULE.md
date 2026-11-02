@@ -14,7 +14,11 @@
 
 **What run 6 gets** (on `mission/acceptance`, Joe Nov 2): `b6c5aad` + `6a7db72` + `2d3d424` (each step lists its files; every prompt names the absent ones; reviewer: keep), `4406e71` (brief: `Usd.Notice.ObjectsChanged`), `2db613a` + `5e935fd` (feedback leads with the step's own target-test failures from the junit report, and a teardown error never hides a test's own failure; reviewer: keep). Also `c7f1aad`, `2b20bc5` (Plexus logo in both readmes) and `d0f8d42` (demos removed, pushed).
 
-**Next action:** commit this capsule → fast-forward `plexus-loop/acceptance` from `92d3892` to the tip → push both branches → run 6, five Jev-routed attempts (Joe, Nov 2). After run 6: read the target failures in the ledger, add any missing fact to the brief.
+**Done (13:10):** full Comfy-Cozy suite 5,256 passed, 2 skipped; `plexus-loop/acceptance` fast-forwarded from `92d3892` to `e50049b`; both branches pushed. **Run 6** (five Jev-routed attempts from `e50049b`, baseline 10) started 13:11 and should end near 14:30.
+
+**Run 6** (13:09 to 14:29, kept 0 of 5, mean 15.6 min): attempt 1 sent all five S2 files and passed every gate, then T1 failed on a missing `Usd` import; attempts 2 and 3 sent only one and three files (the worker treats each attempt as an edit to its last); attempt 4 sent all five again, fixed the import, and failed on `layer.subLayerPaths = <proxy>` (brief fix `0e42c42`, checked on 26.5). Attempt 5 sent three files and failed on the missing `stagekit` again. Run 7 (Joe, Nov 2) starts from the tip with the hand-on in place. Joe approved (Nov 2) `71ab408` + `e75f3cc`: a gate-passing drop hands its files to the next prompt to resend in full, each shown once; reviewer: keep. Logo PR #2 (`docs/plexus-logo` into `main`, logo only) is open for Joe to merge. After run 6: fast-forward `plexus-loop/acceptance` to the reviewed tip, push both branches, run 7 with five Jev-routed attempts. Parked: a pyflakes undefined-name check on changed files.
+
+**Next action (done up to run 6):** commit this capsule → fast-forward `plexus-loop/acceptance` from `92d3892` to the tip → push both branches → run 6, five Jev-routed attempts (Joe, Nov 2). After run 6: read the target failures in the ledger, add any missing fact to the brief.
 
 **Blockers:** none hard. S2 now fails one USD call at a time, and the brief supplies each call as it surfaces.
 
