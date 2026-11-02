@@ -286,6 +286,21 @@ def test_gates_see_the_cpu_environment(repo):
     assert report.attempts[0].kept
 
 
+def test_gates_share_one_cargo_target_under_the_main_repo(repo):
+    want = str(repo.resolve() / ".plexus_loop" / "cargo-target")
+    code = ("import os,sys,pathlib; t=os.environ.get('CARGO_TARGET_DIR',''); "
+            f"sys.exit(0 if pathlib.Path(t).resolve() == pathlib.Path({want!r}).resolve() else 1)")
+    report = run(repo, _mission(gates=[{"name": "cargo-env", "cmd": [PY, "-c", code]}]), Scripted(set_score(4)))
+    assert report.attempts[0].kept
+
+
+def test_build_core_passes_with_no_crate_yet(tmp_path):
+    from harness.plexus_loop import build_core
+
+    assert build_core.main(tmp_path) == 0
+    assert not (tmp_path / "plexus").exists()
+
+
 def test_profile_is_rechecked_each_attempt(repo):
     profiles = iter([CPU, CPU, Profile(device="gpu", houdini="absent"), CPU])
     w = Scripted(set_score(4), set_score(3))
@@ -300,6 +315,14 @@ def test_ollama_payload_goes_cpu_only_beside_houdini():
     assert body["model"] == "qwen3-coder:30b" and body["stream"] is False
     assert body["options"] == {"num_gpu": 0, "num_thread": 2}
     assert "options" not in w.payload("hi", Profile(device="gpu", houdini="absent"))
+
+
+def test_ollama_payload_sends_num_ctx_when_set():
+    w = OllamaWorker(WorkerSpec(num_ctx=40960))
+    assert w.payload("hi", CPU)["options"] == {"num_gpu": 0, "num_thread": 2, "num_ctx": 40960}
+    assert w.payload("hi", Profile(device="gpu", houdini="absent"))["options"] == {"num_ctx": 40960}
+    m = mission_from_dict(_mission(worker={"kind": "ollama", "num_ctx": 32768}))
+    assert m.worker.num_ctx == 32768
 
 
 # -- diffs, prompts, metrics, mission files -------------------------------

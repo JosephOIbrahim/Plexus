@@ -74,8 +74,13 @@ class OllamaWorker:
 
     def payload(self, prompt: str, profile: Profile) -> dict:
         body: dict = {"model": self.spec.model, "prompt": prompt, "stream": False}
-        if profile.ollama_options:
-            body["options"] = dict(profile.ollama_options)
+        options = dict(profile.ollama_options)
+        if self.spec.num_ctx > 0:
+            # Without it the server's default window can drop the front of a long prompt,
+            # which is where the mission's rules sit.
+            options["num_ctx"] = self.spec.num_ctx
+        if options:
+            body["options"] = options
         return body
 
     def attempt(self, worktree: Path, prompt: str, profile: Profile) -> WorkerResult:

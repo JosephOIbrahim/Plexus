@@ -53,6 +53,7 @@ class WorkerSpec:
     cmd: list[str] = field(default_factory=list)
     timeout_s: int = 1800
     context_chars: int = 60_000
+    num_ctx: int = 0  # Ollama context window in tokens; 0 leaves the server default (which can truncate)
 
 
 @dataclass(frozen=True)
@@ -186,6 +187,7 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
         cmd=[str(x) for x in w.get("cmd", [])],
         timeout_s=int(w.get("timeout_s", 1800)),
         context_chars=int(w.get("context_chars", 60_000)),
+        num_ctx=int(w.get("num_ctx", 0)),
     )
     if worker.kind not in ("ollama", "command"):
         raise MissionError("[worker] kind must be 'ollama' or 'command'")
