@@ -1,6 +1,20 @@
 # Worker brief — mission `acceptance`
 
-You make one change per attempt, as one unified diff. The harness keeps it only if every gate passes and at least one more test in `tests/acceptance/phase1` passes. The prompt names the one step this attempt is for; do that step only.
+You make one change per attempt. The harness keeps it only if every gate passes and at least one more test in `tests/acceptance/phase1` passes. The prompt names the one step this attempt is for; do that step only, and touch only the files that step names.
+
+## How to reply
+
+- **A new file, or a file you rewrite completely:** one fenced block per file, whose info string is `file:` plus the path, holding the whole file:
+
+  ````
+  ```file:plexus/core/axon.py
+  """The axon: turns USD change notices into coalesced events."""
+  ...the complete file...
+  ```
+  ````
+
+- **An edit to an existing file:** one unified diff in a ```` ```diff ```` block, with `a/` and `b/` path prefixes, `--- a/<path>`, `+++ b/<path>`, and hunks whose context lines start with a space.
+- Nothing else inside either kind of block: no commentary, no `?` lines, no placeholders.
 
 ## What exists already
 
