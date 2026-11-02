@@ -116,6 +116,21 @@ def test_carry_files_orders_step_files_first_skips_frozen_unreadable_and_over_bu
     assert list(out) == ["plexus/a.py", "plexus/b.py", "plexus/z.py"]
 
 
+def test_a_handed_on_tracked_file_appears_once_in_the_attempts_version(tmp_path):
+    # S3 and S7 edit lib.rs and py.rs, which the tip already tracks: the prompt must not also
+    # show the tip version under Files, or the model may echo the wrong one.
+    r = _repo(tmp_path)  # tracks plexus/keep.txt
+    m = mission_from_dict(_raw())
+    a = Attempt(n=1, started=0.0, houdini="off", device="gpu", reason="no strict gain (5 vs best 5)", detail="x")
+    p = build_prompt(m, r, 5, None, [a], 100000, step=m.steps[0],
+                     carried=(1, {"plexus/keep.txt": "EDITED\n"}))
+    assert p.count("file:plexus/keep.txt") == 1
+    assert "file:plexus/keep.txt\nEDITED" in p
+    assert "back to its last kept version" in p
+    p2 = build_prompt(m, r, 5, None, [a], 100000, step=m.steps[0])
+    assert "file:plexus/keep.txt\nk" in p2  # without a hand-on, the tip version is shown as before
+
+
 def test_prompt_ignores_a_carry_from_another_attempt(tmp_path):
     m = mission_from_dict(_raw())
     a = Attempt(n=4, started=0.0, houdini="off", device="gpu", reason="no strict gain (5 vs best 5)", detail="x")

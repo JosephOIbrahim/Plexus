@@ -324,16 +324,18 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                 lines.append("Fix the cause first. It is usually one rule or one error near the top of that output.")
         elif dropped.syntax:
             lines.append("Fix those files first.")
+    handed: dict[str, str] = {}
     if dropped is not None and carried and carried[0] == dropped.n and carried[1]:
-        files = carried[1]
+        handed = carried[1]
         lines += [
             "",
             "## Your last attempt's files",
-            f"Attempt {dropped.n} passed every gate. Its files are below; they are gone from the repo, "
-            "because every attempt starts from the last kept commit. Resend every one of them in full, "
-            "as whole-file blocks, with the fix, plus any other file the step needs.",
+            f"Attempt {dropped.n} passed every gate. Its versions of these files are below. The repo no "
+            "longer has them: every attempt starts from the last kept commit, so each is gone or back to "
+            "its last kept version. Resend every one of them in full, as whole-file blocks, with the fix, "
+            "plus any other file the step needs.",
         ]
-        for rel, text in files.items():
+        for rel, text in handed.items():
             fence = "`" * max(3, _longest_backtick_run(text) + 1)
             tail = "" if text.endswith("\n") else "\n"
             lines.append(f"\n{fence}file:{rel}\n{text}{tail}{fence}")
@@ -351,7 +353,8 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
         lines += ["", "## Latest metric output (tail)", mfence, last.tail, mfence]
 
     used = sum(len(x) for x in lines)
-    files = _context_files(mission, repo)
+    # A handed-on file is shown once, in the attempt's version above, never again at its tip version.
+    files = [f for f in _context_files(mission, repo) if f not in handed]
     if files:
         lines += ["", "## Files"]
     for rel in files:
