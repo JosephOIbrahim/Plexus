@@ -261,9 +261,23 @@ Joe asked for Jev's read on the open decisions, shown before anything is applied
 ## 9 · Decisions Joe needs before `go`
 
 1. ~~**Pull the model**~~ — done Nov 1 on Joe's word: `qwen3-coder:30b` (18 GB) is installed.
-2. ~~**Notice path**~~ — **Option A**, decided by Joe (Nov 1). Also decided: Joe writes `tests/acceptance/guards/test_layers.py` before `run`; it joins the mission file's `[[gates]]` as `layers`, ahead of `core`.
+2. ~~**Notice path**~~ — **Option A**, decided by Joe (Nov 1). Also decided: Joe writes `tests/acceptance/guards/test_layers.py` before `run`; it joins the mission file's `[[gates]]` as `layers`, ahead of `core`. (Where the guard lives was changed for this mission by Joe on Nov 2: see §10.)
 3. ~~**`unit` gate**~~ — **narrowed as in §6**, decided by Joe (Nov 1). The full suite runs once at mission end.
 4. ~~**Mission-file diff and C1–C6**~~ — **approved as written** by Joe (Nov 1), with `budget.attempts = 5` for the first run and the `layers` gate first. C1–C4 landed as `6a2d0bd`, `fc2d772`, `a3ce57c`, `db7ff02`; C5 is the mission-file commit; C6 (Jev routing) is `282af78`. The pyo3 build was checked first: pyo3 0.30.1 builds in 11.7 s with `CARGO_BUILD_JOBS=4` and `plexus._core` imports on Python 3.14.2.
 5. ~~**Maturin**~~ — **no maturin in `pyproject.toml` this mission**, decided by Joe (Nov 1). `core` builds with cargo and a copy.
 
 **Go: Joe, Nov 1.** The `layers` guard is an interim file at `harness/plexus_loop/guards/test_layers.py` (frozen for the worker under `harness/**`), because Joe's decision put it before M0's run and only Joe writes under `tests/acceptance/`; Joe may move it to `tests/acceptance/guards/`.
+
+---
+
+## 10 · Decisions made during the mission
+
+**The `layers` guard stays in the harness for this mission (Joe, Nov 2).** The guard stays at `harness/plexus_loop/guards/test_layers.py`, and the `layers` gate keeps pointing there (`python -m pytest -q harness/plexus_loop/guards`) until mission `acceptance` ends.
+
+*Why.* The guard is already locked against the worker, because the mission freezes `harness/**`. What the move to `tests/acceptance/guards/` would add is Joe's ownership of the rule set. Joe's copy into that folder did not reach `E:\Plexus` on the tries made on Nov 2, and runs 4 and 5 should not wait on it, so the move happens after the mission.
+
+*What stays ready.* The copy-in version is `docs/plexus/drafts/test_layers.py`: the same rules and code, plus `test_guard_sees_the_repo`, with a docstring written for its frozen home. It is kept until the move.
+
+*What it costs, and the rule that covers it.* Until the move, Claude can still edit the rules that steer every attempt. So any change to the guard during this mission is its own commit, shown to Joe before the next run, as the `3ac9c54` cycle fix was. Claude does not change the guard while a run is going.
+
+*After the mission.* Joe copies the draft into `tests/acceptance/guards/` (with an empty `__init__.py`) and commits it from his own terminal. Claude then repoints the `layers` gate to `tests/acceptance/guards`, deletes the harness copy and the draft, and updates this section.
