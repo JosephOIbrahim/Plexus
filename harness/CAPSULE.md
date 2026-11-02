@@ -20,7 +20,9 @@
 
 **Run 7** (14:30 to 16:08, from `33e5d13`, kept 0 of 5, mean 19.3 min): every attempt sent all five S2 files and passed every gate; the hand-on worked (attempts 2-4 resent all five) but none changed the failing line: `FindOrOpen` returns `None` for a missing file in `stagekit.create_project` (brief fix `6e8ea0d`, checked on 26.5, reaches run 8). Prompts with handed-on files take about 20 min an attempt. Attempt 5 failed on the same line.
 
-**Next action:** when run 7 stops: check and apply the fewer-approvals proposal (Joe approved: standing-authority block in CLAUDE.md, allowlist in .claude/settings.json, guard_bash fix with tests; own commit, reviewer) → commit this capsule → fast-forward `plexus-loop/acceptance` to the tip → push both branches → run 8 (five Jev-routed attempts), then autopilot within the new rules. Joe: merge PR #2 (logo onto `main`) when ready. Joe approved (Nov 2) the known-fix table: `ab518be` quotes the matching brief line under a recognised target failure (seven fixes in acceptance.toml), with `d97f9e9` adding the brief's Imports bullet; with the reviewer.
+**Run 8** (16:20 to 18:01, from `450de9b`, kept 0 of 5, mean 20.3 min): every attempt sent all five S2 files and passed every gate, and each got further into T1: past `FindOrOpen`; `Path` instead of `str` (fixed by the worker itself next attempt); `Tf.Event`; `Tf.Token`; the notice callback's signature, at project A's first write. Brief + known-fix commits `ceaf04f`, `6977ab0`, `3ffc3cb`, `5ebbf23` reach run 9.
+
+**Next action:** run 9 (five Jev-routed attempts from the tip, Joe: 'run the next runs on autopilot'). The fewer-approvals proposal waits on Joe: 'do 1' (prose only: standing authority + autopilot), 'do 1 and 2' (plus a tested hook/settings rewrite), or 'apply all as proposed'; its hook code was never run, so it was not applied. Joe: merge PR #2 (logo onto `main`).
 
 **Blockers:** none hard. S2 now fails one USD call at a time, and the brief supplies each call as it surfaces.
 
