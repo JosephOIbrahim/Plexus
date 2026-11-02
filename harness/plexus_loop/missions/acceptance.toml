@@ -180,3 +180,8 @@ anchor = "Threads, events, locks and queues come from Python's"
 match = '_on_notice\(\) takes \d+ positional arguments? but \d+ (were|was) given'
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "The callback receives two arguments, the notice and the sender"
+
+[[known_fixes]]
+match = '''partially initialized module 'plexus\.(core|membrane)'|cannot import name '\w+' from 'plexus\.(core|membrane)\''''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "Package `__init__.py` files hold a docstring only"
