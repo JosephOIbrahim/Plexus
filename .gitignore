@@ -74,3 +74,8 @@ node_pack/*/web/**/*.gz
 
 # plexus-loop harness state (lock, worktrees, reviews)
 .plexus_loop/
+
+# Rust build output (plexus._core is built into the worktree by the core gate)
+target/
+plexus/_core*.pyd
+plexus/_core*.so
