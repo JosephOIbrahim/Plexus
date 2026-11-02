@@ -228,13 +228,17 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             step.text,
             "",
         ]
-        if step.files:
-            lines += [f"Files this step writes: {', '.join(step.files)}. "
-                      "Send each new or rewritten file as a whole-file block; every .rs file always is one.", ""]
-        lines.append("Do this step only. Later steps get their own attempts.")
     # Measured in this attempt's fresh worktree at the branch tip, for the step it is on: a
     # dropped attempt's files are gone, so whatever it sent must be sent again.
     absent = missing_files(repo, step.files) if step is not None else []
+    if step is not None:
+        if step.files:
+            lines += [f"Files this step writes: {', '.join(step.files)}. "
+                      "Send each new or rewritten file as a whole-file block; every .rs file always is one."]
+            if absent:
+                lines.append(f"Not in the repo yet, so your reply must include each in full: {', '.join(absent)}.")
+            lines.append("")
+        lines.append("Do this step only. Later steps get their own attempts.")
     dropped = recent[-1] if recent and not recent[-1].kept else None
     if dropped is not None and (dropped.detail or dropped.syntax or absent):
         lines += [
