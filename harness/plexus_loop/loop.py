@@ -82,6 +82,23 @@ def syntax_errors(root: Path, paths: list[str]) -> list[str]:
     return out
 
 
+def missing_files(root: Path, files: list[str]) -> list[str]:
+    """The step's files that are not in the worktree, in the step's order.
+
+    A file a kept commit already holds counts as present: every attempt starts from that
+    commit. This only looks for files; it never reads them.
+    """
+    out: list[str] = []
+    for rel in files:
+        try:
+            present = (root / rel).is_file()
+        except (OSError, ValueError):
+            present = False
+        if not present:
+            out.append(rel)
+    return out
+
+
 def _one_line(text: str) -> str:
     """Clip to SYNTAX_LINE_CHARS and keep it on one line, so a bullet can never start a fence."""
     return text.replace("\r", " ").replace("\n", " ")[:SYNTAX_LINE_CHARS]
@@ -107,6 +124,7 @@ class Attempt:
     reply_file: str = ""  # the raw model reply, under .plexus_loop/<mission>/replies/
     detail: str = ""  # output of the failing gate or metric, shown to the next attempt
     syntax: list[str] = field(default_factory=list)  # changed .py files that don't compile, one line each
+    missing: list[str] = field(default_factory=list)  # the step's files absent from the worktree after a drop
     # Where the time went, in seconds of real (monotonic) time, to a tenth. None means not
     # measured: that step never ran, or the row predates timing. Never read a missing value as 0.
     # wall_s minus the parts is the harness's own work: worktree setup and teardown, building
@@ -207,16 +225,23 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             "",
             step.text,
             "",
-            "Do this step only. Later steps get their own attempts.",
         ]
+        if step.files:
+            lines += [f"Files this step writes: {', '.join(step.files)}. "
+                      "Send every one of them that does not exist yet as a whole-file block.", ""]
+        lines.append("Do this step only. Later steps get their own attempts.")
     dropped = recent[-1] if recent and not recent[-1].kept else None
-    if dropped is not None and (dropped.detail or dropped.syntax):
+    if dropped is not None and (dropped.detail or dropped.syntax or dropped.missing):
         lines += [
             "",
             "## Why the last attempt was dropped",
             f"Attempt {dropped.n}" + (f" (step {dropped.route})" if dropped.route else "")
             + f" was dropped: {dropped.reason}.",
         ]
+        if dropped.missing:
+            lines += ["Its step needs these files, and the reply did not include them, so they do not exist. "
+                      "Send each one in full as a whole-file block:"]
+            lines += [f"- {p}" for p in dropped.missing]
         if dropped.syntax:
             shown = dropped.syntax[:SYNTAX_MAX]
             lines += ["Python could not compile these files. Fix them first; every .py file must compile:"]
@@ -460,6 +485,8 @@ class MissionRun:
                         a.kept, a.commit, a.reason = True, new, "strict gain"
                     if not a.kept:
                         a.syntax = syntax_errors(wt, a.changed)
+                if not a.kept and route.step is not None:
+                    a.missing = missing_files(wt, route.step.files)
             except gitops.GitError as e:
                 a.reason = f"git: {e}"
             except (OSError, UnicodeError) as e:

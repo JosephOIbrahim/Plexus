@@ -76,6 +76,9 @@ class Step:
     id: str
     targets: list[str]  # pytest ids or prefixes, e.g. "tests/acceptance/phase1/test_t0_schema_gate.py"
     text: str
+    # Repo-relative files the step writes. The prompt lists them, and a dropped attempt after
+    # which any of them is absent from the worktree has that named first in the next prompt.
+    files: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -209,7 +212,13 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
         targets = [str(x) for x in _req(s, "targets", f"[[steps]] {sid}")]
         if not targets:
             raise MissionError(f"[[steps]] {sid}: targets must name at least one test")
-        steps.append(Step(id=sid, targets=targets, text=str(_req(s, "text", f"[[steps]] {sid}"))))
+        files = [_norm(str(x)) for x in s.get("files", [])]
+        if any(not f or f.startswith("/") or ":" in f or ".." in f.split("/") for f in files):
+            raise MissionError(f"[[steps]] {sid}: files must be repo-relative paths")
+        if len(set(files)) != len(files):
+            raise MissionError(f"[[steps]] {sid}: files must not repeat")
+        steps.append(Step(id=sid, targets=targets, text=str(_req(s, "text", f"[[steps]] {sid}")),
+                          files=files))
     if len({s.id for s in steps}) != len(steps):
         raise MissionError("[[steps]] ids must be unique")
 
@@ -230,11 +239,16 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
     focus = [str(x) for x in _req(m, "focus", "[mission]")]
     if not focus:
         raise MissionError("[mission] focus must name at least one path")
+    frozen = [str(x) for x in m.get("frozen", [])]
+    for s in steps:
+        for f in s.files:
+            if not _matches(f, focus) or _matches(f, frozen):
+                raise MissionError(f"[[steps]] {s.id}: {f} is outside focus or frozen, so the worker could never write it")
     return Mission(
         name=name,
         goal=str(_req(m, "goal", "[mission]")),
         focus=focus,
-        frozen=[str(x) for x in m.get("frozen", [])],
+        frozen=frozen,
         gates=gates,
         metric=metric,
         worker=worker,
