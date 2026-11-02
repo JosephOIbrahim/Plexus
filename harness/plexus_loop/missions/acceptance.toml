@@ -185,3 +185,8 @@ anchor = "The callback receives two arguments, the notice and the sender"
 match = '''partially initialized module 'plexus\.(core|membrane)'|cannot import name '\w+' from 'plexus\.(core|membrane)\''''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "Package `__init__.py` files hold a docstring only"
+
+[[known_fixes]]
+match = '''_on_notice[\s\S]*object has no attribute '_\w*(lock|Lock)''''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "So it takes no lock"
