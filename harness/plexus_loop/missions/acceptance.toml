@@ -165,3 +165,8 @@ anchor = "`layer.subLayerPaths` is a live list proxy"
 match = "NameError: name '(Sdf|Tf|Usd|Plug|Vt|Gf)' is not defined"
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "Import every `pxr` module a file names"
+
+[[known_fixes]]
+match = '\((Windows|Posix)?Path[,)]'
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "take a `str`, never a `pathlib.Path`"

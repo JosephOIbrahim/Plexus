@@ -191,6 +191,9 @@ Write every schema and attribute T0 lists, with its exact type and token order.
 - Author with the schema's types: `plexus:state` is Token, `plexus:lastWake` is String (not a float), and `plexus:flag…` is String.
 - The budget's mute writes `plexus:state = "muted"` and a `plexus:flag…` attribute there, saved.
 
+**Paths.**
+- `Sdf.Layer.CreateNew`, `Sdf.Layer.FindOrOpen`, `Usd.Stage.Open` and `Sdf.Reference` take a `str`, never a `pathlib.Path`: pass `str(path)`. A `Path` fails with `Boost.Python.ArgumentError: ... Layer.CreateNew(WindowsPath)` (checked on 26.5; run 8 attempt 1).
+
 **Imports.**
 - Import every `pxr` module a file names, at the top of that file: `from pxr import Sdf, Tf, Usd` (and `Plug` where it registers). A name used but not imported fails with `NameError: name 'Usd' is not defined` at the first call (run 6 attempt 1).
 
