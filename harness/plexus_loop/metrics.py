@@ -35,6 +35,19 @@ def _tail(*texts: str) -> str:
     return "\n".join(t for t in texts if t)[-TAIL_CHARS:]
 
 
+GATE_HEAD_CHARS = 1500
+GATE_TAIL_CHARS = 2500
+
+
+def _clip(*texts: str) -> str:
+    """A gate's output with both ends kept: compilers print the first error early, and test
+    runners print their summary last."""
+    text = "\n".join(t for t in texts if t)
+    if len(text) <= GATE_HEAD_CHARS + GATE_TAIL_CHARS:
+        return text
+    return text[:GATE_HEAD_CHARS] + "\n[... middle of the output left out ...]\n" + text[-GATE_TAIL_CHARS:]
+
+
 def run_gate(gate: Gate, worktree: Path, profile: Profile) -> GateResult:
     try:
         r = subprocess.run(
@@ -44,7 +57,7 @@ def run_gate(gate: Gate, worktree: Path, profile: Profile) -> GateResult:
         return GateResult(gate.name, False, "timed out")
     except OSError as e:
         return GateResult(gate.name, False, f"could not start: {e}")
-    return GateResult(gate.name, r.returncode == 0, _tail(r.stdout, r.stderr))
+    return GateResult(gate.name, r.returncode == 0, _clip(r.stdout, r.stderr))
 
 
 def measure(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:

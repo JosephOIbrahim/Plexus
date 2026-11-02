@@ -25,7 +25,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import gitops
-from .metrics import MetricResult, measure, run_gate
+from .metrics import GATE_HEAD_CHARS, GATE_TAIL_CHARS, MetricResult, measure, run_gate
 from .mission import Mission, Step
 from .profile import Profile, choose_profile, with_env
 from .review import write_review
@@ -42,6 +42,9 @@ def default_route(mission: Mission, last: MetricResult | None, recent: list[Atte
                         [f"step {a.route or '?'}: {a.reason}" for a in recent if not a.kept])
 
 STATE_DIR = ".plexus_loop"
+# How much of a dropped attempt's output the next prompt shows. Large enough that a clipped
+# gate output (head + marker + tail) plus its "$ cmd" line is never cut again.
+FEEDBACK_CHARS = GATE_HEAD_CHARS + GATE_TAIL_CHARS + 500
 
 
 class RefuseToStart(RuntimeError):
@@ -62,6 +65,7 @@ class Attempt:
     route: str = ""  # e.g. "S2 via jev 0.81", empty when the mission has no steps
     route_note: str = ""
     reply_file: str = ""  # the raw model reply, under .plexus_loop/<mission>/replies/
+    detail: str = ""  # output of the failing gate or metric, shown to the next attempt
 
 
 @dataclass
@@ -154,6 +158,20 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             "",
             "Do this step only. Later steps get their own attempts.",
         ]
+    dropped = recent[-1] if recent and not recent[-1].kept else None
+    if dropped is not None and dropped.detail:
+        detail = dropped.detail[-FEEDBACK_CHARS:]
+        fence = "`" * max(3, _longest_backtick_run(detail) + 1)
+        lines += [
+            "",
+            "## Why the last attempt was dropped",
+            f"Attempt {dropped.n}" + (f" (step {dropped.route})" if dropped.route else "")
+            + f" was dropped: {dropped.reason}. This is what it printed:",
+            fence,
+            detail.rstrip("\n"),
+            fence,
+            "Fix the cause first. It is usually one rule or one error near the top of that output.",
+        ]
     lines += [
         "",
         "## Where it stands",
@@ -164,7 +182,8 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
         lines += ["", "## Recent attempts that were not kept"]
         lines += [f"- attempt {a.n}: {a.reason}" for a in recent[-3:] if not a.kept]
     if last and last.tail:
-        lines += ["", "## Latest metric output (tail)", "```", last.tail, "```"]
+        mfence = "`" * max(3, _longest_backtick_run(last.tail) + 1)
+        lines += ["", "## Latest metric output (tail)", mfence, last.tail, mfence]
 
     used = sum(len(x) for x in lines)
     files = _context_files(mission, repo)
@@ -238,15 +257,16 @@ class MissionRun:
             raise RefuseToStart("the mission names no gates, so nothing would guard a kept change")
 
     # -- one evaluation in a worktree -------------------------------------
-    def _evaluate(self, wt: Path, profile: Profile) -> tuple[str | None, MetricResult | None]:
+    def _evaluate(self, wt: Path, profile: Profile) -> tuple[str | None, MetricResult | None, str]:
+        """Run the gates, then the metric. Returns (why it failed or None, metric, output to show)."""
         for g in self.mission.gates:
             res = run_gate(g, wt, profile)
             if not res.passed:
-                return f"gate '{g.name}' failed", None
+                return f"gate '{g.name}' failed", None, f"$ {' '.join(g.cmd)}\n{res.tail}"
         m = measure(self.mission.metric, wt, profile)
         if m.value is None:
-            return f"metric unavailable: {m.error}", m
-        return None, m
+            return f"metric unavailable: {m.error}", m, m.tail
+        return None, m, m.tail
 
     def _save_reply(self, run_started: float, n: int, reply: str) -> str:
         """Keep the worker's raw reply, so a dropped attempt can be read afterwards."""
@@ -278,7 +298,7 @@ class MissionRun:
         wt = wt_root / "baseline"
         gitops.add_worktree(self.repo, wt, tip)
         try:
-            why, last = self._evaluate(wt, profile)
+            why, last, _ = self._evaluate(wt, profile)
         finally:
             gitops.remove_worktree(self.repo, wt)
         if why:
@@ -338,15 +358,17 @@ class MissionRun:
                 elif bad := [p for p in a.changed if not mi.in_focus(p)]:
                     a.reason = f"touched {bad[0]}, outside focus"
                 else:
-                    why, m = self._evaluate(wt, profile)
+                    why, m, detail = self._evaluate(wt, profile)
                     if m is not None:
                         a.metric = m.value
                     if why:
-                        a.reason = why
+                        a.reason, a.detail = why, detail
                     elif best_total is not None and m.total is not None and m.total < best_total:
                         a.reason = f"tests went missing ({m.total} collected, was {best_total})"
+                        a.detail = detail
                     elif not mi.metric.improves(m.value, best):
                         a.reason = f"no strict gain ({m.value:g} vs best {best:g})"
+                        a.detail = detail
                     else:
                         msg = (f"plexus-loop({mi.name}): attempt {n}, {best:g} -> {m.value:g}\n\n"
                                f"Houdini {profile.houdini}, ran on {profile.device}.")
