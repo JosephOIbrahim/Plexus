@@ -192,7 +192,7 @@ Write every schema and attribute T0 lists, with its exact type and token order.
 - The budget's mute writes `plexus:state = "muted"` and a `plexus:flag…` attribute there, saved.
 
 **Notices.**
-- `Tf.Notice.Register(Usd.Notice.ObjectsChanged, self._on_notice, stage)` returns a listener. Keep it on `self`, or it is collected and the callback never fires (checked on 26.5). `cool()` and `stop()` call `.Revoke()` on it.
+- `Tf.Notice.Register(Usd.Notice.ObjectsChanged, self._on_notice, stage)` returns a listener. The notice type is `Usd.Notice.ObjectsChanged`, from `from pxr import Tf, Usd`; `Tf.Notice.ObjectsChanged` does not exist (run 5 attempt 4 failed T1 on it). Keep it on `self`, or it is collected and the callback never fires (checked on 26.5). `cool()` and `stop()` call `.Revoke()` on it.
 - The callback runs synchronously on whichever thread authored: the test's main thread, or your own action thread mid-write. So it takes no lock. All it does is copy `n.GetChangedInfoOnlyPaths()` and `n.GetResyncedPaths()` into `frozenset`s of `Sdf.Path` (which is hashable), bump a pending counter, and enqueue. The notice is only valid during the callback.
 - Count pending at enqueue, not at dispatch. `settle()` and T6 call `wait_idle` right after an authoring call returns, before the dispatcher has woken.
 - The dispatcher blocks on `queue.get(timeout=...)` and closes the window 50 ms after the first event. That design measured T1 p95 = 52 ms against the 250 ms budget. Don't poll with long sleeps.
