@@ -173,7 +173,7 @@ class "PlexusProjectAPI" (
 
 Write every schema and attribute T0 lists, with its exact type and token order.
 
-**In-process registration.** T7 checks `GetAppliedSchemas()` in the pytest process, so one module every runtime entry point imports first (for example `plexus/membrane/exchange.py`) calls `Plug.Registry().RegisterPlugins(str(plugin_dir()))` once at import. Checked on 26.5: registering after a stage is open still works, but registering after the process's first schema lookup (`GetAppliedSchemas`, `HasAPI`, `ApplyAPI`) does not, and every later lookup then reports no Plexus schemas.
+**In-process registration.** T7 checks `GetAppliedSchemas()` in the pytest process, so one module every runtime entry point imports first (for example `plexus/membrane/exchange.py`) calls `Plug.Registry().RegisterPlugins(str(plugin_dir()))` once at import, with `from pxr import Plug` (`Plug` is its own `pxr` module; `Usd.Plug` does not exist, and run 4 attempt 5 failed every test on it). Checked on 26.5: registering after a stage is open still works, but registering after the process's first schema lookup (`GetAppliedSchemas`, `HasAPI`, `ApplyAPI`) does not, and every later lookup then reports no Plexus schemas.
 
 **Membrane and stage.**
 - `register_participant` appends `from_<id>.usda` at the end of `exchange.usda`'s subLayers (weakest), idempotently, and saves both files. Open every layer with `Sdf.Layer.FindOrOpen(p)`, and call `Sdf.Layer.CreateNew(p)` only when the file does not exist. On 26.5, `CreateNew` on an existing path raises if the layer is open in this process, and silently empties the file if it is not.
