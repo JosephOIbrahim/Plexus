@@ -12,19 +12,19 @@ GitHub draws these directly. In other viewers, paste a block into [mermaid.live]
 | 2 | [Layers](#2--layers) | What sits on what, and in which language? |
 | 3 | [The slice](#3--the-slice-phase-1) | What does Phase 1 prove? |
 | 4 | [Wake pipeline](#4--wake-pipeline) | What happens when the stage changes? |
-| 5 | [Notice path (proposed)](#5--notice-path-proposed-not-decided) | Where does Python stop and Rust start? |
+| 5 | [Notice path](#5--notice-path-rust-and-python) | Where does Python stop and Rust start? |
 | 6 | [Build harness](#6--build-harness) | How does Plexus get built? |
 
 ---
 
 ## 1 · Roadmap: you are here
 
-**Phase 0 is partly done** (the seed, the frozen tests and the harness exist; the contracts and the Cargo workspace don't yet). **Phase 1 is next.**
+**Phase 0 is partly done** (the seed, the frozen tests, the harness and the `plexus/` + `crates/` scaffold exist; the four contracts don't yet). **Phase 1 is in progress:** T0 passes, T1 to T6 don't yet.
 
 ```mermaid
 flowchart LR
     P0["Phase 0<br/>Seed + contracts<br/>(partly done)"]:::partial
-    P1["Phase 1<br/>The slice<br/>tests T0 to T6<br/>(next)"]:::next
+    P1["Phase 1<br/>The slice<br/>tests T0 to T6<br/>(in progress · T0 passes)"]:::next
     P2["Phase 2<br/>Projection +<br/>ComfyUI organ<br/>tests T7, T8"]
     P3["Phase 3<br/>Safety"]
     P4["Phase 4<br/>Triage +<br/>foresight"]
@@ -117,9 +117,9 @@ flowchart TD
 
 ---
 
-## 5 · Notice path (proposed, not decided)
+## 5 · Notice path: Rust and Python
 
-**This is Option A from the `acceptance` mission plan, waiting on Joe.** Python keeps the threads and everything that touches `pxr`. Rust (`plexus._core`) keeps the pure logic: compiling and evaluating predicates, and counting budgets. Only plain data crosses between them.
+**Option A, decided by Joe on Nov 1. Option B (all Python for Phase 1) was the alternative.** Python keeps the threads and everything that touches `pxr`. Rust (`plexus._core`) keeps the pure logic: compiling and evaluating predicates, and counting budgets. Only plain data crosses between them.
 
 ```mermaid
 sequenceDiagram

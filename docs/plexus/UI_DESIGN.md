@@ -1,5 +1,7 @@
 # Plexus · Interface design
 
+**The idea:** the interface is a reading of the stage. Every mark, word and verb shows state the runtime has confirmed, in one grammar (five marks, fixed-order receipts), and anything not yet known is drawn as Unknown, never as a pass.
+
 Status: **draft for Joe.** Nothing here is built. Decided Nov 1 from a read-only study of the SYNAPSE panel, three Jev passes and Joe's seven calls, then checked by two independent reviewers.
 
 **What this document does:** it sets the design elements of the Plexus interface. The SYNAPSE Python panel (`C:\Users\User\SYNAPSE\python\synapse`) was studied as a design reference only. **Nothing from it is copied or imported**: no code, widget or class names, stylesheet text, assets or layout. Each borrowed idea is restated in Plexus's own terms, with the reason it fits.
@@ -14,7 +16,7 @@ These six come out of the study and the Jev pass together. Each one is a rule a 
 
 1. **Every claim on screen reads real state.** "Stopping", "Parked", "Not on stage", "Reverted" and "Unknown" each read an opinion that is actually on the stage or the session layer. A card settles only when the runtime confirms. The reference panel's worst failures were surfaces that sat apart from what enforced them: approval cards drawn but never reached, a "revert" that was really a global undo.
 2. **Unknown is its own mark, and never a default pass.** Verified, Broken, Unknown, idle and working each get a distinct mark. Green is unreachable from a no-data state. This is the visual half of the `Outcome` lesson in the scaffold plan (§3.2 #5).
-3. **Waiting for Joe is parked, never blocking.** A proposal that needs Joe becomes a parked card; the neuron sleeps; Approve or Discard is an opinion written to the session layer, and the neuron's predicate wakes on it. Nothing times out on its own.
+3. **Waiting for Joe is parked, never blocking.** A proposal that needs Joe becomes a parked card; the neuron sleeps; either verb (named for the act, or Discard) is an opinion written to the session layer, and the neuron's predicate wakes on it. Nothing times out on its own.
 4. **Words and weight carry hierarchy; colour is budgeted.** Two accents at most (actions; live agent presence), a muted verdict trio inside content, and organ outputs (images, video) as the only colour on their surface. A test counts hues.
 5. **Mono for anything compared character by character, sans for prose, three sizes.** Prim paths, sublayer names, intent hashes, organ ids and predicate text are mono. Quiet comes from caps and tracking, never a fourth grey.
 6. **A halt is a request until confirmed.** Stop moves to a visible Stopping state that names what is still running; each organ job resolves to cancelled-confirmed or Unknown before the state settles, and a restart never resumes work by itself.
@@ -29,7 +31,7 @@ Jev routed each element to the surface it belongs on. Five elements are system-w
 |---|---|---|
 | **Graph canvas** | Nodes, ports, edges; the graph a user builds and runs | A thin progress rule plus a heartbeat dot on each running node (the dot also carries the three stop states) |
 | **Inspector** | The selected node, layer or neuron: parameters, provenance, which opinion wins | The five-mark status display (Verified, Broken, Unknown, idle, working) with reasons inline, result receipts, the opinion stack, stage-state visualisation |
-| **Activity rail** | Neuron wakes, parked proposals, running organ jobs, budgets, the provenance log | Stop / Stopping, approvals, denials, turn limits, undo, admission, long-job counts, liveness, the provenance log |
+| **Activity rail** | Neuron wakes, parked proposals, running organ jobs, budgets, the provenance log | Stop / Stopping, approvals, denials, turn limits, undo, admission, long-job counts, liveness, the provenance log, session persistence (close = detach) |
 | **Status bar** | One line of global state: connection, composer, CPU/GPU, unknowns | Connection loss and reconnect, the one-sentence status and a refused send (both confirmed by Joe) |
 | **CLI** and **MCP** | Runs and reports without a UI; other agents driving Plexus | Nothing in this pass routed here first; both read the same state model |
 
@@ -41,7 +43,36 @@ Jev routed each element to the surface it belongs on. Five elements are system-w
 
 Each element gives: the decision; why it fits Plexus; the reference idea it came from, as a description with the SYNAPSE file it was observed in (nothing copied); what Plexus does not take; and Jev's numbers.
 
-**How to read Jev's numbers.** `p` is the probability Jev gave the chosen option. Confidence is how concentrated its probabilities were. Copy risk is Jev's probability that the option closest to the reference would amount to copying it. Rules sit on top, in code. A pick with copy risk ≥ 0.6 moves on; **for anything visual the threshold is 0.5** (Joe, Nov 1), and every option of a visual element was measured on its own (pass 2 for four elements, pass 3 for the other ten); the higher of the pass 1 reading (which applies only to the closest option) and the per-option reading counts. Pass 3 was a copy check on each existing pick: runner-ups it scored well are listed in §5, not adopted. Where options compose rather than compete, each option was judged on its own ("pass 2") and every option with adopt ≥ 0.5 and copy risk under the threshold is included. **Visual** means the twelve elements from the study's visual lens, plus the status sentence and the approval-card layout, which decide how something is drawn. Decisions marked **Joe** override Jev.
+**How to read Jev's numbers.** `p` is the probability Jev gave the chosen option. Confidence is how concentrated its probabilities were. Copy risk is Jev's probability that the option closest to the reference would amount to copying it. A pick with copy risk ≥ 0.6 moves on; **for anything visual the threshold is 0.5** (Joe, Nov 1). The full policy (which reading counts, passes 2 and 3, composable options) is in the appendix. **Visual** means the twelve elements from the study's visual lens, plus the status sentence and the approval-card layout, which decide how something is drawn. Decisions marked **Joe** override Jev.
+
+### At a glance
+
+| Element | Surface | Decision |
+|---|---|---|
+| Keyboard and focus | all | Node-editor conventions + a global Stop key; hints read from the binding |
+| Neutral ramp | all | Seed `#2D2D2D` (Joe); three text greys; quiet comes from form |
+| Type | all | Three sizes; mono for identifiers, sans for prose |
+| Colour roles | all | Two accents + muted verdict trio; hue-count test |
+| Spacing | all | Named roles, 4-px grid, gap steps down per nesting level (Joe) |
+| Progress and liveness | canvas | Top-edge progress rule + heartbeat dot (Joe) |
+| Status marks | inspector | Five marks, reason inline (Joe: placement) |
+| Result receipt | inspector | One-line receipt on the node, full rows in the inspector |
+| Opinion stack | inspector | Per-attribute stack read from USD, winner marked |
+| Stage state | inspector | Layer-stack step list per prim |
+| Stop | rail | Single-stage; named Stopping state; per-job list (Joe) |
+| Liveness and retry | rail | Idle / busy / stalled from heartbeats; intent-hash retry breaker |
+| Turn revert | rail | Revert mutes the turn's delta layer |
+| Approval tray | rail | Parked-proposals inbox + stage diff and cost |
+| Turn limit | rail | Three-part closing sentence |
+| Denial | rail | Becomes a parked proposal or a do-it-yourself verb |
+| Admission | rail | Per-organ / per-budget refusal in a sentence |
+| Session | rail | Session layer per project; close = detach |
+| Long-job progress | rail | Counted line (n of m), no graphic |
+| Transcript | rail | Provenance log, one row per opinion |
+| Gate card | rail | Predicate + intent hash, stage diff, budget, act-named verbs, no countdown |
+| Refused send | status bar | Refuse, keep the draft, one sentence (Joe: placement) |
+| Status sentence | status bar | One sentence per project, fixed precedence (Joe: placement) |
+| Connection | status bar | Lasting per-organ state with last error and next retry |
 
 ### System-wide (applies to every surface)
 
@@ -70,8 +101,6 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
   | fg-off (inactive) | `#808080` | ≈ 3:1, inactive controls only | 3.01 / 3.49 / 3.98 |
 
   Each foreground is the lowest grey that meets its target on `bg-2`, except `fg-3`, nudged one level from `#A0A0A0`, a value the reference names for the same role. `bg-rule` is 1.24:1 on `bg-2`, so a card that needs a real edge (the approval card) sits on `bg-1`, where its edge reads 1.44:1. The role names are working names; the final names are Joe's.
-
-  Three readable rungs (fg-1, fg-2, fg-3). Anything quieter comes from caps, tracking or the mono face, never a fourth grey. A light theme is the same solve with the direction flipped.
 - **Why it fits Plexus:** Plexus has no host theme to sit inside, so it can pick one seed grey on purpose and derive everything else from it: elevation steps for surfaces and contrast-solved greys for text. A light theme then comes free. Plan from the start for at most three readable text rungs. Below those, quiet comes from form (caps, tracking, the mono face), not a fourth grey.
 - **Reference idea (SYNAPSE, ideas only):** All surface greys are fixed offsets from one seed grey: ground below, panel at the seed, raised and border steps above. The text greys are not a fixed table. Each role (body, secondary, caption, bright, disabled) is solved to hit a target contrast against the worst surface it can sit on. The light-on-dark or dark-on-light direction is whichever gives more contrast, so a light theme flips the ramp on its own. Disabled is deliberately left below the contrast floor, because it only ever paints inactive controls. — `python/synapse/panel/designsystem/tokens.py:159-202, 212-233, 239-249`. Did it work: Mixed. The contrast floor holds at every seed grey, and the comments say a seeded-contrast sweep gates it. The cost is that the quiet end collapsed: caption and secondary text ended up about two levels apart out of 255, which reads as one grey. The note on that says value can no longer carry the quiet rung, so form has to (tokens.py:153-158; Claude outputs/panel-design-state-2026-09-16.md:134-140).
 - **Not taken:** Reading a host application's colour scheme, the specific hex values, the token names.
@@ -153,7 +182,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 
 **Stop button and the stopping state** (`stop-is-a-request`)
 
-- **Decision:** **Single-stage Stop with the named Stopping state (Joe, Nov 1).** Stopping state with the in-flight jobs named, settling only on real confirmation **+** a per-job list (organ, job, cancelled / still running / unknown) that collapses to one line once settled. The two-stage Stop-then-Halt control is dropped.
+- **Decision:** **Single-stage Stop (Joe, Nov 1):** a named Stopping state that lists the in-flight jobs and settles only on real confirmation, **plus** a per-job list (organ, job, cancelled / still running / unknown) that collapses to one line once settled. The two-stage Stop-then-Halt control is dropped.
 - **Why it fits Plexus:** This is the surface for the §3.2 note that a halt is a request. Stop moves the turn into a visible Stopping state that names which organ jobs are still running. Each job then resolves to cancelled-confirmed or Unknown, and only then does the state settle. The record of what was stopped is written to the stage or session layer as plain data, so the next wake reads it and won't resume the work by itself.
 - **Reference idea (SYNAPSE, ideas only):** Pressing Stop does not claim idle. The panel stays busy, disables Stop so it can't be pressed twice, changes the status sentence to 'Stopping…', and puts the name of the tool it is waiting on in the sentence's tooltip. It goes back to rest only when the worker actually exits. Tool calls queued in that round after Stop are returned to the model as errors ('cancelled before execution') and are not run. When the turn ends stopped or broken, a settled note goes into the history: the task was stopped, ending it undoes nothing, an operation without a confirmed result may still be finishing, check unknowns before retrying, do not continue the plan unless asked. — `C:\Users\User\SYNAPSE\python\synapse\panel\synapse_panel.py:4400-4418; claude_worker.py:215-221, 252-273, 546-556; synapse_panel.py:1251-1264`. Did it work: Worked. The earlier version flipped to 'Standing by' right away while Houdini was still cooking the tool; the fix is pinned by tests\test_panel_stop_honest.py:1-8. One limit is still open: cancelling the in-flight tool itself was deferred (synapse_panel.py:4402-4408).
 - **Not taken:** Cancel that waits on a cooperative flag checked only between tool rounds; in Plexus, cancel has to reach the organ job.
@@ -177,7 +206,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 **Approval card layout, verbs, countdown and settled states** (`consent-card-surface`)
 
 - **Decision:** A parked-proposals tray (an inbox) with counts in the header; the graph node of the parked neuron carries the same badge and opens the card **+** Card plus a stage diff preview (what will change) and the cost in budget units next to Approve
-- **Why it fits Plexus:** The parked proposal (§3.2 idea 1) needs a face. A card shows the neuron, the intent, the prims or organ it touches, the budget it will spend, and the level as a phrase. Approve and Reject write an opinion into the session layer. The card settles only when that opinion is confirmed on the stage. If the write fails, the card says Not on stage and stays live. The settled record lives in provenance, not the card.
+- **Why it fits Plexus:** The parked proposal (§3.2 idea 1) needs a face. A card shows the neuron, the intent, the prims or organ it touches, the budget it will spend, and the level as a phrase. Either verb (named for the act, or Discard; see the gate card below) writes an opinion into the session layer. The card settles only when that opinion is confirmed on the stage. If the write fails, the card says Not on stage and stays live. The settled record lives in provenance, not the card.
 - **Reference idea (SYNAPSE, ideas only):** Approval cards appear inline in the conversation's slot. The header gives the level as a plain phrase ('Heads up' / 'Quick review' / 'Approve?' / 'Confirm'), then the operation in mono, then the agent. The body is the description, and the critical level says 'Arbitrary code execution' in words. The footer has a countdown on the left and the verbs on the right. Hierarchy comes from weight, not hue: Approve is bold because a timeout rejects, Reject is regular. The card's level accent was deliberately removed, and the only warm note left is a BLOCKED tag. Critical approval asks for a modal confirm. Review-level cards offer REVERT instead. A decision that didn't reach the gate shows NOT RECORDED and keeps the card live with its verbs. A decision that landed replaces the verbs with an APPROVED or REJECTED tag, disables the card, then hides it, and the chat line becomes the record. The work view comes forward on its own only when a card needs action. — `C:\Users\User\SYNAPSE\python\synapse\panel\gate_widget.py:26-55, 236-322, 352-374, 395-418, 656-715; synapse_panel.py:1628-1631, 1710-1727, 3049-3074; designsystem\tokens.py:864-869`. Did it work: The card design is careful, but it never ran. Every in-process path approves on its own, so no operation has ever waited on a card (artist_findings.json id TRUST-1, blocker; C:\Users\User\SYNAPSE\CLAUDE.md:64-66). A denied tool dead-ends in the chat because the card is wired to a different path (U2, blocker). The parked-state fix is already in NEXTGEN_SCAFFOLD_PLAN §3.2 idea 1; this pattern covers only the card.
 - **Not taken:** Countdown auto-reject on a blocking wait, and a card that is drawn but not wired to the path that actually enforces the gate.
 - **Jev:** pass 2 (options compose): adopt 0.70 / copy 0.35, adopt 0.74 / copy 0.37 · routed here at 0.96
@@ -197,7 +226,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Not taken:** Env-variable mode switches that widen authority, including an 'unrestricted' mode.
 - **Jev:** pass 2 (options compose): adopt 0.86 / copy 0.26, adopt 0.83 / copy 0.35, adopt 0.89 / copy 0.16 · routed here at 0.56
 
-**Concurrency: one running task, refused in a sentence** (`one-task-admission`)
+**Concurrency: admission refused in a sentence** (`one-task-admission`)
 
 - **Decision:** Per-organ and per-budget admission, refused in a sentence naming the limit
 - **Why it fits Plexus:** Plexus wants many neurons running at once, so it shouldn't copy a single global slot. What carries over is admission control in words: when a wake is refused (budget spent, organ at capacity, a conflicting wake on the same prims), the surface says which limit refused it and keeps the request. The refuse-to-start conductor lock in Plexus is the project-level version.
@@ -247,7 +276,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Not taken:** The fire-and-forget replay queue the bridge still keeps for other callers (ws_bridge.py:364-376, 414-455). Plexus should not have a second, hidden delivery path.
 - **Jev:** Jev opt0 p 0.94, confidence 0.91, copy risk of the closest option 0.21 · routed here at 0.46; **status bar confirmed by Joe**
 
-**Header status mark + sentence, and state-gated controls** (`one-status-sentence`)
+**Status sentence and state-gated controls** (`one-status-sentence`)
 
 - **Decision:** One sentence per project with a fixed precedence; neuron state as node badges in the graph
 - **Why it fits Plexus:** Plexus needs one runtime-state sentence per project or neuron, picked by an explicit precedence rule. A good order: stopping > waking/running > parked-for-Joe > settled-result > runtime connection. Each state gets a fixed colour role used for that state only, never decoration, and the controls follow from the state. Because Plexus has many neurons asleep at once, the sentence can sit at project level, with neuron-level marks in the graph (the node-editor convention: a badge on the node, the sentence in the status bar).

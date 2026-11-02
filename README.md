@@ -8,16 +8,17 @@ Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents
 
 ---
 
-## Where it stands · Nov 1, 2026
+## Where it stands · Nov 2, 2026
+
+**Phase 1: 1 of 11 frozen tests passes** (T0, the schema gate), on `plexus-loop/acceptance`. Nothing is merged.
 
 | Done | Not yet |
 |---|---|
-| Repo carries Comfy-Cozy's full history (an architecture reference only) | **Any Plexus runtime code** (`plexus/`, `crates/`) |
-| Blueprint v5.3 and Engineering Spec v2.1 | The four contracts and the Cargo workspace |
-| Phase 1 acceptance tests, written and frozen (11) | A first harness run |
-| The build harness, `harness/plexus_loop/` | |
+| Blueprint v5.3, Engineering Spec v2.1, Phase 1 tests frozen (11) | T1 to T6: propagation, predicates, budget, provenance, gate, truth |
+| Scaffold: `plexus/` package, `crates/plexus-core` Cargo workspace, PyO3 builds | The four contracts: Safety, Memory, Ledger, Composer |
+| The build harness, `harness/plexus_loop/`, and its first run (5 attempts, 1 kept) | |
 
-**Next step:** the first harness mission, `acceptance`, is planned and waiting on Joe's decisions. The plan is [`acceptance.plan.md`](https://github.com/JosephOIbrahim/Plexus/blob/mission/acceptance/harness/plexus_loop/missions/acceptance.plan.md) on the `mission/acceptance` branch.
+**Next step:** the next batch of `acceptance` attempts, run from the kept commit `4e494b3`. The reply-handling fix that blocked attempts 2 to 5 has landed (`15bc013`). Where the last session stopped: [`harness/CAPSULE.md`](harness/CAPSULE.md).
 
 ---
 
@@ -36,7 +37,7 @@ Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents
 ```mermaid
 flowchart LR
     P0["Phase 0<br/>Seed + contracts<br/>(partly done)"]:::partial
-    P1["Phase 1<br/>The slice<br/>tests T0 to T6<br/>(next)"]:::next
+    P1["Phase 1<br/>The slice<br/>tests T0 to T6<br/>(in progress · T0 passes)"]:::next
     P2["Phase 2<br/>Projection +<br/>ComfyUI organ<br/>tests T7, T8"]
     P3["Phase 3<br/>Safety"]
     P4["Phase 4<br/>Triage +<br/>foresight"]
@@ -110,7 +111,7 @@ They live in `tests/acceptance/` and are frozen: only Joe may change them.
 | T7 · Round trip *(Phase 2)* | A job goes through the ComfyUI organ and comes back only once the engine's history really has it. The stage holds the file's path and hash, never its bytes. |
 | T8 · Blindness *(Phase 2)* | No ComfyUI vocabulary appears outside the ComfyUI organ. |
 
-More pictures, including the wake pipeline and the proposed Python/Rust split: **[docs/plexus/DIAGRAMS.md](docs/plexus/DIAGRAMS.md)**.
+More pictures, including the wake pipeline and the Python/Rust split: **[docs/plexus/DIAGRAMS.md](docs/plexus/DIAGRAMS.md)**.
 
 ---
 
@@ -118,26 +119,7 @@ More pictures, including the wake pipeline and the proposed Python/Rust split: *
 
 **Claude plans and reviews. A local model makes the attempts. Joe decides what gets promoted.**
 
-```mermaid
-flowchart TD
-    BEST["Best commit so far"] --> WT["Fresh git worktree"]
-    WT --> HD{"Houdini open,<br/>or can't tell?"}
-    HD -->|yes| CPU["CPU profile<br/>no GPU layers · capped jobs"]
-    HD -->|no| GPU["GPU profile"]
-    CPU --> WK["Worker: Ollama qwen3-coder:30b<br/>replies with one diff"]
-    GPU --> WK
-    WK --> FZ{"Touched a frozen path<br/>or anything outside focus?"}
-    FZ -->|yes| DROP["Drop it, with its worktree"]
-    FZ -->|no| GT{"Every gate passes?"}
-    GT -->|no| DROP
-    GT -->|yes| MT{"Failing tests down by 1 or more,<br/>and none went missing?"}
-    MT -->|no| DROP
-    MT -->|yes| KEEP["Commit onto plexus-loop/acceptance<br/>it becomes the new best"]
-    KEEP --> STOP{"Budget used, 8 drops in a row,<br/>stop file, or every test passes?"}
-    DROP --> STOP
-    STOP -->|no| BEST
-    STOP -->|yes| REV["REVIEW.md for Joe<br/>nothing merges by itself"]
-```
+An attempt is kept only when every gate passes (`layers`, `core`, `cargo`, `unit`) and at least one more frozen test passes. Eight drops in a row, the budget, or a stop file ends the run. Nothing merges by itself. The full loop is drawn in [Diagrams §6](docs/plexus/DIAGRAMS.md#6--build-harness).
 
 ### Run it
 
@@ -173,7 +155,7 @@ python -m harness.plexus_loop stop
 |---|---|---|
 | Python | 3.11 or newer (3.14 is used today) | Host process |
 | usd-core | 26.5 exactly: `pip install usd-core==26.5 pytest` | Composer of record; matches Houdini 22's USD 0.26.5. The root `pyproject.toml` is still the comfy-cozy package until `plexus/` packaging lands. |
-| Rust + maturin | stable Rust, maturin 1.x | Once `crates/` lands, for `plexus._core` |
+| Rust | stable, with cargo | Builds `plexus._core`. The `core` gate runs cargo and copies the library into `plexus/`. This mission doesn't use maturin. |
 | Ollama | with `qwen3-coder:30b` pulled | The harness's default worker |
 
 ---
@@ -182,8 +164,8 @@ python -m harness.plexus_loop stop
 
 | Path | What it is | Who may change it |
 |---|---|---|
-| `plexus/` | New Plexus Python *(not created yet)* | The worker, through the harness |
-| `crates/` | Rust core, exposed as `plexus._core` *(not created yet)* | The worker, through the harness |
+| `plexus/` | New Plexus Python *(scaffold here; the kept schema plugin is on `plexus-loop/acceptance`)* | The worker, through the harness |
+| `crates/`, `Cargo.toml` | Rust core `crates/plexus-core`, built by the `core` gate into `plexus/_core.pyd`, imported as `plexus._core` | The worker, through the harness |
 | `tests/acceptance/` | The frozen judge, plus `CONTRACT.md`, the Python surface the tests call | Joe only |
 | `harness/plexus_loop/` | The build harness, its `program.md` and mission files | Joe, and Claude when Joe says so |
 | `docs/plexus/` | Blueprint v5.3, memory options, diagrams, the Nov 1 package | Joe |
