@@ -4,7 +4,7 @@ Status: **draft for Joe.** Nothing here is built. Decided Nov 1 from a read-only
 
 **What this document does:** it sets the design elements of the Plexus interface. The SYNAPSE Python panel (`C:\Users\User\SYNAPSE\python\synapse`) was studied as a design reference only. **Nothing from it is copied or imported**: no code, widget or class names, stylesheet text, assets or layout. Each borrowed idea is restated in Plexus's own terms, with the reason it fits.
 
-**How decisions were made:** every design element has candidate options. TypeSafe's **Jev** model chose among them and routed each element to a Plexus surface, from the study's evidence and Plexus's rules. Jev also checked each element for copy risk: whether the option closest to the reference panel would amount to copying it. Code then applied fixed policy on top: a pick with high copy risk moves on, and where options combine rather than compete, a second Jev pass judged each option on its own (see the appendix). Jev's raw probabilities are kept in `docs/plexus/ui_design_jev.json`, so any decision can be re-weighed without re-running it.
+**How decisions were made:** every design element has candidate options. TypeSafe's **Jev** model chose among them and routed each element to a Plexus surface, from the study's evidence and Plexus's rules. Jev also checked each element for copy risk: whether the option closest to the reference panel would amount to copying it. Code then applied fixed policy on top: a pick with high copy risk moves on (0.6, or 0.5 for anything visual, Joe's setting), and where options combine rather than compete, a second Jev pass judged each option on its own (see the appendix). Jev's raw probabilities are kept in `docs/plexus/ui_design_jev.json`, so any decision can be re-weighed without re-running it.
 
 ---
 
@@ -27,13 +27,13 @@ Jev routed each element to the surface it belongs on. Five elements are system-w
 
 | Surface | What lives there | Elements routed here |
 |---|---|---|
-| **Graph canvas** | Nodes, ports, edges; the graph a user builds and runs | Status marks on nodes, the per-node progress mark |
-| **Inspector** | The selected node, layer or neuron: parameters, provenance, which opinion wins | Result receipts, the opinion stack, stage-state visualisation |
-| **Activity rail** | Neuron wakes, parked proposals, running organ jobs, budgets, the turn transcript | Stop / Stopping, approvals, denials, turn limits, undo, admission, long-job progress, liveness, transcript |
-| **Status bar** | One line of global state: connection, composer, CPU/GPU, unknowns | Connection loss and reconnect, the one-sentence status, a refused send |
+| **Graph canvas** | Nodes, ports, edges; the graph a user builds and runs | A thin progress rule plus a heartbeat dot on each running node (the dot also carries the three stop states) |
+| **Inspector** | The selected node, layer or neuron: parameters, provenance, which opinion wins | The five-mark status display (Verified, Broken, Unknown, idle, working) with reasons inline, result receipts, the opinion stack, stage-state visualisation |
+| **Activity rail** | Neuron wakes, parked proposals, running organ jobs, budgets, the provenance log | Stop / Stopping, approvals, denials, turn limits, undo, admission, long-job counts, liveness, the provenance log |
+| **Status bar** | One line of global state: connection, composer, CPU/GPU, unknowns | Connection loss and reconnect, the one-sentence status and a refused send (both confirmed by Joe) |
 | **CLI** and **MCP** | Runs and reports without a UI; other agents driving Plexus | Nothing in this pass routed here first; both read the same state model |
 
-**Low routing confidence** (below 0.5): the one-sentence status (0.30), the refused send (0.46) and the Unknown mark (0.42) could sit on more than one surface. They are listed for Joe in §5.
+**Low routing confidence** (below 0.5): Joe placed the one-sentence status (Jev 0.30) and the refused send (0.46) in the status bar, and the Unknown mark in the inspector (Jev had it on the canvas at 0.42).
 
 ---
 
@@ -41,7 +41,7 @@ Jev routed each element to the surface it belongs on. Five elements are system-w
 
 Each element gives: the decision; why it fits Plexus; the reference idea it came from, as a description with the SYNAPSE file it was observed in (nothing copied); what Plexus does not take; and Jev's numbers.
 
-**How to read Jev's numbers.** `p` is the probability Jev gave the chosen option. Confidence is how concentrated its probabilities were. Copy risk is Jev's probability that the option closest to the reference would amount to copying it. Two rules sit on top, in code: a pick with copy risk ≥ 0.6 moves on; and where options compose rather than compete, each option was judged on its own ("pass 2") and every option with adopt ≥ 0.5 and copy risk < 0.6 is included.
+**How to read Jev's numbers.** `p` is the probability Jev gave the chosen option. Confidence is how concentrated its probabilities were. Copy risk is Jev's probability that the option closest to the reference would amount to copying it. Rules sit on top, in code. A pick with copy risk ≥ 0.6 moves on; **for anything visual the threshold is 0.5** (Joe, Nov 1), and every option of a visual element was measured on its own ("pass 3"), with the higher of the pass 1 and pass 3 readings counting. Where options compose rather than compete, each option was judged on its own ("pass 2") and every option with adopt ≥ 0.5 and copy risk under the threshold is included. **Visual** means the twelve elements from the study's visual lens, plus the status sentence and the approval-card layout, which decide how something is drawn. Decisions marked **Joe** override Jev.
 
 ### System-wide (applies to every surface)
 
@@ -55,11 +55,25 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 
 **Colour: surfaces and the text grey ramp** (`solved-neutral-ramp`)
 
-- **Decision:** One seed grey with elevation offsets and contrast-solved text roles; quiet below three rungs comes from form
+- **Decision:** One seed grey with elevation offsets and contrast-solved text roles; quiet below three rungs comes from form. **Seed: `#2A2A2A`, neutral (Joe, Nov 1).**
+- **Derived ramp** (computed from the seed with the WCAG 2 contrast formula; text roles solved against the lightest text-bearing surface, `raised`; offsets are Plexus's own, nothing from the reference):
+
+  | Role | Value | Rule | Contrast on raised / panel / ground |
+  |---|---|---|---|
+  | ground | `#202020` | seed − 10 | — |
+  | panel | `#2A2A2A` | seed | — |
+  | raised | `#343434` | seed + 10 | — |
+  | border | `#424242` | seed + 24 | 1.43 against panel |
+  | text-strong | `#E7E7E7` | ≥ 10:1 | 10.07 / 11.61 / 13.18 |
+  | text | `#C3C3C3` | ≥ 7:1 (AAA body) | 7.06 / 8.14 / 9.24 |
+  | text-quiet | `#9C9C9C` | ≥ 4.5:1 (AA) | 4.53 / 5.23 / 5.93 |
+  | text-disabled | `#7D7D7D` | ≈ 3:1, inactive controls only | 3.02 / 3.49 / 3.96 |
+
+  Three readable rungs (strong, text, quiet). Anything quieter comes from caps, tracking or the mono face, never a fourth grey. A light theme is the same solve with the direction flipped.
 - **Why it fits Plexus:** Plexus has no host theme to sit inside, so it can pick one seed grey on purpose and derive everything else from it: elevation steps for surfaces and contrast-solved greys for text. A light theme then comes free. Plan from the start for at most three readable text rungs. Below those, quiet comes from form (caps, tracking, the mono face), not a fourth grey.
 - **Reference idea (SYNAPSE, ideas only):** All surface greys are fixed offsets from one seed grey: ground below, panel at the seed, raised and border steps above. The text greys are not a fixed table. Each role (body, secondary, caption, bright, disabled) is solved to hit a target contrast against the worst surface it can sit on. The light-on-dark or dark-on-light direction is whichever gives more contrast, so a light theme flips the ramp on its own. Disabled is deliberately left below the contrast floor, because it only ever paints inactive controls. — `python/synapse/panel/designsystem/tokens.py:159-202, 212-233, 239-249`. Did it work: Mixed. The contrast floor holds at every seed grey, and the comments say a seeded-contrast sweep gates it. The cost is that the quiet end collapsed: caption and secondary text ended up about two levels apart out of 255, which reads as one grey. The note on that says value can no longer carry the quiet rung, so form has to (tokens.py:153-158; Claude outputs/panel-design-state-2026-09-16.md:134-140).
 - **Not taken:** Reading a host application's colour scheme, the specific hex values, the token names.
-- **Jev:** Jev opt0 p 1.00, confidence 1.00, copy risk of the closest option 0.23
+- **Jev:** Jev opt0 p 1.00, confidence 1.00, copy risk of the closest option 0.23; pass 3 copy 0.23 (under the visual 0.5). **Seed:** Joe.
 
 **Typography: size scale, weights, families** (`three-rung-type`)
 
@@ -67,7 +81,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Why it fits Plexus:** Plexus surfaces carry a lot of identifiers: prim paths, sublayer names, intent hashes, organ ids, predicate text. Use a strict split: mono for every identifier and number the eye has to compare, sans for prose and labels, and only three sizes. Hierarchy inside a node or row comes from weight and caps. In a dense node editor, size changes should be saved for the canvas zoom.
 - **Reference idea (SYNAPSE, ideas only):** Text uses three sizes only (body, section title, display), about 12/15/19 px. The fourth size, one pixel below body, was retired because the eye cannot see a one-pixel step. Captions and status lines stay at body size and go quiet through caps, letter-spacing and a mono face. Status-dot and chevron sizes are named separately so nobody counts them as type sizes. Sans is for anything read as words; mono is for anything scanned character by character (paths, tool names, counts, code). Each weight token names a weight the font file actually has. A user text-size control only scales up from the host's default size, never below it. — `python/synapse/panel/designsystem/tokens.py:414-449, 525-552, 591-623, 651-702`. Did it work: Measured. The lowercase x took six pixel rows at both 11 and 12 px, and the display size had been used zero times (Claude outputs/panel-design-state-2026-09-16.md:123-128). Requested weights the mono family could not draw were rendering as regular (tokens.py:534-545). Pinned by tests/test_panel_typography.py.
 - **Not taken:** The bundled font files, the tracking values as a table, the font-loading code.
-- **Jev:** Jev opt0 p 1.00, confidence 1.00, copy risk of the closest option 0.27
+- **Jev:** Jev opt0 p 1.00, confidence 1.00, copy risk of the closest option 0.27; pass 3 copy 0.30 (under the visual 0.5)
 
 **Colour roles: accents, actions, verdict hues** (`two-accent-ceiling`)
 
@@ -75,37 +89,38 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Why it fits Plexus:** Give Plexus a written colour budget that a test enforces from day one. One accent for actions. One for live agent presence: a neuron awake, or an organ job running. A muted verdict trio for Verified, Broken and Unknown inside content. On a canvas where organ outputs (images, video) appear, the output is the colour, and the chrome stays grey around it.
 - **Reference idea (SYNAPSE, ideas only):** The rule is at most two accent hues in any view. The cool accent is for actions and technical links, and every action uses it, however many there are. The warm accent is for the agent's own presence and for the halt control. Emphasis among actions comes from value on the grey ladder and from weight, not from new hues. There are two status families: full-strength hues for gates and badges, and a muted trio (settled green, amber, soft red) for verdicts inside content. A rendered image is treated as the only chromatic event on its surface, so verdict dots beside it stay quiet. Metadata over an image uses a grey warmed slightly off neutral. — `python/synapse/panel/designsystem/qss.py:321-340; python/synapse/panel/designsystem/tokens.py:279-284, 349-370; python/synapse/panel/face_review.py:115-200`. Did it work: Partly failed. One button kept a third hue about fifteen lines after the comment that forbids it, and the hue-count test and two review documents disagreed on whether the guard was red (Claude outputs/panel-design-state-2026-09-16.md:58-68). The rule existed only in a comment, so it drifted.
 - **Not taken:** The specific hues and their names, the stylesheet rules.
-- **Jev:** Jev opt0 p 1.00, confidence 1.00, copy risk of the closest option 0.25
+- **Jev:** Jev opt0 p 1.00, confidence 1.00, copy risk of the closest option 0.25; pass 3 copy 0.26 (under the visual 0.5)
 
 **Spacing rhythm, density, region layout** (`named-spacing-roles`)
 
-- **Decision:** Named roles on a 4-px grid with gaps that step down with nesting depth
+- **Decision:** **Named spacing roles on a 4-px grid, with gaps that step down with nesting depth, as restated for Plexus (Joe, Nov 1).** Plexus names its own roles (none of the reference's). Each nesting level steps its gap down by at least one grid step, and a layout test checks it, because the reference's failure was nesting that read flat (four roles landed on the same gap). No density multiplier and no layout profiles until two real users need different layouts. Joe's decision overrides the visual 0.5 rule for this element only.
 - **Why it fits Plexus:** Use named spacing roles on one grid, and make the gaps step down with nesting depth so hierarchy can be seen. Do not build a density axis or layout profiles until there are two real users who need different layouts.
 - **Reference idea (SYNAPSE, ideas only):** Spacing sits on one grid (4, 8, 12, 16, 24, 32, 48). Layouts are tagged with a named role (shell, stack, band, row, tag, card, group, turn), and one applier sets the gaps and margins. Density is a single panel-wide multiplier (airy 1.5, standard 1, tight 0.75) that scales gaps, never padding. The top-level regions (rail, context ribbon, faces) come from an ordered manifest; an unknown region is logged and skipped. — `python/synapse/panel/designsystem/rhythm.py:15-61, 116-150; python/synapse/panel/designsystem/tokens.py:708-745; python/synapse/panel/compositor.py:24-35`. Did it work: Partly failed. Shell, group, card and tag all landed on 16 px, so nesting read flat (Claude outputs/panel-design-state-2026-09-16.md:224). Only one layout ever ships, and the profile and density choices left the UI (synapse_panel.py:952-956), which leaves the density axis carried but unused.
 - **Not taken:** The role names, the manifest schema.
-- **Jev:** Jev opt0 p 0.99, confidence 0.98, copy risk of the closest option 0.56
+- **Jev:** Jev opt0 p 0.99, confidence 0.98, copy risk of the closest option 0.56. Pass 3: opt0 adopt 0.85 / copy 0.34; opt1 (plain constants) adopt 0.35 / copy 0.22; opt2 (density switch) adopt 0.14 / copy 0.56; a Plexus-native variant (8-px base, 4 px only inside nodes, regions separated by elevation, a layout test) adopt 0.41 / copy 0.31. **Joe** took opt0 as restated, over the 0.56 pass 1 reading.
 
 
 ### Graph canvas
 
-**Status display: health cells and fidelity readouts** (`unknown-is-its-own-colour`)
-
-- **Decision:** Five distinct marks (verified, broken, unknown, idle, working) with the reason inline on degraded
-- **Why it fits Plexus:** This adds the visual side to the Unknown/Broken/Verified lesson already in the plan (§3.2 #5). Each of the three outcomes, plus idle and working, gets its own mark, and Unknown is never close to Verified in colour. A node or organ badge on the canvas uses the same five marks. When a badge is degraded, its reason shows on the node itself, so nobody has to open an inspector to see why.
-- **Reference idea (SYNAPSE, ideas only):** A small always-visible strip of cells, each with a status dot and a short value. A cell has six states, each drawn differently: ok, amber, red, unknown, idle, working. Unknown means the value could not be measured and is a calm grey, never green. Idle means it was measured and is quiet, so it is not drawn as a pass. A degraded cell shows its one-line reason inline, with no click needed. A fidelity readout shows no data yet in grey words rather than a perfect score, and the code makes green unreachable from a no-data state. — `python/synapse/panel/health_strip.py:13-24, 84-122, 147-154; python/synapse/panel/gate_widget.py:57-130; python/synapse/panel/integrity_readout.py:12-18`. Did it work: Worked after a defect. The fidelity row used to read a perfect 1.0 in green before any operation had run (gate_widget.py:57-78). Source-pin tests now guard it: tests/test_panel_fidelity_honesty_sourcepin.py and tests/test_gate_fidelity_honesty_sourcepin.py.
-- **Not taken:** The specific cells, the producer wiring.
-- **Jev:** Jev opt0 p 0.95, confidence 0.92, copy risk of the closest option 0.49 · routed here at 0.42
-
 **Progress and liveness mark** (`status-ring-two-channels`)
 
-- **Decision:** A per-node ring: length is completed steps, rotation is heartbeat, with distinct stop-requested and confirmed-cancelled states
-- **Why it fits Plexus:** Use this on a neuron or organ node: arc length counts completed steps of the organ job, and rotation shows a live heartbeat. The halt control should not claim more than it can verify. The plan already weakens 'a halt is immediate' (§3.2), so the ring needs three distinct states: stop requested, confirmed cancelled, and cancel unknown.
+- **Decision:** **A thin progress rule along the node's top edge, plus a separate heartbeat dot (Joe, Nov 1).** The rule's length counts completed steps of the organ job and never reaches full until the job is done; the dot pulses while the job is alive, so stalled and moving look different. The three stop states (stop requested, confirmed cancelled, cancel unknown) are drawn on the dot.
+- **Why it fits Plexus:** On a neuron or organ node, progress counts completed steps of the organ job and a separate channel shows that the job is alive, so a stalled job and a moving one look different. The halt control should not claim more than it can verify. The plan already weakens 'a halt is immediate' (§3.2), so the mark needs three distinct states: stop requested, confirmed cancelled, and cancel unknown.
 - **Reference idea (SYNAPSE, ideas only):** The product mark doubles as the status light. Idle is an open outline. While working, the arc length grows by one step for each completed step, and it stops short of a full circle, so in-flight work can never look finished. Only done closes the ring. Rotation is a separate channel that shows the process is alive, so a stalled job and a moving one look different, and rotation never lengthens the arc. While work is running the same mark is also the stop control, and it offers no stop when nothing is running. — `python/synapse/panel/designsystem/components.py:407-460, 540-583`. Did it work: Unknown. No test or review note was found that measures it.
 - **Not taken:** The mark's geometry, the product mark itself.
-- **Jev:** pass 2 (per-option): adopt 0.81, copy risk 0.56 · routed here at 0.86
+- **Jev:** Joe chose this over Jev's top pick, the ring (pass 2 adopt 0.81, copy risk 0.56, which also fails the visual 0.5). This option: pass 2 adopt 0.77, copy risk 0.23 · routed here at 0.86
 
 
 ### Inspector
+
+**Status display: health cells and fidelity readouts** (`unknown-is-its-own-colour`)
+
+- **Decision:** **Five distinct marks (verified, broken, unknown, idle, working) with the reason inline on degraded, shown in the inspector (Joe, Nov 1).**
+- **Why it fits Plexus:** This adds the visual side to the Unknown/Broken/Verified lesson already in the plan (§3.2 #5). Each of the three outcomes, plus idle and working, gets its own mark, and Unknown is never close to Verified in colour. In the inspector, a degraded item shows its one-line reason inline, with no extra click.
+- **Consequence of the placement:** the canvas now carries no verdict marks. On a node, state shows only through the progress rule and heartbeat dot, and the node's one-line receipt. A minimal verdict mark on nodes would be a separate element, if Joe wants one later.
+- **Reference idea (SYNAPSE, ideas only):** A small always-visible strip of cells, each with a status dot and a short value. A cell has six states, each drawn differently: ok, amber, red, unknown, idle, working. Unknown means the value could not be measured and is a calm grey, never green. Idle means it was measured and is quiet, so it is not drawn as a pass. A degraded cell shows its one-line reason inline, with no click needed. A fidelity readout shows no data yet in grey words rather than a perfect score, and the code makes green unreachable from a no-data state. — `python/synapse/panel/health_strip.py:13-24, 84-122, 147-154; python/synapse/panel/gate_widget.py:57-130; python/synapse/panel/integrity_readout.py:12-18`. Did it work: Worked after a defect. The fidelity row used to read a perfect 1.0 in green before any operation had run (gate_widget.py:57-78). Source-pin tests now guard it: tests/test_panel_fidelity_honesty_sourcepin.py and tests/test_gate_fidelity_honesty_sourcepin.py.
+- **Not taken:** The specific cells, the producer wiring.
+- **Jev:** Jev opt0 p 0.95, confidence 0.92, copy risk of the closest option 0.49; pass 3 copy 0.27. Kept: 0.49 is just under the visual 0.5, the closest any kept visual decision comes. Jev routed it to the canvas at 0.42; **Joe** placed it in the inspector.
 
 **Agent result: structured rows instead of prose** (`fixed-order-receipt-rows`)
 
@@ -113,7 +128,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Why it fits Plexus:** Make the provenance receipt (Blueprint §5.2 item 5) the row grammar of every Plexus result: writer, intent hash, what was touched, verdict, what could not be verified, budget spent. Show the budget in the organ's own declared unit, and only once the organ has reported it. Build the renderer together with its first real producer, not before.
 - **Reference idea (SYNAPSE, ideas only):** A result is a fixed, ordered list of key/value rows: verdict (the one sentence of free model prose allowed), decision (chose X over Y because Z), via (path, mechanism), checks (state, text, ref), paths, by (model, tier, tokens only if measured), actions (with forecast tokens). The rendering cannot vary by which model wrote it, so changing models does not change how the panel reads. Cost is carried in the data but not drawn until a real usage reader exists, and the panel shows tokens, never currency. — `python/synapse/panel/verdict.py:1-40, 465-531`. Did it work: The contract is pinned by tests/test_v2_verdict_contract.py, but its own docstring says nothing in the panel calls the row renderer yet (verdict.py:476-477). The design shipped without a live consumer.
 - **Not taken:** The field names as a schema, the voice-contract machinery.
-- **Jev:** Jev opt1 p 0.74, confidence 0.61, copy risk of the closest option 0.53 · routed here at 0.93
+- **Jev:** Jev opt1 p 0.74, confidence 0.61, copy risk of the closest option 0.53 (not the chosen one); pass 3 copy for the chosen option 0.49, under the visual 0.5, so it stays · routed here at 0.93
 
 **Authorship and decision credit layout** (`credit-key-column`)
 
@@ -129,18 +144,18 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Why it fits Plexus:** Plexus owns its canvas, so the panel has nothing to teach about wires or ports. What carries over is the step-list grammar for stage state: walk the layer stack or the composition of one prim, one row per opinion. The left rule marks the winning opinion, overridden ones and stale ones, and the deltas use the growth/loss colours. A breadcrumb of the prim path plus actions that adapt to the prim type covers the rest. External-reference status (present, missing, modified) works as a badge on reference and payload arcs.
 - **Reference idea (SYNAPSE, ideas only):** Network state appears as a vertical list of steps. Each step has a 3 px left rule coloured by verdict: hot for the bottleneck, inactive grey for trivial cooks, neutral otherwise. The header is step number, node label and type. Below it are a geometry delta, coloured green for growth and red for loss, and the cook time, then key parameters, attribute changes, errors and warnings. A context bar shows the network breadcrumb and quick actions that change with the network type. A dependency scan reports present, missing or modified for each external file. The panel has no canvas, wires or ports of its own; it sits beside a host node editor it does not own. — `python/synapse/panel/network_trace.py:455-530; python/synapse/panel/context_bar.py:84-128; python/synapse/panel/dependency_map.py:1-14`. Did it work: Unknown. The only recorded change is that six hard-coded hues in the trace were folded into the shared status family (network_trace.py:455-459).
 - **Not taken:** The trace walker, the Houdini network types, the HTML rendering.
-- **Jev:** Jev opt0 p 0.96, confidence 0.94, copy risk of the closest option 0.43 · routed here at 0.99
+- **Jev:** Jev opt0 p 0.96, confidence 0.94, copy risk of the closest option 0.43; pass 3 copy 0.29 (under the visual 0.5) · routed here at 0.99
 
 
 ### Activity rail
 
 **Stop button and the stopping state** (`stop-is-a-request`)
 
-- **Decision:** Stopping state with the in-flight jobs named, settling only on real confirmation **+** Stopping state plus a per-job list (organ, job, cancelled / still running / unknown) that collapses to one line once settled **+** Two-stage control: Stop (cooperative, at the next safe point) and, after N seconds, Halt (cancel the organ jobs), each worded for what it really guarantees
+- **Decision:** **Single-stage Stop with the named Stopping state (Joe, Nov 1).** Stopping state with the in-flight jobs named, settling only on real confirmation **+** a per-job list (organ, job, cancelled / still running / unknown) that collapses to one line once settled. The two-stage Stop-then-Halt control is dropped.
 - **Why it fits Plexus:** This is the surface for the §3.2 note that a halt is a request. Stop moves the turn into a visible Stopping state that names which organ jobs are still running. Each job then resolves to cancelled-confirmed or Unknown, and only then does the state settle. The record of what was stopped is written to the stage or session layer as plain data, so the next wake reads it and won't resume the work by itself.
 - **Reference idea (SYNAPSE, ideas only):** Pressing Stop does not claim idle. The panel stays busy, disables Stop so it can't be pressed twice, changes the status sentence to 'Stopping…', and puts the name of the tool it is waiting on in the sentence's tooltip. It goes back to rest only when the worker actually exits. Tool calls queued in that round after Stop are returned to the model as errors ('cancelled before execution') and are not run. When the turn ends stopped or broken, a settled note goes into the history: the task was stopped, ending it undoes nothing, an operation without a confirmed result may still be finishing, check unknowns before retrying, do not continue the plan unless asked. — `C:\Users\User\SYNAPSE\python\synapse\panel\synapse_panel.py:4400-4418; claude_worker.py:215-221, 252-273, 546-556; synapse_panel.py:1251-1264`. Did it work: Worked. The earlier version flipped to 'Standing by' right away while Houdini was still cooking the tool; the fix is pinned by tests\test_panel_stop_honest.py:1-8. One limit is still open: cancelling the in-flight tool itself was deferred (synapse_panel.py:4402-4408).
 - **Not taken:** Cancel that waits on a cooperative flag checked only between tool rounds; in Plexus, cancel has to reach the organ job.
-- **Jev:** pass 2 (options compose): adopt 0.95 / copy 0.24, adopt 0.90 / copy 0.31, adopt 0.73 / copy 0.23 · routed here at 0.69
+- **Jev:** pass 2 (options compose): adopt 0.95 / copy 0.24 and adopt 0.90 / copy 0.31 kept; the two-stage control (adopt 0.73 / copy 0.23) dropped by Joe · routed here at 0.69
 
 **Liveness when the host is busy, and the retry breaker** (`host-busy-evidence-not-clock`)
 
@@ -197,19 +212,19 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 
 **Long-job progress visual** (`honest-progress-field`)
 
-- **Decision:** Determinate cell field when the organ reports counts, indeterminate sweep otherwise
+- **Decision:** **A single counted line (n of m) with no graphic** (moved by the visual 0.5 rule). When the organ reports no count, the line says so in words and the node's heartbeat dot carries liveness; no percentage is ever derived from a clock.
 - **Why it fits Plexus:** For organ jobs such as ComfyUI batches or render buckets, show counted progress when the organ reports a count, and a clearly different indeterminate state when it does not. Never derive a percentage from a clock. Size the visual from the space it has, with no hard minimum height.
 - **Reference idea (SYNAPSE, ideas only):** A grid of cells fills as counted work lands. When no count is available, it switches to an indeterminate sweep with a short trail, so it looks alive without inventing a number. The cell edges vary by a small deterministic amount per cell, so the grid reads as territory being claimed rather than a stock progress bar, and it does not shimmer between frames. Reduced-motion shows a static grid instead. — `python/synapse/panel/face_work.py:56-168`. Did it work: The visual is unmeasured. The geometry failed: fixed minimum heights on this and two sibling surfaces push the panel 30-54 px past its declared minimum height, and no owner was assigned (Claude outputs/panel-design-state-2026-09-16.md:160-168).
 - **Not taken:** The bucket-grid implementation, the jitter hash.
-- **Jev:** Jev opt0 p 0.94, confidence 0.91, copy risk of the closest option 0.58 · routed here at 0.96
+- **Jev:** pass 1 picked opt0, the cell field (p 0.94), at copy risk 0.58, which fails the visual 0.5. Pass 3: opt2, the counted line, adopt 0.67 / copy 0.08, the best remaining (opt1, the organ's own preview, adopt 0.51 / copy 0.16). The no-count wording is Claude's, to keep the idea's honesty rule · routed here at 0.96
 
 **Agent transcript presentation** (`ruled-turn-transcript`)
 
-- **Decision:** Ruled turns with the rule coloured per writer, prim paths as locate chips
-- **Why it fits Plexus:** Plexus has many writers (neurons, organs, Joe), not two speakers. Colour the rule by writer or sublayer, and keep agent prose open. Every prim path in any text should be a chip that selects the prim on the stage. Pick a renderer with real leading.
+- **Decision:** **A provenance-log view, one row per opinion, instead of a chat transcript** (moved by the visual 0.5 rule). Prim paths in any row stay locate chips that select the prim on the stage.
+- **Why it fits Plexus:** Plexus has many writers (neurons, organs, Joe), not two speakers, so the record is a log of opinions by writer and sublayer rather than a two-speaker chat. Every prim path in any text should be a chip that selects the prim on the stage. Pick a renderer with real leading.
 - **Reference idea (SYNAPSE, ideas only):** Each turn is a reading column with a 2 px leading rule. Human turns colour the rule; agent turns leave it clear for open prose. A speaker label with a mono timestamp opens each group. There is a large gap before a new speaker and a small one between lines from the same speaker, both on the spacing grid. Node and prim paths in text become clickable chips (a small mark plus the mono path) that locate the item. Group breaks use negative space, not timestamp dividers. — `python/synapse/panel/message_formatter.py:40-58, 218-243, 460-538; python/synapse/panel/designsystem/rhythm.py:26-50`. Did it work: Mixed. CSS line-height does nothing in the Qt text widget, so rhythm had to come from block margins instead (message_formatter.py:40-52). An earlier 4 px difference between speaker gaps could not be felt (Claude outputs/panel-design-state-2026-09-16.md:210); the gaps were later doubled (rhythm.py:36-41).
 - **Not taken:** The two-speaker identity colours, the HTML-table technique.
-- **Jev:** Jev opt0 p 0.95, confidence 0.92, copy risk of the closest option 0.55 · routed here at 0.52
+- **Jev:** pass 1 picked opt0, ruled turns (p 0.95), at copy risk 0.55, which fails the visual 0.5. Pass 3: opt1, the provenance log, adopt 0.67 / copy 0.21, the best remaining (opt2, split chat and activity log, adopt 0.46 / copy 0.51, does not qualify) · routed here at 0.52
 
 **Approval / gate card** (`consent-card-weight`)
 
@@ -228,7 +243,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Why it fits Plexus:** A request to wake a neuron or run an organ is never queued out of sight. If the runtime (the Rust core, or the organ behind the contract) can't take it right now, the surface refuses, keeps Joe's text, and says so in one sentence. In Plexus a deferred request would be a visible opinion in the session layer, never a hidden buffer that replays into a stage that has since changed.
 - **Reference idea (SYNAPSE, ideas only):** When the link to the host is down, the panel refuses the send, leaves the draft in the input box, and puts one plain line on the surface saying the message was not sent and will not be replayed, with the next action (connect, then send again). Quick-action pills get the same rule in their own wording: press the pill again. Nothing is held and nothing fires later. A 'held, press Send to release' version was considered but not built. — `C:\Users\User\SYNAPSE\python\synapse\panel\send_guard.py:19-27, 52-78, 100-124`. Did it work: Worked as a fix. Before it, a message typed while the link was down was silently queued, spun forever, then fired into whatever scene was open when the link came back; this was rated a blocker (C:\Users\User\SYNAPSE\harness\notes\closeout-2026-09-15\artist_findings.json id FR-1). The fix is pinned by tests\test_send_guard.py.
 - **Not taken:** The fire-and-forget replay queue the bridge still keeps for other callers (ws_bridge.py:364-376, 414-455). Plexus should not have a second, hidden delivery path.
-- **Jev:** Jev opt0 p 0.94, confidence 0.91, copy risk of the closest option 0.21 · routed here at 0.46
+- **Jev:** Jev opt0 p 0.94, confidence 0.91, copy risk of the closest option 0.21 · routed here at 0.46; **status bar confirmed by Joe**
 
 **Header status mark + sentence, and state-gated controls** (`one-status-sentence`)
 
@@ -236,7 +251,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Why it fits Plexus:** Plexus needs one runtime-state sentence per project or neuron, picked by an explicit precedence rule. A good order: halting > waking/running > parked-for-Joe > settled-result > runtime connection. Each state gets a fixed colour role used for that state only, never decoration, and the controls follow from the state. Because Plexus has many neurons asleep at once, the sentence can sit at project level, with neuron-level marks in the graph (the node-editor convention: a badge on the node, the sentence in the header).
 - **Reference idea (SYNAPSE, ideas only):** The header shows one mark and one short sentence, chosen by one precedence rule: a turn in flight (working or stopping) beats a finished turn ('Result ready'), which beats the connection's state at rest ('Not connected', 'Worth a look', 'Ready'). 'Idle' is never shown on its own, because at rest the connection is what the panel reports, so a fresh panel says 'Not connected', not 'Ready'. Six states map to six fixed colour roles: grow = connected, fire = working, signal = idle, warn = warning, error = error, slate = offline. While a turn runs, the mark doubles as the halt control. Stop is visible only while working. Connect and REVERT are switched off while working. — `C:\Users\User\SYNAPSE\python\synapse\panel\synapse_panel.py:4452-4478, 4515-4528, 4420-4424, 2587-2593; designsystem\tokens.py:854-861`. Did it work: Partly. The precedence rule exists to fix the panel's first line saying 'Ready.' before it had connected to anything or been given a model (artist_findings.json id FR-2, major). A related problem, that at rest you can't tell 'configured' from 'never configured', was logged as FR-4. Reading the code, the model token now carries a separate live/off state for this (synapse_panel.py:4480-4513). No GUI confirmation was found.
 - **Not taken:** The state names and colour tokens themselves.
-- **Jev:** Jev opt0 p 0.87, confidence 0.80, copy risk of the closest option 0.44 · routed here at 0.30
+- **Jev:** Jev opt0 p 0.87, confidence 0.80, copy risk of the closest option 0.44; pass 3 copy 0.22 (under the visual 0.5) · routed here at 0.30; **status bar confirmed by Joe**
 
 **Connection loss and reconnect** (`host-gone-reconnect`)
 
@@ -257,19 +272,25 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 
 **What Plexus leaves behind, always:** all code, class and widget names, stylesheet text, token names and values, hex colours, fonts and font-loading code, asset files, the product mark's geometry, level phrases verbatim, timeout numbers, and the panel's layout. Also every behaviour the study marked as a failure: a countdown that auto-rejects on a blocking wait, cancel checked only between rounds, env-variable switches that widen authority, Stop reachable only by mouse, and any card not wired to the path that enforces it.
 
-**The one idea Plexus most needs from it:** a single state and receipt grammar. Unknown, Broken, Verified, idle and working each get their own mark; every result is a fixed-order provenance row set; and absence shows as a state on the node, never as a pass.
+**The one idea Plexus most needs from it:** a single state and receipt grammar. Unknown, Broken, Verified, idle and working each get their own mark; every result is a fixed-order provenance row set; and absence shows as its own state wherever it is read, never as a pass.
 
 ---
 
-## 5 · Decisions for Joe
+## 5 · Decisions
 
-Jev decided everything below with enough confidence to act on, except these. Each needs Joe's eye as a designer, not a model's.
+### Decided by Joe (Nov 1)
 
-1. **Two-stage Stop and Halt.** Pass 2 adopted all three stop options together, including a cooperative Stop that becomes a Halt (cancel the organ jobs) after N seconds (adopt 0.73). That is a behaviour change to the product, not a style choice. Keep it, or keep Stop single-stage with the named Stopping state.
-2. **The per-node progress ring.** Jev's top pick (adopt 0.81) sits at copy risk 0.56, just under the 0.6 rule. The alternative is a thin progress rule along the node's top edge plus a heartbeat dot (adopt 0.77, copy risk 0.23). Pick by eye.
-3. **Where three elements live.** The one-sentence status (routed to the status bar at 0.30), the refused send (status bar, 0.46) and the Unknown mark (canvas, 0.42) could each sit elsewhere.
-4. **Copy-risk threshold.** The rule moves any pick at ≥ 0.6. The two passes framed the question differently and disagreed on one element: the parked-proposal card scored 0.64 in pass 1 and 0.45 in pass 2. The Plexus-native variant was chosen because it is low in both. Joe may want the threshold lower (stricter) for anything visual.
-5. **The theme seed.** The colour decision (one seed grey, elevation offsets, contrast-solved text) needs one seed value chosen by eye. Nothing in the reference's values is reused.
+1. **Stop stays single-stage**, with the named Stopping state and the per-job list. The two-stage Stop-then-Halt control is dropped.
+2. **Progress on a node is a thin rule along its top edge plus a heartbeat dot**, not a ring.
+3. **The one-sentence status and the refused-send notice live in the status bar.**
+4. **Copy risk for anything visual is 0.5** (0.6 elsewhere). Re-applying it moved two decisions: long-job progress became a single counted line, and the agent transcript became a provenance log.
+5. **The theme seed is `#2A2A2A`, neutral.** The derived ramp is in the colour element (§3, system-wide).
+6. **Spacing takes Jev's preferred option as restated:** named Plexus roles on a 4-px grid, gaps stepping down at least one grid step per nesting level, checked by a layout test. This overrides the visual 0.5 rule for this element only.
+7. **The Unknown mark, with the other four status marks, lives in the inspector.** The canvas carries no verdict marks as a result.
+
+### Still open
+
+Nothing. Every element in §3 is decided.
 
 ---
 
@@ -278,6 +299,7 @@ Jev decided everything below with enough confidence to act on, except these. Eac
 - **Model:** `jev-1.14.0` (`jev-latest`), TypeSafe System One.
 - **Pass 1:** 24 elements × 3 questions over the same state: `decide` (choice among the element's options), `route` (choice among six surfaces), `too_close` (noul: does the closest option copy the reference?). 31,028 input tokens.
 - **Pass 2:** the 6 elements where one choice was the wrong question: four whose options compose (low confidence because probability spread across good options) and two whose pick the copy-risk rule had moved onto an option Jev scored near zero. Each option got two nouls, `adopt` and `copy`; two Plexus-native variants were added for the copy-risk cases.
-- **Policy in code, on top of Jev's raw answers:** copy risk ≥ 0.6 moves the pick; system-wide rules route to every surface; composable options are included at adopt ≥ 0.5 and copy < 0.6; alternative presentations take the single best.
+- **Pass 3 (after Joe's Nov 1 decisions):** every option of the ten visual elements pass 2 had not covered, as `adopt` / `copy` nouls (12,252 input tokens), plus one Plexus-native spacing variant.
+- **Policy in code, on top of Jev's raw answers:** copy risk ≥ 0.6 moves the pick, or ≥ 0.5 for visual elements, using the higher of the pass 1 and pass 3 readings; system-wide rules route to every surface; composable options are included at adopt ≥ 0.5 and copy under the threshold; alternative presentations take the single best; Joe's decisions override Jev.
 - **Raw answers:** `docs/plexus/ui_design_jev.json` keeps every probability, so weights and thresholds can change without re-running Jev.
 - **State given to Jev:** what Plexus is, who Joe is as a user, Plexus's no-copy and parked-waiting rules, and each element's observed idea, whether it worked, the idea restated for Plexus, and what must not carry over. Jev never saw SYNAPSE code.

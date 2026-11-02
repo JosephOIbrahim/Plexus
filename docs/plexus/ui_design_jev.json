@@ -793,6 +793,268 @@
    "two-accent-ceiling",
    "named-spacing-roles",
    "keyboard-and-focus"
-  ]
+  ],
+  "copy_risk_moves_pick_at_visual": 0.5,
+  "visual_ids": [
+   "solved-neutral-ramp",
+   "three-rung-type",
+   "two-accent-ceiling",
+   "unknown-is-its-own-colour",
+   "status-ring-two-channels",
+   "honest-progress-field",
+   "fixed-order-receipt-rows",
+   "credit-key-column",
+   "ruled-turn-transcript",
+   "consent-card-weight",
+   "named-spacing-roles",
+   "trace-step-rules",
+   "one-status-sentence",
+   "consent-card-surface"
+  ],
+  "visual_copy_reading": "max of pass 1 and pass 3"
+ },
+ "pass3": [
+  {
+   "id": "solved-neutral-ramp",
+   "input_tokens": 1256,
+   "rows": [
+    {
+     "option": "One seed grey with elevation offsets and contrast-solved text roles; quiet below three rungs comes from form",
+     "adopt": 0.9,
+     "copy": 0.23
+    },
+    {
+     "option": "A fixed hand-tuned dark palette plus a separately tuned light palette, checked by a contrast test",
+     "adopt": 0.37,
+     "copy": 0.42
+    },
+    {
+     "option": "A fixed dark palette only, with light mode left for later",
+     "adopt": 0.18,
+     "copy": 0.34
+    }
+   ]
+  },
+  {
+   "id": "three-rung-type",
+   "input_tokens": 1257,
+   "rows": [
+    {
+     "option": "Three sizes, sans for words and mono for identifiers, quiet by caps and tracking",
+     "adopt": 0.9,
+     "copy": 0.3
+    },
+    {
+     "option": "Two sizes plus weight only, for maximum density in node bodies",
+     "adopt": 0.28,
+     "copy": 0.43
+    },
+    {
+     "option": "A mono-first interface (terminal register) with sans only for long prose",
+     "adopt": 0.29,
+     "copy": 0.37
+    }
+   ]
+  },
+  {
+   "id": "two-accent-ceiling",
+   "input_tokens": 1239,
+   "rows": [
+    {
+     "option": "Two accents (action, live presence) plus a muted verdict trio, enforced by a hue-count test",
+     "adopt": 0.91,
+     "copy": 0.26
+    },
+    {
+     "option": "One accent only; all status carried by shape and a neutral ramp",
+     "adopt": 0.42,
+     "copy": 0.43
+    },
+    {
+     "option": "Node-type colour coding as in node editors, with accents reserved for state",
+     "adopt": 0.26,
+     "copy": 0.37
+    }
+   ]
+  },
+  {
+   "id": "unknown-is-its-own-colour",
+   "input_tokens": 1239,
+   "rows": [
+    {
+     "option": "Five distinct marks (verified, broken, unknown, idle, working) with the reason inline on degraded",
+     "adopt": 0.91,
+     "copy": 0.27
+    },
+    {
+     "option": "Three verdict marks only, with idle and working shown by animation instead of colour",
+     "adopt": 0.21,
+     "copy": 0.32
+    },
+    {
+     "option": "Shape-coded marks (filled, hollow, dashed) so the states survive colour-blindness and greyscale",
+     "adopt": 0.86,
+     "copy": 0.17
+    }
+   ]
+  },
+  {
+   "id": "honest-progress-field",
+   "input_tokens": 1138,
+   "rows": [
+    {
+     "option": "Determinate cell field when the organ reports counts, indeterminate sweep otherwise",
+     "adopt": 0.9,
+     "copy": 0.35
+    },
+    {
+     "option": "Show the organ's own preview (render buckets, latent previews) as the progress",
+     "adopt": 0.51,
+     "copy": 0.16
+    },
+    {
+     "option": "A single counted line (n of m) with no graphic",
+     "adopt": 0.67,
+     "copy": 0.08
+    }
+   ]
+  },
+  {
+   "id": "fixed-order-receipt-rows",
+   "input_tokens": 1175,
+   "rows": [
+    {
+     "option": "Fixed-order receipt rows with one prose field, drawn on node selection",
+     "adopt": 0.69,
+     "copy": 0.6
+    },
+    {
+     "option": "A compact one-line receipt on the node plus the full rows in the inspector",
+     "adopt": 0.8,
+     "copy": 0.49
+    },
+    {
+     "option": "A per-sublayer receipt log rendered as a table, sortable by writer",
+     "adopt": 0.76,
+     "copy": 0.47
+    }
+   ]
+  },
+  {
+   "id": "ruled-turn-transcript",
+   "input_tokens": 1181,
+   "rows": [
+    {
+     "option": "Ruled turns with the rule coloured per writer, prim paths as locate chips",
+     "adopt": 0.89,
+     "copy": 0.35
+    },
+    {
+     "option": "A provenance-log view (one row per opinion) instead of a chat transcript",
+     "adopt": 0.67,
+     "copy": 0.21
+    },
+    {
+     "option": "A chat transcript only for Joe-to-agent dialogue, with neuron activity in a separate log",
+     "adopt": 0.46,
+     "copy": 0.51
+    }
+   ]
+  },
+  {
+   "id": "named-spacing-roles",
+   "input_tokens": 1172,
+   "rows": [
+    {
+     "option": "Named roles on a 4-px grid with gaps that step down with nesting depth",
+     "adopt": 0.85,
+     "copy": 0.34
+    },
+    {
+     "option": "Plain fixed spacing constants per surface, no role system",
+     "adopt": 0.35,
+     "copy": 0.22
+    },
+    {
+     "option": "A density switch from day one (compact canvas vs comfortable inspector)",
+     "adopt": 0.14,
+     "copy": 0.56
+    }
+   ]
+  },
+  {
+   "id": "trace-step-rules",
+   "input_tokens": 1251,
+   "rows": [
+    {
+     "option": "A layer-stack step list per prim, with a left verdict rule and delta colours",
+     "adopt": 0.9,
+     "copy": 0.29
+    },
+    {
+     "option": "A composition-arc overlay on the canvas (reference and payload arcs badged present/missing/modified)",
+     "adopt": 0.76,
+     "copy": 0.17
+    },
+    {
+     "option": "A breadcrumb plus prim-type-adaptive actions only, leaving stage inspection to an external USD viewer",
+     "adopt": 0.21,
+     "copy": 0.17
+    }
+   ]
+  },
+  {
+   "id": "one-status-sentence",
+   "input_tokens": 1344,
+   "rows": [
+    {
+     "option": "One sentence per project with a fixed precedence; neuron state as node badges in the graph",
+     "adopt": 0.88,
+     "copy": 0.22
+    },
+    {
+     "option": "One sentence per focused neuron, driven by selection like a parameter pane; project rollup in a status bar",
+     "adopt": 0.62,
+     "copy": 0.38
+    },
+    {
+     "option": "Two tiers: a project sentence plus a compact strip of counts (asleep / waking / parked / failed) that filters the graph when clicked",
+     "adopt": 0.74,
+     "copy": 0.31
+    }
+   ]
+  }
+ ],
+ "pass3_spacing_variant": {
+  "id": "named-spacing-roles",
+  "variant": "A Plexus spacing scale on an 8-px base, with 4 px used only inside node bodies; regions are separated by surface elevation rather than larger gaps, and a layout test checks every gap against the scale.",
+  "adopt": 0.41,
+  "copy": 0.31
+ },
+ "joe_decisions_2026_11_01": {
+  "stop-is-a-request": "single-stage Stop with the named Stopping state and per-job list; two-stage Stop/Halt dropped",
+  "status-ring-two-channels": "thin progress rule along the node top edge plus a heartbeat dot (pass 2 option 1)",
+  "one-status-sentence": "status bar",
+  "send-refused-not-queued": "status bar",
+  "copy_risk_visual": 0.5,
+  "theme_seed": "#2A2A2A",
+  "named-spacing-roles": "opt0 as restated: Plexus-named roles on a 4-px grid, gaps step down >= one grid step per nesting level, checked by a layout test; overrides the visual 0.5 rule for this element only",
+  "unknown-is-its-own-colour": "inspector"
+ },
+ "derived_ramp": {
+  "ground": "#202020",
+  "panel": "#2A2A2A",
+  "raised": "#343434",
+  "border": "#424242",
+  "text-strong": "#E7E7E7",
+  "text": "#C3C3C3",
+  "text-quiet": "#9C9C9C",
+  "text-disabled": "#7D7D7D",
+  "method": "WCAG 2 contrast, text solved against raised (#343434): strong>=10, text>=7, quiet>=4.5, disabled~3"
+ },
+ "policy_moves_after_visual_rule": {
+  "honest-progress-field": "opt2 single counted line",
+  "ruled-turn-transcript": "opt1 provenance-log view",
+  "named-spacing-roles": "opt0 by Joe (override)"
  }
 }
