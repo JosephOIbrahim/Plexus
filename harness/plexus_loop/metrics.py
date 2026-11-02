@@ -13,6 +13,7 @@ from .mission import Gate, Metric
 from .profile import Profile
 
 TAIL_CHARS = 4000
+TEST_MESSAGE_CHARS = 1500  # one test's own failure, as the next prompt shows it
 
 
 @dataclass
@@ -22,6 +23,9 @@ class MetricResult:
     tail: str = ""
     error: str = ""
     failing: list[str] = field(default_factory=list)  # junit "classname::name" of every bad test
+    # junit id -> that test's own failure: the report's message line, then the end of its
+    # traceback (where pytest puts the "E" lines and the file:line). Clipped per test.
+    messages: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -91,15 +95,28 @@ def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> Metric
     suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
     total = bad = 0
     failing: list[str] = []
+    messages: dict[str, str] = {}
     for s in suites:
         total += int(s.get("tests", 0))
         bad += int(s.get("failures", 0)) + int(s.get("errors", 0)) + int(s.get("skipped", 0))
         for case in s.iter("testcase"):
-            if any(child.tag in ("failure", "error", "skipped") for child in case):
-                failing.append(f"{case.get('classname', '')}::{case.get('name', '')}")
+            bad_children = [c for c in case if c.tag in ("failure", "error", "skipped")]
+            if bad_children:
+                tid = f"{case.get('classname', '')}::{case.get('name', '')}"
+                failing.append(tid)
+                messages[tid] = "\n".join(_case_message(c) for c in bad_children)[-TEST_MESSAGE_CHARS:]
     if total == 0:
         return MetricResult(None, total=0, tail=tail, error="no tests collected")
-    return MetricResult(float(bad), total=total, tail=tail, failing=failing)
+    return MetricResult(float(bad), total=total, tail=tail, failing=failing, messages=messages)
+
+
+def _case_message(el: ET.Element) -> str:
+    """One junit failure, error or skip: its message line, then the end of its text."""
+    msg = (el.get("message") or "").strip()
+    text = (el.text or "").rstrip()
+    body = text[-(TEST_MESSAGE_CHARS - min(len(msg), 300) - 20):] if text else ""
+    head = f"[{el.tag}] {msg[:300]}" if msg else f"[{el.tag}]"
+    return head + ("\n" + body if body else "")
 
 
 def _command(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:

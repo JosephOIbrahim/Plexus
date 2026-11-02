@@ -32,6 +32,7 @@ from .profile import Profile, choose_profile, with_env
 from .review import write_review
 from .router import Route
 from .router import choose as choose_route
+from .router import failing_targets
 from .workers import Worker, make_worker
 
 RouteFn = Callable[[Mission, MetricResult | None, list["Attempt"]], Route]
@@ -82,6 +83,21 @@ def syntax_errors(root: Path, paths: list[str]) -> list[str]:
     return out
 
 
+TARGET_FAILURES_MAX = 3  # at most this many target tests lead the feedback
+
+
+def target_failures(m: MetricResult, step: Step) -> list[str]:
+    """The step's own target tests that failed, each as "junit id\\nits failure message".
+
+    The general output the next prompt shows is the end of the whole test run, which with many
+    tests failing is some later step's test. This puts the step's own tests first.
+    """
+    out = []
+    for tid in failing_targets(step, m.failing)[:TARGET_FAILURES_MAX]:
+        out.append(f"{tid}\n{m.messages.get(tid, '(no message in the report)')}".rstrip())
+    return out
+
+
 def missing_files(root: Path, files: list[str]) -> list[str]:
     """The step's files that are not in the worktree, in the step's order.
 
@@ -124,6 +140,9 @@ class Attempt:
     reply_file: str = ""  # the raw model reply, under .plexus_loop/<mission>/replies/
     detail: str = ""  # output of the failing gate or metric, shown to the next attempt
     syntax: list[str] = field(default_factory=list)  # changed .py files that don't compile, one line each
+    # The dropped attempt's own step's target tests that failed, each "junit id\nits failure",
+    # from the metric's junit report. The next prompt leads with them.
+    target_failures: list[str] = field(default_factory=list)
     # Ledger diagnostic: the step's files the dropped reply left out. The next prompt does not
     # use it; it lists what is absent from its own fresh worktree, which also lacks what was sent.
     missing: list[str] = field(default_factory=list)
@@ -240,13 +259,18 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             lines.append("")
         lines.append("Do this step only. Later steps get their own attempts.")
     dropped = recent[-1] if recent and not recent[-1].kept else None
-    if dropped is not None and (dropped.detail or dropped.syntax or absent):
+    if dropped is not None and (dropped.detail or dropped.syntax or absent or dropped.target_failures):
         lines += [
             "",
             "## Why the last attempt was dropped",
             f"Attempt {dropped.n}" + (f" (step {dropped.route})" if dropped.route else "")
             + f" was dropped: {dropped.reason}.",
         ]
+        if dropped.target_failures:
+            block = "\n\n".join(dropped.target_failures)
+            tfence = "`" * max(3, _longest_backtick_run(block) + 1)
+            lines += ["Its step's own target tests failed like this. Start here; tests for later steps "
+                      "are expected to fail until those steps land:", tfence, block, tfence]
         if absent:
             lines += [f"Its files are gone: every attempt starts from the last kept commit. Step {step.id} "
                       "needs these files, and none of them is in the repo. Send each one in full as a "
@@ -495,6 +519,8 @@ class MissionRun:
                         a.kept, a.commit, a.reason = True, new, "strict gain"
                     if not a.kept:
                         a.syntax = syntax_errors(wt, a.changed)
+                        if m is not None and route.step is not None:
+                            a.target_failures = target_failures(m, route.step)
                 if not a.kept and route.step is not None:
                     a.missing = missing_files(wt, route.step.files)
             except gitops.GitError as e:
