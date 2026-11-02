@@ -89,10 +89,40 @@ def test_pxr_only_from_rank_two_up():
     assert bad == [], "these modules must stay free of pxr:\n" + "\n".join(bad)
 
 
+def _targets(path: Path, mods: set[str]) -> set[str]:
+    """The plexus modules this file depends on, for cycle detection.
+
+    ``from pkg import name`` depends on ``pkg.name`` when that is a module (the idiomatic
+    ``from . import axon``), and on ``pkg`` itself only when ``name`` is an attribute of it.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    me = _module_name(path)
+    pkg = me if path.name == "__init__.py" else me.rpartition(".")[0]
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.update(a.name for a in node.names if a.name in mods)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                base = pkg.split(".")
+                base = base[: len(base) - (node.level - 1)] if node.level > 1 else base
+                mod = ".".join(base) + (f".{node.module}" if node.module else "")
+            else:
+                mod = node.module or ""
+            for a in node.names:
+                sub = f"{mod}.{a.name}"
+                if sub in mods:
+                    out.add(sub)
+                elif mod in mods:
+                    out.add(mod)
+    out.discard(me)
+    return out
+
+
 def test_python_has_no_import_cycles():
-    graph = _python_graph()
-    mods = set(graph)
-    edges = {m: {i for i in imps if i in mods and i != m} for m, imps in graph.items()}
+    files = sorted(PLEXUS.rglob("*.py")) if PLEXUS.is_dir() else []
+    mods = {_module_name(p) for p in files}
+    edges = {_module_name(p): _targets(p, mods) for p in files}
     seen: dict[str, int] = {}
     cycle: list[str] = []
 
