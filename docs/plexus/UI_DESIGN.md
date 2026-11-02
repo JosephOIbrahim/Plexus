@@ -1,6 +1,6 @@
 # Plexus · Interface design
 
-Status: **draft for Joe.** Nothing here is built. Decided Nov 1 from a read-only study of the SYNAPSE panel and two Jev passes.
+Status: **draft for Joe.** Nothing here is built. Decided Nov 1 from a read-only study of the SYNAPSE panel, three Jev passes and Joe's seven calls, then checked by two independent reviewers.
 
 **What this document does:** it sets the design elements of the Plexus interface. The SYNAPSE Python panel (`C:\Users\User\SYNAPSE\python\synapse`) was studied as a design reference only. **Nothing from it is copied or imported**: no code, widget or class names, stylesheet text, assets or layout. Each borrowed idea is restated in Plexus's own terms, with the reason it fits.
 
@@ -12,7 +12,7 @@ Status: **draft for Joe.** Nothing here is built. Decided Nov 1 from a read-only
 
 These six come out of the study and the Jev pass together. Each one is a rule a test can check, because the study's clearest lesson is that a rule kept only in a comment drifts.
 
-1. **Every claim on screen reads real state.** "Stopping", "Parked", "Not recorded", "Reverted" and "Unknown" each read an opinion that is actually on the stage or the session layer. A card settles only when the runtime confirms. The reference panel's worst failures were surfaces that sat apart from what enforced them: approval cards drawn but never reached, a "revert" that was really a global undo.
+1. **Every claim on screen reads real state.** "Stopping", "Parked", "Not on stage", "Reverted" and "Unknown" each read an opinion that is actually on the stage or the session layer. A card settles only when the runtime confirms. The reference panel's worst failures were surfaces that sat apart from what enforced them: approval cards drawn but never reached, a "revert" that was really a global undo.
 2. **Unknown is its own mark, and never a default pass.** Verified, Broken, Unknown, idle and working each get a distinct mark. Green is unreachable from a no-data state. This is the visual half of the `Outcome` lesson in the scaffold plan (§3.2 #5).
 3. **Waiting for Joe is parked, never blocking.** A proposal that needs Joe becomes a parked card; the neuron sleeps; Approve or Discard is an opinion written to the session layer, and the neuron's predicate wakes on it. Nothing times out on its own.
 4. **Words and weight carry hierarchy; colour is budgeted.** Two accents at most (actions; live agent presence), a muted verdict trio inside content, and organ outputs (images, video) as the only colour on their surface. A test counts hues.
@@ -41,35 +41,37 @@ Jev routed each element to the surface it belongs on. Five elements are system-w
 
 Each element gives: the decision; why it fits Plexus; the reference idea it came from, as a description with the SYNAPSE file it was observed in (nothing copied); what Plexus does not take; and Jev's numbers.
 
-**How to read Jev's numbers.** `p` is the probability Jev gave the chosen option. Confidence is how concentrated its probabilities were. Copy risk is Jev's probability that the option closest to the reference would amount to copying it. Rules sit on top, in code. A pick with copy risk ≥ 0.6 moves on; **for anything visual the threshold is 0.5** (Joe, Nov 1), and every option of a visual element was measured on its own ("pass 3"), with the higher of the pass 1 and pass 3 readings counting. Where options compose rather than compete, each option was judged on its own ("pass 2") and every option with adopt ≥ 0.5 and copy risk under the threshold is included. **Visual** means the twelve elements from the study's visual lens, plus the status sentence and the approval-card layout, which decide how something is drawn. Decisions marked **Joe** override Jev.
+**How to read Jev's numbers.** `p` is the probability Jev gave the chosen option. Confidence is how concentrated its probabilities were. Copy risk is Jev's probability that the option closest to the reference would amount to copying it. Rules sit on top, in code. A pick with copy risk ≥ 0.6 moves on; **for anything visual the threshold is 0.5** (Joe, Nov 1), and every option of a visual element was measured on its own (pass 2 for four elements, pass 3 for the other ten); the higher of the pass 1 reading (which applies only to the closest option) and the per-option reading counts. Pass 3 was a copy check on each existing pick: runner-ups it scored well are listed in §5, not adopted. Where options compose rather than compete, each option was judged on its own ("pass 2") and every option with adopt ≥ 0.5 and copy risk under the threshold is included. **Visual** means the twelve elements from the study's visual lens, plus the status sentence and the approval-card layout, which decide how something is drawn. Decisions marked **Joe** override Jev.
 
 ### System-wide (applies to every surface)
 
 **Keyboard and focus behaviour** (`keyboard-and-focus`)
 
 - **Decision:** Composer conventions as observed, plus a global Stop key (e.g. Escape twice or Ctrl+.) with its hint read from the binding
-- **Why it fits Plexus:** Node-editor habits should carry over: Tab (or '/') for the palette, Escape to back out, and a dedicated, always-bound key for Stop/Halt that works whatever has focus. Every shortcut hint is read from the real binding. Focus returns to where Joe was typing after any card or dialog closes.
+- **Why it fits Plexus:** Node-editor habits should carry over: Tab (or '/') for the palette, Escape to back out, and a dedicated, always-bound key for Stop that works whatever has focus. Every shortcut hint is read from the real binding. Focus returns to where Joe was typing after any card or dialog closes.
 - **Reference idea (SYNAPSE, ideas only):** Enter sends, Shift+Enter adds a new line, and '/' on an empty prompt opens the command palette. Ctrl+K also opens it, and the on-screen hint is read from the shortcut that is actually bound, so the hint can't be wrong. The palette closes on Escape and moves with the arrow keys and Enter. After attachments change, focus goes back to the input. The placeholder shortens to fit narrow docks. Stop has no keyboard shortcut; it is reachable only by clicking the button or the status mark. — `C:\Users\User\SYNAPSE\python\synapse\panel\synapse_panel.py:452-469, 869-876, 2934-2938; command_palette.py:809-835`. Did it work: Unknown. There were no keyboard findings, and the missing Stop key is visible in the code (no Escape or Stop binding in synapse_panel.py).
 - **Not taken:** Stop reachable only by mouse.
 - **Jev:** Jev opt0 p 0.91, confidence 0.86, copy risk of the closest option 0.28
 
 **Colour: surfaces and the text grey ramp** (`solved-neutral-ramp`)
 
-- **Decision:** One seed grey with elevation offsets and contrast-solved text roles; quiet below three rungs comes from form. **Seed: `#2A2A2A`, neutral (Joe, Nov 1).**
-- **Derived ramp** (computed from the seed with the WCAG 2 contrast formula; text roles solved against the lightest text-bearing surface, `raised`; offsets are Plexus's own, nothing from the reference):
+- **Decision:** One seed grey with elevation offsets and contrast-solved text roles; quiet below three rungs comes from form. **Seed: `#2D2D2D`, neutral** — Joe asked for a neutral grey around `#2A2A2A` (Nov 1); `#2A2A2A` itself is the exact seed the reference panel uses, so the seed sits three levels above it.
+- **Derived ramp** (computed from the seed with the WCAG 2 contrast formula; text roles solved against the lightest text-bearing surface, `bg-2`; offsets are Plexus's own, in decimal levels per channel; role names are Plexus's own; no value in the ramp appears anywhere in the reference panel's code, checked Nov 1):
 
-  | Role | Value | Rule | Contrast on raised / panel / ground |
+  | Role | Value | Rule | Contrast on bg-2 / bg-1 / bg-0 |
   |---|---|---|---|
-  | ground | `#202020` | seed − 10 | — |
-  | panel | `#2A2A2A` | seed | — |
-  | raised | `#343434` | seed + 10 | — |
-  | border | `#424242` | seed + 24 | 1.43 against panel |
-  | text-strong | `#E7E7E7` | ≥ 10:1 | 10.07 / 11.61 / 13.18 |
-  | text | `#C3C3C3` | ≥ 7:1 (AAA body) | 7.06 / 8.14 / 9.24 |
-  | text-quiet | `#9C9C9C` | ≥ 4.5:1 (AA) | 4.53 / 5.23 / 5.93 |
-  | text-disabled | `#7D7D7D` | ≈ 3:1, inactive controls only | 3.02 / 3.49 / 3.96 |
+  | bg-0 (below) | `#232323` | seed − 10 | — |
+  | bg-1 (base) | `#2D2D2D` | seed | — |
+  | bg-2 (lifted) | `#373737` | seed + 10 | — |
+  | bg-rule (edges) | `#454545` | seed + 24 | 1.24 / 1.44 / 1.64 |
+  | fg-1 (strong) | `#ECECEC` | ≥ 10:1 | 10.08 / 11.66 / 13.30 |
+  | fg-2 (body) | `#C7C7C7` | ≥ 7:1 (AAA body) | 7.04 / 8.15 / 9.30 |
+  | fg-3 (quiet) | `#A1A1A1` | ≥ 4.5:1 (AA) | 4.61 / 5.33 / 6.08 |
+  | fg-off (inactive) | `#808080` | ≈ 3:1, inactive controls only | 3.01 / 3.49 / 3.98 |
 
-  Three readable rungs (strong, text, quiet). Anything quieter comes from caps, tracking or the mono face, never a fourth grey. A light theme is the same solve with the direction flipped.
+  Each foreground is the lowest grey that meets its target on `bg-2`, except `fg-3`, nudged one level from `#A0A0A0`, a value the reference names for the same role. `bg-rule` is 1.24:1 on `bg-2`, so a card that needs a real edge (the approval card) sits on `bg-1`, where its edge reads 1.44:1. The role names are working names; the final names are Joe's.
+
+  Three readable rungs (fg-1, fg-2, fg-3). Anything quieter comes from caps, tracking or the mono face, never a fourth grey. A light theme is the same solve with the direction flipped.
 - **Why it fits Plexus:** Plexus has no host theme to sit inside, so it can pick one seed grey on purpose and derive everything else from it: elevation steps for surfaces and contrast-solved greys for text. A light theme then comes free. Plan from the start for at most three readable text rungs. Below those, quiet comes from form (caps, tracking, the mono face), not a fourth grey.
 - **Reference idea (SYNAPSE, ideas only):** All surface greys are fixed offsets from one seed grey: ground below, panel at the seed, raised and border steps above. The text greys are not a fixed table. Each role (body, secondary, caption, bright, disabled) is solved to hit a target contrast against the worst surface it can sit on. The light-on-dark or dark-on-light direction is whichever gives more contrast, so a light theme flips the ramp on its own. Disabled is deliberately left below the contrast floor, because it only ever paints inactive controls. — `python/synapse/panel/designsystem/tokens.py:159-202, 212-233, 239-249`. Did it work: Mixed. The contrast floor holds at every seed grey, and the comments say a seeded-contrast sweep gates it. The cost is that the quiet end collapsed: caption and secondary text ended up about two levels apart out of 255, which reads as one grey. The note on that says value can no longer carry the quiet rung, so form has to (tokens.py:153-158; Claude outputs/panel-design-state-2026-09-16.md:134-140).
 - **Not taken:** Reading a host application's colour scheme, the specific hex values, the token names.
@@ -108,7 +110,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Why it fits Plexus:** On a neuron or organ node, progress counts completed steps of the organ job and a separate channel shows that the job is alive, so a stalled job and a moving one look different. The halt control should not claim more than it can verify. The plan already weakens 'a halt is immediate' (§3.2), so the mark needs three distinct states: stop requested, confirmed cancelled, and cancel unknown.
 - **Reference idea (SYNAPSE, ideas only):** The product mark doubles as the status light. Idle is an open outline. While working, the arc length grows by one step for each completed step, and it stops short of a full circle, so in-flight work can never look finished. Only done closes the ring. Rotation is a separate channel that shows the process is alive, so a stalled job and a moving one look different, and rotation never lengthens the arc. While work is running the same mark is also the stop control, and it offers no stop when nothing is running. — `python/synapse/panel/designsystem/components.py:407-460, 540-583`. Did it work: Unknown. No test or review note was found that measures it.
 - **Not taken:** The mark's geometry, the product mark itself.
-- **Jev:** Joe chose this over Jev's top pick, the ring (pass 2 adopt 0.81, copy risk 0.56, which also fails the visual 0.5). This option: pass 2 adopt 0.77, copy risk 0.23 · routed here at 0.86
+- **Jev:** Joe chose this over Jev's top pick, the ring (pass 2 adopt 0.81; copy risk 0.59 in pass 1 and 0.56 in pass 2; the higher, 0.59, fails the visual 0.5, though it passed the old 0.6). This option: pass 2 adopt 0.77, copy risk 0.23 · routed here at 0.86
 
 
 ### Inspector
@@ -120,7 +122,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Consequence of the placement:** the canvas now carries no verdict marks. On a node, state shows only through the progress rule and heartbeat dot, and the node's one-line receipt. A minimal verdict mark on nodes would be a separate element, if Joe wants one later.
 - **Reference idea (SYNAPSE, ideas only):** A small always-visible strip of cells, each with a status dot and a short value. A cell has six states, each drawn differently: ok, amber, red, unknown, idle, working. Unknown means the value could not be measured and is a calm grey, never green. Idle means it was measured and is quiet, so it is not drawn as a pass. A degraded cell shows its one-line reason inline, with no click needed. A fidelity readout shows no data yet in grey words rather than a perfect score, and the code makes green unreachable from a no-data state. — `python/synapse/panel/health_strip.py:13-24, 84-122, 147-154; python/synapse/panel/gate_widget.py:57-130; python/synapse/panel/integrity_readout.py:12-18`. Did it work: Worked after a defect. The fidelity row used to read a perfect 1.0 in green before any operation had run (gate_widget.py:57-78). Source-pin tests now guard it: tests/test_panel_fidelity_honesty_sourcepin.py and tests/test_gate_fidelity_honesty_sourcepin.py.
 - **Not taken:** The specific cells, the producer wiring.
-- **Jev:** Jev opt0 p 0.95, confidence 0.92, copy risk of the closest option 0.49; pass 3 copy 0.27. Kept: 0.49 is just under the visual 0.5, the closest any kept visual decision comes. Jev routed it to the canvas at 0.42; **Joe** placed it in the inspector.
+- **Jev:** Jev opt0 p 0.95, confidence 0.92, copy risk of the closest option 0.49; pass 3 copy 0.27. Kept: 0.49 is just under the visual 0.5, tied with the receipt rows for the closest any kept visual decision comes. Jev routed it to the canvas at 0.42; **Joe** placed it in the inspector.
 
 **Agent result: structured rows instead of prose** (`fixed-order-receipt-rows`)
 
@@ -175,7 +177,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 **Approval card layout, verbs, countdown and settled states** (`consent-card-surface`)
 
 - **Decision:** A parked-proposals tray (an inbox) with counts in the header; the graph node of the parked neuron carries the same badge and opens the card **+** Card plus a stage diff preview (what will change) and the cost in budget units next to Approve
-- **Why it fits Plexus:** The parked proposal (§3.2 idea 1) needs a face. A card shows the neuron, the intent, the prims or organ it touches, the budget it will spend, and the level as a phrase. Approve and Reject write an opinion into the session layer. The card settles only when that opinion is confirmed on the stage. If the write fails, the card says Not recorded and stays live. The settled record lives in provenance, not the card.
+- **Why it fits Plexus:** The parked proposal (§3.2 idea 1) needs a face. A card shows the neuron, the intent, the prims or organ it touches, the budget it will spend, and the level as a phrase. Approve and Reject write an opinion into the session layer. The card settles only when that opinion is confirmed on the stage. If the write fails, the card says Not on stage and stays live. The settled record lives in provenance, not the card.
 - **Reference idea (SYNAPSE, ideas only):** Approval cards appear inline in the conversation's slot. The header gives the level as a plain phrase ('Heads up' / 'Quick review' / 'Approve?' / 'Confirm'), then the operation in mono, then the agent. The body is the description, and the critical level says 'Arbitrary code execution' in words. The footer has a countdown on the left and the verbs on the right. Hierarchy comes from weight, not hue: Approve is bold because a timeout rejects, Reject is regular. The card's level accent was deliberately removed, and the only warm note left is a BLOCKED tag. Critical approval asks for a modal confirm. Review-level cards offer REVERT instead. A decision that didn't reach the gate shows NOT RECORDED and keeps the card live with its verbs. A decision that landed replaces the verbs with an APPROVED or REJECTED tag, disables the card, then hides it, and the chat line becomes the record. The work view comes forward on its own only when a card needs action. — `C:\Users\User\SYNAPSE\python\synapse\panel\gate_widget.py:26-55, 236-322, 352-374, 395-418, 656-715; synapse_panel.py:1628-1631, 1710-1727, 3049-3074; designsystem\tokens.py:864-869`. Did it work: The card design is careful, but it never ran. Every in-process path approves on its own, so no operation has ever waited on a card (artist_findings.json id TRUST-1, blocker; C:\Users\User\SYNAPSE\CLAUDE.md:64-66). A denied tool dead-ends in the chat because the card is wired to a different path (U2, blocker). The parked-state fix is already in NEXTGEN_SCAFFOLD_PLAN §3.2 idea 1; this pattern covers only the card.
 - **Not taken:** Countdown auto-reject on a blocking wait, and a card that is drawn but not wired to the path that actually enforces the gate.
 - **Jev:** pass 2 (options compose): adopt 0.70 / copy 0.35, adopt 0.74 / copy 0.37 · routed here at 0.96
@@ -213,7 +215,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 **Long-job progress visual** (`honest-progress-field`)
 
 - **Decision:** **A single counted line (n of m) with no graphic** (moved by the visual 0.5 rule). When the organ reports no count, the line says so in words and the node's heartbeat dot carries liveness; no percentage is ever derived from a clock.
-- **Why it fits Plexus:** For organ jobs such as ComfyUI batches or render buckets, show counted progress when the organ reports a count, and a clearly different indeterminate state when it does not. Never derive a percentage from a clock. Size the visual from the space it has, with no hard minimum height.
+- **Why it fits Plexus:** For organ jobs such as ComfyUI batches or render buckets, show counted progress when the organ reports a count, and a clearly different indeterminate state when it does not. Never derive a percentage from a clock. The line fits the space it has, with no hard minimum height (the reference's real failure was fixed heights that overflowed its panel).
 - **Reference idea (SYNAPSE, ideas only):** A grid of cells fills as counted work lands. When no count is available, it switches to an indeterminate sweep with a short trail, so it looks alive without inventing a number. The cell edges vary by a small deterministic amount per cell, so the grid reads as territory being claimed rather than a stock progress bar, and it does not shimmer between frames. Reduced-motion shows a static grid instead. — `python/synapse/panel/face_work.py:56-168`. Did it work: The visual is unmeasured. The geometry failed: fixed minimum heights on this and two sibling surfaces push the panel 30-54 px past its declared minimum height, and no owner was assigned (Claude outputs/panel-design-state-2026-09-16.md:160-168).
 - **Not taken:** The bucket-grid implementation, the jitter hash.
 - **Jev:** pass 1 picked opt0, the cell field (p 0.94), at copy risk 0.58, which fails the visual 0.5. Pass 3: opt2, the counted line, adopt 0.67 / copy 0.08, the best remaining (opt1, the organ's own preview, adopt 0.51 / copy 0.16). The no-count wording is Claude's, to keep the idea's honesty rule · routed here at 0.96
@@ -248,7 +250,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 **Header status mark + sentence, and state-gated controls** (`one-status-sentence`)
 
 - **Decision:** One sentence per project with a fixed precedence; neuron state as node badges in the graph
-- **Why it fits Plexus:** Plexus needs one runtime-state sentence per project or neuron, picked by an explicit precedence rule. A good order: halting > waking/running > parked-for-Joe > settled-result > runtime connection. Each state gets a fixed colour role used for that state only, never decoration, and the controls follow from the state. Because Plexus has many neurons asleep at once, the sentence can sit at project level, with neuron-level marks in the graph (the node-editor convention: a badge on the node, the sentence in the header).
+- **Why it fits Plexus:** Plexus needs one runtime-state sentence per project or neuron, picked by an explicit precedence rule. A good order: stopping > waking/running > parked-for-Joe > settled-result > runtime connection. Each state gets a fixed colour role used for that state only, never decoration, and the controls follow from the state. Because Plexus has many neurons asleep at once, the sentence can sit at project level, with neuron-level marks in the graph (the node-editor convention: a badge on the node, the sentence in the status bar).
 - **Reference idea (SYNAPSE, ideas only):** The header shows one mark and one short sentence, chosen by one precedence rule: a turn in flight (working or stopping) beats a finished turn ('Result ready'), which beats the connection's state at rest ('Not connected', 'Worth a look', 'Ready'). 'Idle' is never shown on its own, because at rest the connection is what the panel reports, so a fresh panel says 'Not connected', not 'Ready'. Six states map to six fixed colour roles: grow = connected, fire = working, signal = idle, warn = warning, error = error, slate = offline. While a turn runs, the mark doubles as the halt control. Stop is visible only while working. Connect and REVERT are switched off while working. — `C:\Users\User\SYNAPSE\python\synapse\panel\synapse_panel.py:4452-4478, 4515-4528, 4420-4424, 2587-2593; designsystem\tokens.py:854-861`. Did it work: Partly. The precedence rule exists to fix the panel's first line saying 'Ready.' before it had connected to anything or been given a model (artist_findings.json id FR-2, major). A related problem, that at rest you can't tell 'configured' from 'never configured', was logged as FR-4. Reading the code, the model token now carries a separate live/off state for this (synapse_panel.py:4480-4513). No GUI confirmation was found.
 - **Not taken:** The state names and colour tokens themselves.
 - **Jev:** Jev opt0 p 0.87, confidence 0.80, copy risk of the closest option 0.44; pass 3 copy 0.22 (under the visual 0.5) · routed here at 0.30; **status bar confirmed by Joe**
@@ -284,13 +286,22 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 2. **Progress on a node is a thin rule along its top edge plus a heartbeat dot**, not a ring.
 3. **The one-sentence status and the refused-send notice live in the status bar.**
 4. **Copy risk for anything visual is 0.5** (0.6 elsewhere). Re-applying it moved two decisions: long-job progress became a single counted line, and the agent transcript became a provenance log.
-5. **The theme seed is `#2A2A2A`, neutral.** The derived ramp is in the colour element (§3, system-wide).
+5. **The theme seed is a neutral grey around `#2A2A2A`: `#2D2D2D`.** `#2A2A2A` itself is the reference panel's exact seed, so it moved three levels, inside Joe's "around". The derived ramp is in the colour element (§3, system-wide).
 6. **Spacing takes Jev's preferred option as restated:** named Plexus roles on a 4-px grid, gaps stepping down at least one grid step per nesting level, checked by a layout test. This overrides the visual 0.5 rule for this element only.
 7. **The Unknown mark, with the other four status marks, lives in the inspector.** The canvas carries no verdict marks as a result.
 
 ### Still open
 
 Nothing. Every element in §3 is decided.
+
+### Optional additions Jev scored well
+
+Pass 3 was a copy check on each existing pick, not a re-decision, so these runner-ups were not adopted. Each clears adopt ≥ 0.5 and copy risk < 0.5 and composes with the decided option. They are Joe's to add or leave:
+
+1. **Shape-coded status marks** (filled, hollow, dashed), so the five marks survive colour-blindness and greyscale: adopt 0.86, copy 0.17. Composes with the five inspector marks.
+2. **A composition-arc overlay on the canvas** (reference and payload arcs badged): adopt 0.76, copy 0.17. Composes with the layer-stack step list in the inspector.
+3. **A count strip beside the project status sentence** (asleep / waking / parked / failed, clickable to filter the graph): adopt 0.74, copy 0.31.
+4. **A sortable per-sublayer receipt table**: adopt 0.76, copy 0.47. Composes with the one-line node receipt and inspector rows.
 
 ---
 
@@ -300,6 +311,6 @@ Nothing. Every element in §3 is decided.
 - **Pass 1:** 24 elements × 3 questions over the same state: `decide` (choice among the element's options), `route` (choice among six surfaces), `too_close` (noul: does the closest option copy the reference?). 31,028 input tokens.
 - **Pass 2:** the 6 elements where one choice was the wrong question: four whose options compose (low confidence because probability spread across good options) and two whose pick the copy-risk rule had moved onto an option Jev scored near zero. Each option got two nouls, `adopt` and `copy`; two Plexus-native variants were added for the copy-risk cases.
 - **Pass 3 (after Joe's Nov 1 decisions):** every option of the ten visual elements pass 2 had not covered, as `adopt` / `copy` nouls (12,252 input tokens), plus one Plexus-native spacing variant.
-- **Policy in code, on top of Jev's raw answers:** copy risk ≥ 0.6 moves the pick, or ≥ 0.5 for visual elements, using the higher of the pass 1 and pass 3 readings; system-wide rules route to every surface; composable options are included at adopt ≥ 0.5 and copy under the threshold; alternative presentations take the single best; Joe's decisions override Jev.
+- **Policy in code, on top of Jev's raw answers:** copy risk ≥ 0.6 moves the pick, or ≥ 0.5 for visual elements, using the higher of the pass 1 reading (closest option only) and the per-option reading (pass 2 or pass 3); system-wide rules route to every surface; composable options are included at adopt ≥ 0.5 and copy under the threshold; alternative presentations take the single best; Joe's decisions override Jev.
 - **Raw answers:** `docs/plexus/ui_design_jev.json` keeps every probability, so weights and thresholds can change without re-running Jev.
 - **State given to Jev:** what Plexus is, who Joe is as a user, Plexus's no-copy and parked-waiting rules, and each element's observed idea, whether it worked, the idea restated for Plexus, and what must not carry over. Jev never saw SYNAPSE code.

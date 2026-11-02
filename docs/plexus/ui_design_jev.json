@@ -625,11 +625,12 @@
      "variant": false
     }
    ],
-   "included": [
+   "included_at_0_6": [
     "Stopping state with the in-flight jobs named, settling only on real confirmation",
     "Stopping state plus a per-job list (organ, job, cancelled / still running / unknown) that collapses to one line once settled",
     "Two-stage control: Stop (cooperative, at the next safe point) and, after N seconds, Halt (cancel the organ jobs), each worded for what it really guarantees"
-   ]
+   ],
+   "note": "computed under the old 0.6 policy; superseded by joe_decisions_2026_11_01 and the visual 0.5 rule"
   },
   {
    "id": "consent-card-surface",
@@ -653,10 +654,11 @@
      "variant": false
     }
    ],
-   "included": [
+   "included_at_0_6": [
     "A parked-proposals tray (an inbox) with counts in the header; the graph node of the parked neuron carries the same badge and opens the card",
     "Card plus a stage diff preview (what will change) and the cost in budget units next to Approve"
-   ]
+   ],
+   "note": "computed under the old 0.6 policy; superseded by joe_decisions_2026_11_01 and the visual 0.5 rule"
   },
   {
    "id": "denial-replans-not-deadends",
@@ -680,11 +682,12 @@
      "variant": false
     }
    ],
-   "included": [
+   "included_at_0_6": [
     "A denial turns into a parked proposal on the same surface, so deny and approve are one path",
     "Denial as an inline sentence with the reason and a 'do it yourself' verb that opens the right Plexus surface",
     "Show authority up front: each neuron node lists its allowed acts, and greys out actions the current authority can't reach"
-   ]
+   ],
+   "note": "computed under the old 0.6 policy; superseded by joe_decisions_2026_11_01 and the visual 0.5 rule"
   },
   {
    "id": "status-ring-two-channels",
@@ -708,11 +711,12 @@
      "variant": false
     }
    ],
-   "included": [
+   "included_at_0_6": [
     "A per-node ring: length is completed steps, rotation is heartbeat, with distinct stop-requested and confirmed-cancelled states",
     "A thin progress rule along the node's top edge plus a separate heartbeat dot",
     "Progress only in the inspector; the canvas node shows a single state mark"
-   ]
+   ],
+   "note": "computed under the old 0.6 policy; superseded by joe_decisions_2026_11_01 and the visual 0.5 rule"
   },
   {
    "id": "consent-card-weight",
@@ -742,12 +746,13 @@
      "variant": true
     }
    ],
-   "included": [
+   "included_at_0_6": [
     "A parked-proposal card: phrase header, mono operation, bold consequential verb, visible border",
     "An approval queue panel listing all parked proposals, oldest first",
     "An inline badge on the waiting node that expands into the card on click",
     "A parked-proposal card in Plexus's own form: the predicate that fired and the intent hash on top, a stage diff of exactly what will change, the budget it will spend, and two verbs named for the act (for example Publish to exchange / Discard). Hierarchy by weight; no countdown, because a parked proposal never times out."
-   ]
+   ],
+   "note": "computed under the old 0.6 policy; superseded by joe_decisions_2026_11_01 and the visual 0.5 rule"
   },
   {
    "id": "credit-key-column",
@@ -777,11 +782,12 @@
      "variant": true
     }
    ],
-   "included": [
+   "included_at_0_6": [
     "Key column = writer or sublayer, value = opinion, ordered by strength",
     "Key column = attribute, value = winning opinion plus a quiet list of overridden ones",
     "A per-attribute opinion stack read straight from USD's property stack: the attribute, then each layer's opinion strongest first, the winner marked, each row naming its writer and intent hash."
-   ]
+   ],
+   "note": "computed under the old 0.6 policy; superseded by joe_decisions_2026_11_01 and the visual 0.5 rule"
   }
  ],
  "policy": {
@@ -811,7 +817,7 @@
    "one-status-sentence",
    "consent-card-surface"
   ],
-  "visual_copy_reading": "max of pass 1 and pass 3"
+  "visual_copy_reading": "max of the pass 1 reading (closest option only) and the per-option reading (pass 2 for 4 elements, pass 3 for 10)"
  },
  "pass3": [
   {
@@ -1037,24 +1043,31 @@
   "one-status-sentence": "status bar",
   "send-refused-not-queued": "status bar",
   "copy_risk_visual": 0.5,
-  "theme_seed": "#2A2A2A",
+  "theme_seed": "#2D2D2D (Joe asked for a neutral grey around #2A2A2A; #2A2A2A is the reference panel's exact seed)",
   "named-spacing-roles": "opt0 as restated: Plexus-named roles on a 4-px grid, gaps step down >= one grid step per nesting level, checked by a layout test; overrides the visual 0.5 rule for this element only",
   "unknown-is-its-own-colour": "inspector"
  },
  "derived_ramp": {
-  "ground": "#202020",
-  "panel": "#2A2A2A",
-  "raised": "#343434",
-  "border": "#424242",
-  "text-strong": "#E7E7E7",
-  "text": "#C3C3C3",
-  "text-quiet": "#9C9C9C",
-  "text-disabled": "#7D7D7D",
-  "method": "WCAG 2 contrast, text solved against raised (#343434): strong>=10, text>=7, quiet>=4.5, disabled~3"
+  "bg-0": "#232323",
+  "bg-1": "#2D2D2D",
+  "bg-2": "#373737",
+  "bg-rule": "#454545",
+  "fg-1": "#ECECEC",
+  "fg-2": "#C7C7C7",
+  "fg-3": "#A1A1A1",
+  "fg-off": "#808080",
+  "method": "WCAG 2 contrast, text solved against bg-2 (#373737): fg-1>=10, fg-2>=7, fg-3>=4.5 (nudged from #A0A0A0, a reference value), fg-off~3; offsets -10/+10/+24 decimal per channel; no value appears in the reference panel code"
  },
  "policy_moves_after_visual_rule": {
   "honest-progress-field": "opt2 single counted line",
   "ruled-turn-transcript": "opt1 provenance-log view",
   "named-spacing-roles": "opt0 by Joe (override)"
- }
+ },
+ "review_fixes_2026_11_01": [
+  "seed moved off the reference's exact value",
+  "ramp role names replaced (reference token names)",
+  "'Not recorded' state renamed 'Not on stage' (reference's verbatim tag)",
+  "stale Stop/Halt, halting, header and graphic wording removed",
+  "policy wording covers pass 2 and pass 3"
+ ]
 }
