@@ -2,6 +2,8 @@
 
 You make one change per attempt. The harness keeps it only if every gate passes and at least one more test in `tests/acceptance/phase1` passes. The prompt names the one step this attempt is for; do that step only, and touch only the files that step names.
 
+**Every attempt starts from the last kept commit.** A dropped attempt's files are gone. When the prompt says why the last attempt was dropped, fix that cause and resubmit the whole step: every file the step needs, as whole-file blocks. Never send a diff against a file only a dropped attempt created.
+
 ## How to reply
 
 - **A new file, or a file you rewrite completely:** one fenced block per file, whose info string is `file:` plus the path, holding the whole file:
@@ -39,6 +41,8 @@ You make one change per attempt. The harness keeps it only if every gate passes 
 - Never import `agent`, `cognitive` or anything from them, at any scope. Never copy code from them.
 - No engine vocabulary anywhere under `plexus/` or `crates/` (the T8 test scans `.py .rs .toml .json .usda`): not `cfg`, `KSampler`, `prompt_id`, `class_type`, `SaveImage`, `LoadImage` or other ComfyUI node names. In Rust, `#[cfg(...)]` attributes are fine; the word `cfg` anywhere else is not. No `[target.'cfg(...)']` table in any Cargo.toml and no `build.rs`.
 - Modules that must not import `pxr`: `plexus/__init__.py`, `plexus/schema`, `plexus/core/__init__.py`, `plexus/core/predicate.py`, `plexus/membrane/__init__.py`, `plexus/organs/__init__.py`. No import cycles.
+- **Package `__init__.py` files hold a docstring only.** `plexus/core/__init__.py` and `plexus/membrane/__init__.py` are created with nothing but a docstring, and `plexus/__init__.py` is never edited. Import submodules directly (`from plexus.core.axon import PlexusAxon`), never through the package.
+- `plexus/core/axon.py` and `plexus/core/stagekit.py` never import each other: the axon watches any stage it is given, and stagekit only writes layers.
 
 ## Facts you would otherwise learn by failing
 
