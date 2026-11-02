@@ -191,6 +191,9 @@ Write every schema and attribute T0 lists, with its exact type and token order.
 - Author with the schema's types: `plexus:state` is Token, `plexus:lastWake` is String (not a float), and `plexus:flag…` is String.
 - The budget's mute writes `plexus:state = "muted"` and a `plexus:flag…` attribute there, saved.
 
+**Imports.**
+- Import every `pxr` module a file names, at the top of that file: `from pxr import Sdf, Tf, Usd` (and `Plug` where it registers). A name used but not imported fails with `NameError: name 'Usd' is not defined` at the first call (run 6 attempt 1).
+
 **Notices.**
 - `Tf.Notice.Register(Usd.Notice.ObjectsChanged, self._on_notice, stage)` returns a listener. The notice type is `Usd.Notice.ObjectsChanged`, from `from pxr import Tf, Usd`; `Tf.Notice.ObjectsChanged` does not exist (run 5 attempt 4 failed T1 on it). Keep it on `self`, or it is collected and the callback never fires (checked on 26.5). `cool()` and `stop()` call `.Revoke()` on it.
 - The callback runs synchronously on whichever thread authored: the test's main thread, or your own action thread mid-write. So it takes no lock. All it does is copy `n.GetChangedInfoOnlyPaths()` and `n.GetResyncedPaths()` into `frozenset`s of `Sdf.Path` (which is hashable), bump a pending counter, and enqueue. The notice is only valid during the callback.
