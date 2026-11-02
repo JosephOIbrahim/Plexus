@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/comfy-cozy-logo.jpg" alt="Comfy Cozy" width="600">
+  <img src="assets/plexus-logo.png" alt="Plexus" width="360">
 </p>
 
 <p align="center">
