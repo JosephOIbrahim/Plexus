@@ -61,6 +61,7 @@ class Attempt:
     commit: str = ""
     route: str = ""  # e.g. "S2 via jev 0.81", empty when the mission has no steps
     route_note: str = ""
+    reply_file: str = ""  # the raw model reply, under .plexus_loop/<mission>/replies/
 
 
 @dataclass
@@ -137,7 +138,10 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
         "## Rules",
         f"- Change only paths matching: {', '.join(mission.focus)}",
         f"- Never change: {', '.join(mission.frozen) or '(none)'}",
-        "- Reply with exactly one unified diff, paths relative to the repo root, inside a ```diff block.",
+        "- For each NEW file, or a file you rewrite completely, reply with its whole content in a fenced block "
+        "whose info string is file:<path>, e.g. ```file:plexus/core/axon.py.",
+        "- For edits to existing files, reply with one unified diff (paths relative to the repo root, "
+        "a/ and b/ prefixes) inside a ```diff block.",
         "- Make the smallest change that moves the number. Don't skip, delete or weaken tests.",
     ]
     if step is not None:
@@ -171,13 +175,26 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             text = (repo / rel).read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        block = f"\n### {rel}\n```\n{text}\n```"
+        fence = "`" * max(3, _longest_backtick_run(text) + 1)
+        tail = "" if text.endswith("\n") else "\n"
+        block = f"\n{fence}file:{rel}\n{text}{tail}{fence}"
         if used + len(block) > budget_chars:
             lines.append(f"\n(further files left out to fit the {budget_chars}-character budget)")
             break
         lines.append(block)
         used += len(block)
+    lines += ["", "## Your reply",
+              "New or fully rewritten files: one ```file:<path> block each, holding the whole file. "
+              "Edits to existing files: one ```diff block with a/ and b/ prefixes. Nothing else inside either."]
     return "\n".join(lines)
+
+
+def _longest_backtick_run(text: str) -> int:
+    best = run = 0
+    for ch in text:
+        run = run + 1 if ch == "`" else 0
+        best = max(best, run)
+    return best
 
 
 def _context_files(mission: Mission, repo: Path) -> list[str]:
@@ -230,6 +247,14 @@ class MissionRun:
         if m.value is None:
             return f"metric unavailable: {m.error}", m
         return None, m
+
+    def _save_reply(self, run_started: float, n: int, reply: str) -> str:
+        """Keep the worker's raw reply, so a dropped attempt can be read afterwards."""
+        d = self.mdir / "replies"
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / f"{time.strftime('%Y%m%d-%H%M%S', time.localtime(run_started))}-attempt-{n}.md"
+        f.write_text(reply, encoding="utf-8", errors="replace")
+        return str(f.relative_to(self.repo)).replace("\\", "/")
 
     def run(self) -> RunReport:
         self.preflight()
@@ -298,9 +323,14 @@ class MissionRun:
                 prompt = build_prompt(mi, wt, best, last, attempts, mi.worker.context_chars,
                                       step=route.step)
                 res = self.worker.attempt(wt, prompt, profile)
-                a.changed = gitops.changed_paths(wt)
+                if getattr(res, "reply", ""):
+                    a.reply_file = self._save_reply(started, n, res.reply)
+                a.changed = sorted(set(gitops.changed_paths(wt)) | set(getattr(res, "wrote", []) or []))
+                ignored = gitops.ignored_paths(wt)
                 if not res.ok:
                     a.reason = f"worker: {res.note}"
+                elif ignored:
+                    a.reason = f"wrote {ignored[0]}, which git ignores, so it would not be committed"
                 elif not a.changed:
                     a.reason = "no change"
                 elif bad := [p for p in a.changed if mi.is_frozen(p)]:
@@ -328,6 +358,9 @@ class MissionRun:
                         a.kept, a.commit, a.reason = True, new, "strict gain"
             except gitops.GitError as e:
                 a.reason = f"git: {e}"
+            except (OSError, UnicodeError) as e:
+                # A worker or filesystem error costs this attempt, never the run.
+                a.reason = f"attempt error: {type(e).__name__}: {e}"
             finally:
                 gitops.remove_worktree(self.repo, wt)
 

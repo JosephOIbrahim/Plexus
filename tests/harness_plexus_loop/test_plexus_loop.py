@@ -348,7 +348,7 @@ def test_prompt_names_rules_and_focus_files(repo):
     run(repo, _mission(), w)
     p = w.prompts[0]
     assert "Lower the score." in p and "plexus/**" in p and "tests/acceptance/**" in p
-    assert "### plexus/score.txt" in p and "### README.md" not in p
+    assert "```file:plexus/score.txt" in p and "file:README.md" not in p
 
 
 def test_pytest_failures_metric_counts_and_guards(tmp_path):

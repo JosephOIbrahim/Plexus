@@ -82,6 +82,13 @@ def changed_paths(worktree: Path) -> list[str]:
     return sorted(set(paths))
 
 
+def ignored_paths(worktree: Path) -> list[str]:
+    """Paths in the worktree that git ignores. A fresh worktree has none, so any found
+    after a worker ran were written by it, and a commit would leave them out."""
+    out = git(worktree, "status", "--porcelain", "-z", "--ignored", "--untracked-files=all")
+    return sorted(e[3:] for e in out.split("\0") if e.startswith("!! "))
+
+
 def commit_all(worktree: Path, message: str) -> str:
     git(worktree, "add", "-A")
     git(worktree, "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", message, env=IDENTITY)
