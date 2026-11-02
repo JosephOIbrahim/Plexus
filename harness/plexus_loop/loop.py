@@ -27,7 +27,7 @@ from pathlib import Path
 from . import gitops
 from .metrics import MetricResult, measure, run_gate
 from .mission import Mission, Step
-from .profile import Profile, choose_profile
+from .profile import Profile, choose_profile, with_env
 from .review import write_review
 from .router import Route
 from .router import choose as choose_route
@@ -198,7 +198,11 @@ class MissionRun:
         self.state = self.repo / STATE_DIR
         self.mdir = self.state / mission.name
         self.worker = worker or make_worker(mission.worker)
-        self.profile_fn = profile_fn or (lambda: choose_profile(mission.houdini))
+        base_profile = profile_fn or (lambda: choose_profile(mission.houdini))
+        # One cargo target directory for every gate in every worktree, resolved against the
+        # main repo, so Rust builds and `cargo test` stay warm from attempt to attempt.
+        cargo_target = str(self.state / "cargo-target")
+        self.profile_fn = lambda: with_env(base_profile(), CARGO_TARGET_DIR=cargo_target)
         self.clock = clock
         self.log = log
         self.lock = Lock(self.state)

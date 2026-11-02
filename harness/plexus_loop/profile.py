@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .mission import HoudiniPolicy
 
@@ -79,6 +79,11 @@ class Profile:
         e.update(self.env)
         e["PLEXUS_LOOP_DEVICE"] = self.device
         return e
+
+
+def with_env(profile: Profile, **env: str) -> Profile:
+    """The same profile with extra environment variables for gates and command workers."""
+    return replace(profile, env={**profile.env, **env})
 
 
 def choose_profile(policy: HoudiniPolicy, state: str | None = None) -> Profile:
