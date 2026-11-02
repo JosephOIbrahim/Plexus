@@ -109,8 +109,9 @@ class Attempt:
     syntax: list[str] = field(default_factory=list)  # changed .py files that don't compile, one line each
     # Where the time went, in seconds of real (monotonic) time, to a tenth. None means not
     # measured: that step never ran, or the row predates timing. Never read a missing value as 0.
-    # wall_s minus the parts is worktree setup and teardown, the changed-file scan and the
-    # syntax check.
+    # wall_s minus the parts is the harness's own work: worktree setup and teardown, building
+    # the prompt (git ls-files and reading the context files), saving the reply, the changed-
+    # and ignored-file scans, the syntax check, and on a keep the commit and branch advance.
     wall_s: float | None = None  # the whole attempt, worktree in to worktree out
     route_s: float | None = None  # choosing the step (one Jev call when the router is jev)
     worker_s: float | None = None  # the worker: the model call plus writing its files
