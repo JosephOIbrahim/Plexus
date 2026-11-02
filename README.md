@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/plexus-logo.png" alt="Plexus" width="360">
+</p>
+
 # Plexus
 
 **Projects that compose into each other while they run.**
