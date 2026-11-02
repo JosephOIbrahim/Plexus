@@ -170,3 +170,8 @@ anchor = "Import every `pxr` module a file names"
 match = '\((Windows|Posix)?Path[,)]'
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "take a `str`, never a `pathlib.Path`"
+
+[[known_fixes]]
+match = "module 'pxr.Tf' has no attribute '(Event|Lock|RLock|Thread|Queue|Condition)'"
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "Threads, events, locks and queues come from Python's"
