@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 import time
+import warnings
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -45,6 +46,38 @@ STATE_DIR = ".plexus_loop"
 # How much of a dropped attempt's output the next prompt shows. Large enough that a clipped
 # gate output (head + marker + tail) plus its "$ cmd" line is never cut again.
 FEEDBACK_CHARS = GATE_HEAD_CHARS + GATE_TAIL_CHARS + 500
+# At most this many syntax errors lead the feedback; one per file, each line clipped.
+SYNTAX_MAX = 10
+SYNTAX_LINE_CHARS = 200
+
+
+def syntax_errors(root: Path, paths: list[str]) -> list[str]:
+    """One line per changed .py file that Python can't compile: ``path:line: message: source``.
+
+    A gate that parses files (the layers guard) or imports them (pytest) reports a syntax
+    error deep in a traceback, often in the part of its output the next prompt leaves out.
+    This puts the file, line and reason first. It only compiles; it never runs the code.
+    """
+    out: list[str] = []
+    for rel in paths:
+        if not rel.endswith(".py"):
+            continue
+        p = root / rel
+        if not p.is_file():
+            continue
+        try:
+            src = p.read_bytes()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")  # SyntaxWarning etc. are not errors
+                compile(src, rel, "exec", dont_inherit=True)
+        except SyntaxError as e:  # also IndentationError, TabError, bad encoding
+            where = f"{rel}:{e.lineno}" if e.lineno else rel
+            src_line = (e.text or "").strip()
+            line = f"{where}: {e.msg}" + (f": {src_line}" if src_line else "")
+            out.append(line[:SYNTAX_LINE_CHARS])
+        except (ValueError, OSError) as e:  # null bytes, unreadable file
+            out.append(f"{rel}: {e}"[:SYNTAX_LINE_CHARS])
+    return out
 
 
 class RefuseToStart(RuntimeError):
@@ -66,6 +99,7 @@ class Attempt:
     route_note: str = ""
     reply_file: str = ""  # the raw model reply, under .plexus_loop/<mission>/replies/
     detail: str = ""  # output of the failing gate or metric, shown to the next attempt
+    syntax: list[str] = field(default_factory=list)  # changed .py files that don't compile, one line each
 
 
 @dataclass
@@ -159,19 +193,24 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             "Do this step only. Later steps get their own attempts.",
         ]
     dropped = recent[-1] if recent and not recent[-1].kept else None
-    if dropped is not None and dropped.detail:
-        detail = dropped.detail[-FEEDBACK_CHARS:]
-        fence = "`" * max(3, _longest_backtick_run(detail) + 1)
+    if dropped is not None and (dropped.detail or dropped.syntax):
         lines += [
             "",
             "## Why the last attempt was dropped",
             f"Attempt {dropped.n}" + (f" (step {dropped.route})" if dropped.route else "")
-            + f" was dropped: {dropped.reason}. This is what it printed:",
-            fence,
-            detail.rstrip("\n"),
-            fence,
-            "Fix the cause first. It is usually one rule or one error near the top of that output.",
+            + f" was dropped: {dropped.reason}.",
         ]
+        if dropped.syntax:
+            shown = dropped.syntax[:SYNTAX_MAX]
+            lines += ["Python could not compile these files. Fix them first; every .py file must compile:"]
+            lines += [f"- {s}" for s in shown]
+            if len(dropped.syntax) > len(shown):
+                lines.append(f"- (and {len(dropped.syntax) - len(shown)} more)")
+        if dropped.detail:
+            detail = dropped.detail[-FEEDBACK_CHARS:]
+            fence = "`" * max(3, _longest_backtick_run(detail) + 1)
+            lines += ["This is what it printed:", fence, detail.rstrip("\n"), fence]
+        lines.append("Fix the cause first. It is usually one rule or one error near the top of that output.")
     lines += [
         "",
         "## Where it stands",
@@ -378,6 +417,8 @@ class MissionRun:
                         if m.total is not None:
                             best_total = m.total
                         a.kept, a.commit, a.reason = True, new, "strict gain"
+                    if not a.kept:
+                        a.syntax = syntax_errors(wt, a.changed)
             except gitops.GitError as e:
                 a.reason = f"git: {e}"
             except (OSError, UnicodeError) as e:

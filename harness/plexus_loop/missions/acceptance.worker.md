@@ -43,6 +43,7 @@ You make one change per attempt. The harness keeps it only if every gate passes 
 - Modules that must not import `pxr`: `plexus/__init__.py`, `plexus/schema`, `plexus/core/__init__.py`, `plexus/core/predicate.py`, `plexus/membrane/__init__.py`, `plexus/organs/__init__.py`. No import cycles.
 - **Package `__init__.py` files hold a docstring only.** `plexus/core/__init__.py` and `plexus/membrane/__init__.py` are created with nothing but a docstring, and `plexus/__init__.py` is never edited. Import submodules directly (`from plexus.core.axon import PlexusAxon`), never through the package.
 - `plexus/core/axon.py` and `plexus/core/stagekit.py` never import each other: the axon watches any stage it is given, and stagekit only writes layers.
+- **Placeholders are wording, never code.** In this brief and the step text, `<id>`, `<participant>`, `<name>` and `<exchange.usda path>` stand for a value. In code they become a variable inside an f-string, such as `f"from_{participant_id}.usda"`, never part of a name: `from_<id> = ...` is a syntax error, and the whole attempt is dropped for it. Every `.py` file you send must compile.
 
 ## Facts you would otherwise learn by failing
 
