@@ -1,0 +1,18 @@
+[package]
+name = "plexus-core"
+version = "0.1.0"
+edition = "2021"
+description = "Plexus core: predicates, budgets and contracts, exposed to Python as plexus._core"
+license = "MIT"
+publish = false
+
+[lib]
+name = "plexus_core"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+python = ["dep:pyo3"]
+
+[dependencies]
+pyo3 = { version = "0.30", optional = true, features = ["extension-module", "abi3-py311"] }

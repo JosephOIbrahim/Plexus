@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/plexus-core"]
+resolver = "2"
