@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -80,6 +81,31 @@ def syntax_errors(root: Path, paths: list[str]) -> list[str]:
             # ValueError (null bytes), OSError (unreadable), and MemoryError or RecursionError
             # from the compiler on a degenerate file, such as a token repeated thousands of times.
             out.append(_one_line(f"{rel}: {type(e).__name__}: {e}"))
+    return out
+
+
+KNOWN_FIX_CHARS = 700  # one quoted brief line
+
+
+def known_fix_quotes(mission: Mission, repo: Path, failures: list[str]) -> list[str]:
+    """The written-down fix for each recognised error in ``failures``, each quoted once.
+
+    A known fix matches with its regular expression against a target failure's text and quotes
+    the line of its file that contains its anchor, read from ``repo`` (the attempt's tree at tip,
+    so the quote is the version the worker is given). A missing file or anchor quotes nothing.
+    """
+    text = "\n".join(failures)
+    out: list[str] = []
+    for k in mission.known_fixes:
+        if not re.search(k.match, text):
+            continue
+        try:
+            lines = (repo / k.file).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError, ValueError):
+            continue
+        hit = next((ln.strip() for ln in lines if k.anchor in ln), None)
+        if hit and hit not in out:
+            out.append(hit[:KNOWN_FIX_CHARS])
     return out
 
 
@@ -303,6 +329,11 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             tfence = "`" * max(3, _longest_backtick_run(block) + 1)
             lines += ["Its step's own target tests failed like this. Start here; tests for later steps "
                       "are expected to fail until those steps land:", tfence, block, tfence]
+            quotes = known_fix_quotes(mission, repo, dropped.target_failures)
+            if quotes:
+                lines.append("This is a known error. The worker brief already gives its fix; apply it to the "
+                             "line the failure points at:")
+                lines += [f"> {q}" for q in quotes]
         if absent:
             lines += [f"Its files are gone: every attempt starts from the last kept commit. Step {step.id} "
                       "needs these files, and none of them is in the repo. Send each one in full as a "

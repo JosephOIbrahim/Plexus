@@ -8,6 +8,7 @@ pass, the number that counts as better, the worker, and the budgets.
 from __future__ import annotations
 
 import fnmatch
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -82,6 +83,19 @@ class Step:
 
 
 @dataclass(frozen=True)
+class KnownFix:
+    """A recognised failure and where its fix is written down.
+
+    When a dropped attempt's own target test fails with text matching ``match`` (a regular
+    expression), the next prompt quotes the line of ``file`` that contains ``anchor`` under it.
+    """
+
+    match: str
+    file: str
+    anchor: str
+
+
+@dataclass(frozen=True)
 class RouterSpec:
     """How the next attempt's step is picked (see router.py)."""
 
@@ -108,6 +122,7 @@ class Mission:
     context: list[str] = field(default_factory=list)
     steps: list[Step] = field(default_factory=list)
     router: RouterSpec = field(default_factory=RouterSpec)
+    known_fixes: list[KnownFix] = field(default_factory=list)
 
     @property
     def branch(self) -> str:
@@ -243,6 +258,21 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
     focus = [str(x) for x in _req(m, "focus", "[mission]")]
     if not focus:
         raise MissionError("[mission] focus must name at least one path")
+    known_fixes = []
+    for k in raw.get("known_fixes", []):
+        match = str(_req(k, "match", "[[known_fixes]]"))
+        anchor = str(_req(k, "anchor", "[[known_fixes]]"))
+        file = _norm(str(_req(k, "file", "[[known_fixes]]")))
+        try:
+            re.compile(match)
+        except re.error as e:
+            raise MissionError(f"[[known_fixes]] match {match!r} is not a valid regular expression: {e}") from e
+        if not match or not anchor:
+            raise MissionError("[[known_fixes]] match and anchor must not be empty")
+        if file.startswith("/") or ":" in file or ".." in file.split("/"):
+            raise MissionError(f"[[known_fixes]] file {file!r} must be a repo-relative path")
+        known_fixes.append(KnownFix(match=match, file=file, anchor=anchor))
+
     frozen = [str(x) for x in m.get("frozen", [])]
     for s in steps:
         for f in s.files:
@@ -262,4 +292,5 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
         context=[str(x) for x in m.get("context", [])],
         steps=steps,
         router=router,
+        known_fixes=known_fixes,
     )

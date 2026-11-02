@@ -128,3 +128,40 @@ max_consecutive_failures = 8
 [houdini]
 cpu_threads = 8
 cargo_jobs = 4
+
+# Recognised failures and the brief line that fixes each (harness quotes it under the
+# target-test failure). Each anchor appears once in the brief; a test checks they resolve.
+[[known_fixes]]
+match = "null or expired layer"
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "`FindOrOpen` returns `None` for a missing file"
+
+[[known_fixes]]
+match = "has no attribute 'AddReference'"
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "`Usd.Prim` has no `AddReference`"
+
+[[known_fixes]]
+match = "Cannot find a valid schema for the provided schema identifier|has no attribute 'ApplyAPI'"
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "Never call `Usd.Prim.ApplyAPI`"
+
+[[known_fixes]]
+match = "module 'pxr.Usd' has no attribute 'Plug'"
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "`Usd.Plug` does not exist"
+
+[[known_fixes]]
+match = "type object 'Notice' has no attribute 'ObjectsChanged'"
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "`Tf.Notice.ObjectsChanged` does not exist"
+
+[[known_fixes]]
+match = "ListProxy_SdfSubLayerTypePolicy"
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "`layer.subLayerPaths` is a live list proxy"
+
+[[known_fixes]]
+match = "NameError: name '(Sdf|Tf|Usd|Plug|Vt|Gf)' is not defined"
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "Import every `pxr` module a file names"
