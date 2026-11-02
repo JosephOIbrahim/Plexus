@@ -36,6 +36,8 @@ v5.3 says the opposite in about a dozen places: Comfy-Cozy is "the seed code", "
 | B19 | §14.2, new bullet | Spec v2.1 lines that assumed Comfy-Cozy code |
 | B20 | `PLEXUS_MEMORY_OPTIONS.md`, line 18 | The memory note still says Plexus is seeded from Comfy-Cozy |
 | B21 | §14.2, line 348 | Python ≥ 3.11: the seed's packaging is Joe's call |
+| B22 | §2 diagram, §5.1, §6, §8, §11 Phase 1, §13.3 | The scheduler stays in Python until measured (deferral accepted by Joe) |
+| B23 | §11 Phase 0, line 218 (second sentence) | Phase 0's Rust pieces move to M2b, M3 and M6 (deferral accepted by Joe) |
 
 **Verified Nov 1** by three independent read-only checks: every "Now" quote is verbatim at its stated line; a sweep of every Plexus document for leftover "reuse Comfy-Cozy" wording; and a red team against the frozen tests, `CLAUDE.md` and the rest of v5.3. Their findings are folded in below.
 
@@ -369,6 +371,38 @@ This is outside the Blueprint, but it is the one `docs/plexus/` design note no o
 > - **Python ≥ 3.11 (Spec §1).** That stands for Plexus. The root `pyproject.toml` is still Comfy-Cozy's (3.10), and its CI tests 3.10 to 3.13. Plexus's own package requires ≥ 3.11 when `plexus/` lands; what happens to the seed's packaging and CI is Joe's call.
 
 **Why:** "Both move" assumed the seed's packaging is maintained as Plexus's, which is now undecided.
+
+---
+
+## B22 · The scheduler stays in Python until a measurement moves it (accepted by Joe, Nov 1)
+
+The refinement round (`NEXTGEN_SCAFFOLD_PLAN.md` §2, `rust.threading`) keeps every scheduler thread in Python through M8: the dispatcher, the debounce, action threads and organ deadlines. Rust holds the pure parts (predicates, budgets) and is called synchronously. Seven v5.3 places say otherwise.
+
+| Line | Now | Proposed |
+|---|---|---|
+| 81 (§2 diagram) | `L2  Nervous system  scheduler · predicates · budgets · tools      Rust (plexus-core)` | `L2  Nervous system  scheduler · predicates · budgets · tools      Rust (plexus-core); scheduler in Python until measured` |
+| 132 (§5.1, last sentence) | The scheduler runs on tokio, and wake events cross into Python only when a neuron actually wakes. | **[v5.4]** Until a measurement says otherwise, the scheduler's threads stay in Python and call the Rust predicate engine and budgets synchronously; tokio is revisited when organ-queue measurements exist. |
+| 164 (§6, last sentence) | In the Rust scheduler, the halt is one cancellation signal that every task listens on. | In the scheduler, the halt is one cancellation signal that every action and organ job listens on. |
+| 183 (§8) | **[v5 · Rust]** In the scheduler that is a tokio task with a deadline. | **[v5 · Rust]** In the scheduler that is a task with a deadline: a Python thread for now, a tokio task once the scheduler moves to Rust. |
+| 219 (§11 Phase 1) | **[v5 · Rust]** The predicate engine and scheduler are Rust from here on, fed batched stage diffs once per heartbeat. | **[v5 · Rust]** The predicate engine and budgets are Rust from here on, fed batched stage diffs once per heartbeat; the scheduler joins them when a measurement shows it on the hot path. |
+| 275 (§13.3 diagram) | `provenance hash chain (F4) · predicate engine · scheduler (tokio)` | `provenance hash chain (F4) · predicate engine · budgets · scheduler (tokio, later)` |
+| 287 (§13.3) | …hands it to the Rust predicate engine, which evaluates every neuron's predicate outside the interpreter lock. … Organ jobs run as tokio tasks with deadlines. | …hands it to the Rust predicate engine, which evaluates every neuron's predicate in microseconds on the dispatcher thread. … Organ jobs run with deadlines: Python threads for now, tokio tasks once the scheduler moves. |
+
+**Why:** "outside the interpreter lock" and "tokio" describe a scheduler Plexus hasn't measured a need for. Phase 1's Rust calls are microseconds; a tokio runtime and PyO3 threading under the GIL are cost a CPU-bound worker would pay first. The §5.1 sentence about avoiding the GIL "in the hot path" stays true as the reason to move it, once a measurement shows the hot path.
+
+---
+
+## B23 · Phase 0's Rust pieces move later (accepted by Joe, Nov 1)
+
+**Now (line 218, second sentence; B11 changes the first):**
+
+> **[v5 · Rust]** It also stands up the Cargo workspace, the `Outcome` envelope, the identity registry and the intent ledger in `plexus-core`, built into Python with maturin.
+
+**Proposed:**
+
+> **[v5 · Rust]** It also stands up the Cargo workspace in `plexus-core`, built into Python with maturin. **[v5.4]** The `Outcome` envelope lands in its own mission (M2b), intent hashing at M3 and the intent lookup at M6. The writer identity registry lives in Python in Phase 1 (the exchange's participant list and the publication allowlist) until a mission needs it in Rust.
+
+**Why:** the harness rewards only frozen tests that pass. `Outcome`, the intent ledger and a Rust identity registry earn nothing in Phase 1's tests, so they would be work the worker can't keep. Each now lands in the mission whose frozen test needs it. The §13.3 crate diagram (line 274) still lists them in `plexus-core`, which stays true: the deferral is about when, not where.
 
 ---
 

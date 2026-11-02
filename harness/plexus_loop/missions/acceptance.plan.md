@@ -261,7 +261,7 @@ Joe asked for Jev's read on the open decisions, shown before anything is applied
 ## 9 · Decisions Joe needs before `go`
 
 1. ~~**Pull the model**~~ — done Nov 1 on Joe's word: `qwen3-coder:30b` (18 GB) is installed.
-2. **Notice path:** Option A (recommended) or B (§4).
+2. ~~**Notice path**~~ — **Option A**, decided by Joe (Nov 1). Also decided: Joe writes `tests/acceptance/guards/test_layers.py` before `run`; it joins the mission file's `[[gates]]` as `layers`, ahead of `core`.
 3. **`unit` gate:** narrow as in §6, or keep the full suite per attempt. The Nov 1 decision weakens the case for the full suite: Plexus imports nothing from the code it tests.
 4. **Mission-file diff and C1–C5:** approve as written, or edit.
 5. **No maturin in `pyproject.toml` this mission** (§7).

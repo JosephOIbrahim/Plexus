@@ -231,14 +231,14 @@ Every mission is one harness mission: the metric is a frozen test path that fail
 
 | Mission | Target | Lands | What Joe adds first |
 |---|---|---|---|
-| **M0 · acceptance** (planned) | `tests/acceptance/phase1`, 11 items | S1–S8 of the acceptance plan, Option A. Three brief corrections before `run`: plugInfo `bases: ["UsdAPISchemaBase"]` (not `/TfType`), the T8 `cfg`/Cargo.toml rule, and the peek-then-admit budget order. Plus the in-process schema registration above. | Nothing required. Optionally `tests/acceptance/guards/test_layers.py` now: it passes trivially and rides as a gate from the first attempt. |
+| **M0 · acceptance** (planned) | `tests/acceptance/phase1`, 11 items | S1–S8 of the acceptance plan, Option A. Three brief corrections before `run`: plugInfo `bases: ["UsdAPISchemaBase"]` (not `/TfType`), the T8 `cfg`/Cargo.toml rule, and the peek-then-admit budget order. Plus the in-process schema registration above. | **`tests/acceptance/guards/test_layers.py`, before `run` (Joe, Nov 1).** It passes trivially while `plexus/` and `crates/` are empty and rides as a `layers` gate from the first attempt. |
 | **M1 · phase2** | `tests/acceptance/phase2`, **7 items** (T7 ×5, T8 ×2; the plan said 6 — re-count at setup) | `plexus/organs/protocol.py` → `plexus/organs/cozy/` (correlation id into `/prompt`, poll `/history` for truth, `/view`, hashlib sha256, env fingerprint) → `ctx.author_asset` | Nothing; decide package vs single file for the organ. |
-| **M2 · guards** (gates only) | — | Joe freezes `test_layers.py`; Claude commits the `pxr` symbol-table gate (SYNAPSE lesson 8) | The layers test. |
-| **M2b · outcome** (new, from a critic) | a small frozen `Outcome` test | `outcome.rs` and its pyclass, on its own, because M3's NaN → `Unavailable` test needs it and Blueprint §11 already puts `Outcome` in Phase 0 | The `Outcome` test. |
-| **M3 · identity** | `tests/acceptance/phase3/test_t9_identity.py` | `canon.rs` + sha2: `cache_key`, `intent_hash`, golden vectors, type-directed canonicalisation (pxr widens `0.1f` to `0.10000000149011612`) | The identity tests, and the envFingerprint-in-or-out decision. |
-| **M4 · graph encoding** | `test_t10_graph_schema.py` (T0-style subprocess gate) | `PlexusNodeAPI`, `PlexusResultAPI`, Sdr defs, `add_node` / `connect`, compliance at the gate | Spec Patch 02 (the two schemas) and a new CONTRACT surface. |
+| **M2 · symbol gate** (gate only) | — | Claude commits the `pxr` symbol-table gate (SYNAPSE lesson 8), approved by Joe (Nov 1), in its own scaffolding commit before M4. The layers test already landed before M0. | Nothing. |
+| **M2b · outcome** (decided by Joe, Nov 1) | a small frozen `Outcome` test | `outcome.rs` and its pyclass, on its own, because M3's NaN → `Unavailable` test needs it and Blueprint §11 already puts `Outcome` in Phase 0 | The `Outcome` test. |
+| **M3 · identity** | `tests/acceptance/phase3/test_t9_identity.py` | `canon.rs` + sha2: `cache_key`, `intent_hash`, golden vectors, type-directed canonicalisation (pxr widens `0.1f` to `0.10000000149011612`) | The identity tests. Decided (Joe, Nov 1): the key excludes `envFingerprint` and `organVersion`; `-0.0` folds to `0.0`; floats are encoded by declared Sdf type. |
+| **M4 · graph encoding** | `test_t10_graph_schema.py` (T0-style subprocess gate) | `PlexusNodeAPI`, `PlexusResultAPI`, Sdr defs, `add_node` / `connect`, compliance at the gate | Spec Patch 02 is approved (Joe, Nov 1); the patch document and its T0-style frozen test still have to be written, plus the new CONTRACT surface. |
 | **M5 · incremental** | notice → dirty within 10 ms at 10k nodes | Python edge index first; Rust `graph.rs` only on a measured miss | The 10 ms p95 test. |
-| **M6 · results** | content-addressed results, payloaded | the F7 lookup, rotation measured on 26.5 | The results layout decision. |
+| **M6 · results** | content-addressed results, payloaded | the F7 lookup, rotation measured on 26.5 | Nothing to decide: content-addressed `/Project/Results/s_<2>/k_<32>` (Joe, Nov 1). The results tests. |
 | **M7 · import** | ComfyUI workflow import into the neutral IR | the importer inside `plexus/organs/cozy/` | Import tests with fixtures inside the organ directory only (T8). |
 | **M9 · shadow** | parity on Joe's scenes | `plexus-usd` + `plexus-shadow` | The parity corpus. |
 
@@ -254,19 +254,25 @@ Every mission is one harness mission: the metric is a frozen test path that fail
 
 ---
 
-## 7 · Decisions for Joe
+## 7 · Decisions
 
-From the refinement round, in the order they block work:
+### Decided by Joe (Nov 1)
 
-1. **Notice path A or B** (acceptance plan §4). Jev's read was A at 0.98; still your call. The refinement round designed for A.
-2. **`test_layers.py`** — write it before M0's `run` so it rides as a gate from the first attempt, or at M2.
-3. **`Outcome` timing** — its own small mission before identity (recommended, and Blueprint §11 Phase 0), or folded into M4.
-4. **Cache key: env fingerprint in or out** — before the first result persists. Out makes results shareable across machines; in is strict. Reversing it later changes the key domain and orphans every stored result.
-5. **Canonicalisation rules** — accept folding `-0.0` to `0.0` and type-directed float narrowing, before the first key persists.
-6. **Spec Patch 02** — `PlexusNodeAPI` (`plexus:nodeId`, `plexus:mode` active/bypass/muted) and `PlexusResultAPI` (`cacheKey`, `opId`, `nodeId`), signed before any node or result prim is authored.
-7. **Results layout** — content-addressed (`/Project/Results/s_<2>/k_<32>`: rename-proof, cross-project hits) or a tree that mirrors the graph (readable).
-8. **Two Blueprint deferrals** — tokio for the scheduler (§5.1) and the Phase 0 identity registry and intent ledger (§11) both move later in this design.
-9. **The symbol-table gate** — approve the scaffolding commit before M4.
+1. **Notice path: Option A.** Python owns the `Tf.Notice` callback, the queue, the 50 ms dispatcher, action threads and authoring; Rust (`plexus._core`) owns predicate compile and eval with the delta cache, and the budgets.
+2. **`tests/acceptance/guards/test_layers.py` is written before M0's `run`**, so the import-layer rules ride as a `layers` gate from the first attempt. It lives under `tests/acceptance/`, so Joe writes and freezes it; Claude may draft it outside that directory for Joe to copy in.
+3. **`Outcome` gets its own mission, M2b,** before identity (M3).
+4. **The cache key excludes `envFingerprint`** (and `organVersion`). Results stay shareable across machines and survive driver updates. What this commits to: an environment change that alters outputs without changing an op's implementation (a torch or CUDA kernel change) can serve a result made under the old environment. The `envFingerprint` recorded on every result is the drift signal: a result whose fingerprint differs from the current one can be shown as made-elsewhere, and re-run on request.
+5. **Canonicalisation:** `-0.0` folds to `0.0`, and every value is encoded by its declared Sdf type (a `float` attribute hashes as f32 bits, a `double` as f64). Frozen with the M3 golden vectors; changing it later rewrites every key.
+6. **Spec Patch 02 is approved:** `PlexusNodeAPI` (`plexus:nodeId`, `plexus:mode` active / bypass / muted) and `PlexusResultAPI` (`plexus:cacheKey`, `plexus:opId`, `plexus:nodeId`). Still to do before M4: the patch document itself, and its T0-style frozen test.
+7. **Results are content-addressed:** `/Project/Results/s_<key[0:2]>/k_<key[0:32]>`, independent of graph topology, so renames, moves and cross-project reuse hit. What this commits to: a project that adopts another project's result references that project's results layer, so archiving a project must first re-author any adopted results locally, or their provenance breaks.
+8. **Both Blueprint deferrals are accepted.** The scheduler's threads stay in Python through M8 (tokio is revisited when organ-queue measurements exist), and Phase 0's Rust pieces move: `Outcome` to M2b, intent hashing to M3, the intent lookup to M6, with the writer identity registry living in Python in Phase 1 (the exchange's participant list and the publication allowlist). The matching Blueprint text is drafted as B22 and B23 in `docs/plexus/BLUEPRINT_v5.4_DRAFT_CHANGES.md`.
+9. **The `pxr` symbol-table gate is approved:** `harness/plexus_loop/symbols.py`, a hashed table of every public name in the pinned pxr modules, in its own scaffolding commit before M4.
+
+### Still open
+
+- **Per-mission test granularity** (`harness.test-granularity`): Joe writes each mission's frozen tests before its `run`, one behaviour per test. A standing rule, not a one-time decision.
+- **The acceptance plan's own decisions** (`harness/plexus_loop/missions/acceptance.plan.md` §9): narrowing the `unit` gate, the mission-file diff with C1–C6, and no maturin in `pyproject.toml`.
+- **The Blueprint v5.4 draft's four decisions:** the no-import hook, the `comfyui-agent` MCP server, the D6 licence reading, a fifth contract for providers.
 
 **One correction to this plan's own earlier text:** §3.4 called the 238 ms 10k-node edge-index time "the first measured case for Rust". The critics showed that number is mostly pxr extraction, which stays in Python under any design; the per-notice dirty closure (13 ms in the report's own table) is what breaks Spec §11's 10 ms. Rust `graph.rs` waits for that measurement.
 
@@ -356,7 +362,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **When:** M4: the first frozen test registers a file-backed def with this grammar and gets typed inputs back from GetShaderNodeByIdentifier; measure whether a `.usda` under ${PLEXUS_STORE} is discovered from an absolute path
 
 
-### `usd.plexusnodeapi` — needs-joe
+### `usd.plexusnodeapi` — decided by Joe (Nov 1)
 
 - **Question:** What do the new codeless schemas carry, without touching the four frozen ones?
 - **Value:** Fifth and sixth classes in the same plugInfo.json + generatedSchema.usda. `PlexusNodeAPI` (on every node): `plexus:nodeId` (string, UUID, stable across rename/move/reference; provenance and UI only, never in the cache key) and `plexus:mode` (token, allowedTokens active|bypass|muted, fallback active). `PlexusResultAPI` (on result prims, alongside PlexusAssetAPI): `plexus:cacheKey` (string, 64 lowercase hex), `plexus:opId` (string), `plexus:nodeId` (string, provenance). PlexusAssetAPI stays exactly as Spec §3. Nothing else: no capability (type-level, on the Sdr def), no status, no layout, no stored key on nodes.
@@ -364,6 +370,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **Evidence:** tests/acceptance/phase1/test_t0_schema_gate.py:17-57 (checks presence of listed attributes only); PLEXUS_SPEC.md:35 ('normative'); NEXTGEN_SCAFFOLD_PLAN.md:100 ('One new codeless PlexusNodeAPI'), :113-114 ('plexus:cacheKey, a spec patch'; 'Recomputed, never trusted')
 - **Rejected:** Adding plexus:cacheKey to PlexusAssetAPI (report, harness-first, measurement-first): passes T0 but edits a normative table; `plexus:pinned`/`plexus:cachePolicy` (product-first): no frozen test or mission needs them yet; `plexus:capability` on the instance (harness-first): duplicates type data.
 - **When:** M4; it is a Spec §3 patch (Patch 02) either way, so Joe signs the schema list before any node or result prim is authored
+- **Joe:** Approved as Spec Patch 02 (Joe, Nov 1). The patch document and its T0-style frozen test come before M4.
 
 
 ### `usd.edge-storage` — settled-by-evidence
@@ -396,7 +403,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **When:** M1 uses absolute paths; expression form and store layout fixed in M6. Separate measurement (risk, not a design fork): SHA-256 wall time over Joe's Models tree on CPU with Houdini open, hashlib vs sha2+rayon, before hashing becomes a Rust candidate
 
 
-### `usd.result-layout` — needs-joe
+### `usd.result-layout` — decided by Joe (Nov 1)
 
 - **Question:** Where does a result prim live, and how is it loaded?
 - **Value:** Phase 2 (frozen by T7): `/Exchange/<participant>/Assets/<name>`, def, PlexusAssetAPI, in the neuron's edit layer. Later: content-addressed and independent of graph topology: `/Project/Results/s_<key[0:2]>/k_<key[0:32]>` with PlexusResultAPI + PlexusAssetAPI (one child `o_<outputName>` per output when an op has several); retries are siblings `k_<key32>_r<N>` with plexus:retryOf / plexus:retryReason. Authored only into results/r_<NNNN>.usdc, rotated at 50,000 prims (re-measured on 26.5), attached as payloads on /Project/Results, opened with LoadNone in editing contexts. The node's `outputs:<o>` acceptance opinion lives in runtime.usda (usd.project-writer-order). F7 lookup is Sdf-level: for each results layer in strength order (own shards, then exchange participants' published results layers) layer.GetPrimAtPath(k_<key32>); a hit requires plexus:cacheKey == full 64-hex key and each output's plexus:sha256 to match the store file; a hit from another project is adopted by authoring a local result prim that `references` the foreign one.
@@ -404,9 +411,10 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **Evidence:** tests/acceptance/phase2/test_t7_round_trip.py:282-310 (phase-2 location pinned); NEXTGEN_SCAFFOLD_PLAN.md:113-114 (Result and Cache key rows), :124 (payload the results), :137 (50k result prims: 44 MB usda, LoadNone 15 ms, payload load 111 ms); PLEXUS_SPEC.md:136 (retry authoring), :204 (50k rotation, Moneta number); PLEXUS_BLUEPRINT_v5.md:65 (F7), :336 (re-measure 50k on 26.5)
 - **Rejected:** `/Project/Results/<g>/<n>/k_<key16>` (report, harness-first, measurement-first): ties cache identity to a node path, and 16 hex is thin for a store shared across projects. A store-side manifest as lookup authority: a second source of truth beside the stage.
 - **When:** M6; needs the PlexusResultAPI Spec patch and Joe's call on content-addressed vs node-path layout (trade-off: cross-project and rename-proof hits vs a results tree that reads like the graph)
+- **Joe:** Content-addressed (Joe, Nov 1): `/Project/Results/s_<key[0:2]>/k_<key[0:32]>`.
 
 
-### `usd.cache-key` — needs-joe
+### `usd.cache-key` — decided by Joe (Nov 1)
 
 - **Question:** What exactly is a node's cache key, and where is it trusted?
 - **Value:** key = sha256(b"PXK1" + enc(opId) + implDigest[32] + u32(n) + for each input declared by the Sdr def, sorted by name bytes: enc(name) + tag + body). Tags: 0x01 value (composed value after specializes resolve, else the Sdr default, encoded by declared Sdf type per rust.hashing-canonical); 0x02 asset (32-byte sha256 of the resolved file, never the path); 0x03 edge (upstream key[32] + enc(sourceOutputName)); 0x04 multi-edge (u32 count + edges in connection order). implDigest = sha256 of the op's `info:plexus:sourceAsset` file (for a cozy op: the organ's declared pack-commit + node-source digest). Excluded: prim path and name, plexus:nodeId, ui:*, undeclared attributes, which layer an opinion came from, envFingerprint and organVersion (recorded on the result for drift diffing). plexus:mode = bypass: no key, pass-through; ops with plexus:effect = source must declare `inputs:nonce` or never hit. Keys are always recomputed from the composed stage; plexus:cacheKey on a result is for verification only.
@@ -414,6 +422,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **Evidence:** NEXTGEN_SCAFFOLD_PLAN.md:75 (structural key with ancestor ordinals, caching.py:101-148; NaN at caching.py:64), :80 (no node-code version), :114 (Cache key row); PLEXUS_SPEC.md:61 (envFingerprint is 'the diff key for drift'); PLEXUS_BLUEPRINT_v5.md:65 (F7)
 - **Rejected:** Including envFingerprint: every torch/CUDA update empties every cache, which defeats F7; Joe may still prefer strictness, which is why this is his call. Omitting implDigest (harness-first): a pack update that changes outputs would serve stale results forever.
 - **When:** M3 defines the encoding, M6 the key; Joe decides envFingerprint in/out before the first result prim persists, because reversing it changes the key domain (PXK1 -> PXK2) and orphans every stored result
+- **Joe:** `envFingerprint` and `organVersion` stay out of the key (Joe, Nov 1); the fingerprint recorded on each result is the drift signal.
 
 
 ### `usd.limits` — needs-measurement
@@ -436,7 +445,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **When:** phase1 acceptance (C2 scaffolding) for the manifest shape; plexus-usd at M9. Measure then: cold and warm `cargo build --release -p plexus-usd` with Houdini open and CARGO_BUILD_JOBS from the CPU profile
 
 
-### `rust.module-dag` — needs-joe
+### `rust.module-dag` — decided by Joe (Nov 1)
 
 - **Question:** What modules does plexus-core have, which may depend on which, and how is acyclicity enforced?
 - **Value:** Flat single-file modules under crates/plexus-core/src/, ranked; a module may `use crate::X` only for strictly lower rank: 0 error.rs; 1 predicate.rs, budget.rs, canon.rs [M3], graph.rs [M5], outcome.rs [M4 or earlier]; 2 composer.rs (trait + plain types, M9 only); 3 py.rs (#[cfg(feature = "python")], the only file that may name pyo3; nothing imports it). lib.rs only declares modules and the #[pymodule] fn _core. Enforcement is a frozen Python test Joe owns, tests/acceptance/guards/test_layers.py: it regex-scans crates/plexus-core/src/**/*.rs for `use crate::(\w+)` and `crate::(\w+)::`, asserts rank(importer) > rank(imported) against a table embedded in the test, requires every .rs file to be in the table, asserts crates/plexus-core/Cargo.toml names neither openusd nor tokio and no crate has a build.rs, and that no file but py.rs mentions pyo3. The worker may add a belt-and-braces #[test] inside the crate, but the guard is the frozen one.
@@ -444,6 +453,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **Evidence:** NEXTGEN_SCAFFOLD_PLAN.md:23 (cycles hidden by lazy imports), :38 (lesson 3: 'boundaries are mechanisms, not comments ... add an import-layer test for plexus/ and crates/'); acceptance.toml:12 (harness/** and tests/acceptance/** frozen; crates/** is worker focus); harness/plexus_loop/loop.py:246 (baseline gates must pass)
 - **Rejected:** A predicate/ submodule tree (lex, parse, ast, eval): four files the worker must keep consistent in the riskiest step (S3). cargo-deny or clippy: do not check module edges inside one crate and add tooling the worker cannot reach. Harness-first's in-crate ALLOWED test as the only guard: worker-editable.
 - **When:** Joe writes tests/acceptance/guards/test_layers.py; it passes trivially before plexus/ exists, so it can ride as a [[gates]] entry from M0 if written before `run`, otherwise from M1
+- **Joe:** `test_layers.py` is written before M0's `run` (Joe, Nov 1), with the corrected rank tables in §2.
 
 
 ### `rust.pyo3-surface` — needs-measurement
@@ -476,7 +486,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **When:** phase1 acceptance (S7); the global ordering and half-open window are assumptions recorded in the plan file
 
 
-### `rust.hashing-canonical` — needs-joe
+### `rust.hashing-canonical` — decided by Joe (Nov 1)
 
 - **Question:** Which hash and which canonical encoding define content identity, and who implements them?
 - **Value:** SHA-256, lowercase 64-hex, everywhere content-addressed (files, intents, cache keys). Files are hashed in Python with hashlib inside the organ (M1, T7). Key and intent canonicalisation has exactly one implementation, Rust canon.rs (sha2 is the only new dependency), exposed as plexus._core.intent_hash(obj, domain: str) -> str and cache_key(op_id, impl_digest: bytes, params: list[tuple[name, sdf_type, value]], upstream: list[tuple[input, source_output, key: bytes]]) -> Outcome[str]. Encoding is binary and type-directed, tag b"PXK1": every string is u32 LE length + UTF-8 bytes as authored (no Unicode normalisation); each value is enc(sdf_type_name) + payload by declared Sdf type: bool 1 byte, int i32 LE, int64 i64 LE, float f32 bits (exact for values that started as f32), double f64 bits, half f16 bits, string/token str, asset the 32-byte content sha256 never the path, arrays u32 count + elements, vecN native-width components. -0.0 encodes as +0.0. NaN or Inf -> Outcome Unavailable(code non_finite, missing=[field]); unknown Sdf type -> Unavailable(unsupported_type). A hashlib reference encoder embedded in the frozen test is the oracle.
@@ -484,9 +494,10 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **Evidence:** tests/acceptance/phase2/test_t7_round_trip.py:12, :230-231 (hashlib.sha256 on the file), :106-118 (links() canonical JSON); PLEXUS_SPEC.md:53 (plexus:sha256); NEXTGEN_SCAFFOLD_PLAN.md:75 ('non-primitive inputs become NaN and never match'), :85 ('intent hashing and key canonicalisation (exactness across processes, not speed)'), :96 (Cozy WorkflowSignature buckets values)
 - **Rejected:** BLAKE3: faster on large files, but file hashing is I/O-bound, and it would put a second digest family on the stage and need a non-stdlib oracle. Tagged canonical JSON with float bit-hex (harness-first): correct but still needs the declared Sdf type to survive float widening, and a binary layout is shorter for the worker to get right. RFC 8785 JSON: float printing is exactly where cross-language drift hides.
 - **When:** M3 (identity mission). Joe decides, before the first key persists, whether -0.0 folding and f32-narrowing are acceptable; the algorithm is frozen then because a change rewrites every key
+- **Joe:** Accepted (Joe, Nov 1): `-0.0` folds to `0.0`; values are encoded by declared Sdf type.
 
 
-### `rust.outcome-and-errors` — needs-joe
+### `rust.outcome-and-errors` — decided by Joe (Nov 1)
 
 - **Question:** How do Outcome and Rust error types relate to the frozen exception contract?
 - **Value:** Phase1: no Outcome. Hand-written std-only enums with Display (no thiserror, no anyhow): enum PredicateErr { Syntax { col: usize, found: String }, Unsupported { word: String }, OutOfScope { path: String, scope: String }, NotAbsolute { path: String } } -> PredicateError(str) in py.rs alone. Later: enum CanonErr { NonFinite(field), Unsupported(type) } and enum GraphErr { Cycle(Vec<String>), Unknown(path), Limit(&'static str) } become Outcome reasons with the variant name as snake_case `code`. Outcome (M4 or when the first contract call needs it): Rust enum Status { Ok, Unavailable, Blocked }; struct Reason { code: &'static str, detail: String, missing: Vec<String> }; struct Outcome<T> { status, payload: Option<T>, reason: Option<Reason> } built only via Outcome::ok(T), ::unavailable(code, detail, missing), ::blocked(code, detail); Python sees a frozen pyclass with .status in "ok"|"unavailable"|"blocked", .payload, .reason_code, .reason, .missing, .ok, and a broken invariant raises ValueError at construction. Rule: exceptions for caller mistakes detectable from the arguments alone (malformed predicate, out-of-scope path, wrong type); Outcome for world state (missing substrate, gate denial, limit exceeded, model not indexed, unhashable value). Library code carries #![deny(clippy::unwrap_used, clippy::expect_used)] so no panic crosses PyO3.
@@ -494,6 +505,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **Evidence:** PLEXUS_BLUEPRINT_v5.md:109 ('The envelope'), :67 (F10), :290 (compile cost); tests/acceptance/CONTRACT.md:33,40; tests/acceptance/phase1/test_t2_predicate_precision.py:167-173; NEXTGEN_SCAFFOLD_PLAN.md:54 (idea 5: Verified / Unknown / Broken)
 - **Rejected:** Returning Outcome from compile_predicate: breaks the frozen test_bad_predicates_fail_at_registration. Outcome in the phase-1 surface (product-first): no phase-1 test rewards it under min_delta=1, so the worker's attempt would be dropped.
 - **When:** phase1 (S3) for PredicateErr; Outcome at M4 (or an earlier outcome mission if Joe wants Blueprint §11 Phase 0's envelope first). The Blueprint-§4-vs-CONTRACT reading is Joe's to confirm
+- **Joe:** `Outcome` lands in its own mission, M2b, before identity (Joe, Nov 1).
 
 
 ### `rust.edge-index` — needs-measurement
@@ -516,7 +528,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **When:** phase1 acceptance; shadow process at M9; tokio revisited when the organ-queue measurement exists
 
 
-### `rust.what-stays-python` — needs-joe
+### `rust.what-stays-python` — decided by Joe (Nov 1)
 
 - **Question:** What stays Python (the notice-path split)?
 - **Value:** Python: Tf.Notice registration, StageEvent, the dispatcher thread and debounce, action worker threads, wait_idle, composed-value reads (the values dict), ctx.author/author_asset and every Save, the §7.3 allowlist gate (plexus/membrane/gate.py, strings in), schema plugin, membrane, stagekit, notice classification, Sdr registration, graph encoding and the validator's USD half, projection (stage -> neutral IR), result authoring and lookup, the content store's file I/O and sha256, the usd-core Composer, all organs and the ComfyUI importer, LLM providers, surfaces. Rust: predicate compile/scope/eval/delta cache, budgets; later canonical encoding and keys, Outcome, the edge index and closure if promoted, the Composer trait types, the shadow process.
@@ -524,6 +536,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **Evidence:** acceptance.plan.md:96-119 (§4), :249 (Jev A at 0.98), :264 (decision 2 open); PLEXUS_BLUEPRINT_v5.md:284 (§13.3 flow); CLAUDE.md 'Where v5.3 wins'
 - **Rejected:** Option B (all Python for phase1): fewest worker failure modes but contradicts v5.3 for a whole mission and leaves a port as known debt. Moving the dispatcher to tokio now: unmeasured and on the riskiest path.
 - **When:** phase1 acceptance, before `run` (acceptance.plan.md §9 decision 2)
+- **Joe:** Option A (Joe, Nov 1).
 
 
 ### `boundary.plain-data` — settled-by-evidence
@@ -556,7 +569,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **When:** M1 mission file (blind as metric item), M2 onward (both as gates)
 
 
-### `harness.symbol-gate` — needs-joe
+### `harness.symbol-gate` — decided by Joe (Nov 1)
 
 - **Question:** How is the worker stopped from inventing pxr, Sdr and openusd APIs?
 - **Value:** harness/plexus_loop/symbols.py builds a sha256-stamped JSON table of every public name reachable from pxr.{Usd, Sdf, Tf, UsdShade, Sdr, Ar, UsdUI} on usd-core 0.26.5 (dir() walk at check time, keyed by package version) and, at M9, of openusd 0.8.0's pub items from rustdoc JSON. A gate `symbols` parses changed .py files with ast and fails on any `<pxr module>.<Name>` attribute access whose Name is absent; it also lists constructor-arity facts the worker gets wrong (Sdr.NodeDiscoveryResult takes an SdrVersion, not a str). Claude's scaffolding in harness/**, committed before M4; optional for phase1, whose pxr surface is small.
@@ -564,6 +577,7 @@ Every variable the synthesis settled, with its status. **settled-by-evidence** m
 - **Evidence:** NEXTGEN_SCAFFOLD_PLAN.md:57 (idea 8; AGENTS.md:45-46; SYNAPSE_RULEBOOK.md:124-128); live probe: hasattr(Sdr, 'ShaderNodeDiscoveryResult') == False, hasattr(Sdr, 'NodeDiscoveryResult') == True, ctor signature wants SdrVersion
 - **Rejected:** Relying on the test failure: an AttributeError surfaces only after a full build and test run.
 - **When:** before M4 (scaffolding commit shown to Joe); it is harness/** so Claude writes it, Joe approves
+- **Joe:** Approved (Joe, Nov 1), as its own scaffolding commit before M4.
 
 
 ### `harness.t8-guards` — settled-by-evidence
@@ -717,9 +731,9 @@ Claims that held up:
 - Phantom pxr/Sdr APIs from the 30B worker are SYNAPSE's top failure class and one architect hit `Sdr.ShaderNodeDiscoveryResult` itself (it does not exist on 26.5; NodeDiscoveryResult does and wants an SdrVersion). Phase 1's pxr surface is small enough to survive; M4 is not, so the symbols gate must land before it.
 - Sdr live registration is single-run evidence that needs a real .usda file; an id containing '@' is unproven and invalid as a prim name, which is why this synthesis uses `.vN`. If file-backed registration fails for a store path, the fallback (typeless prim + PlexusNodeAPI with connectable behaviour) costs Sdr's type validation.
 - PlexusNodeAPI and PlexusResultAPI are Spec §3 patches. T0 tolerates them, but they need Joe's signature and a T0-style gate of their own; a worker attempt aimed at graph encoding before M4's tests are frozen is dropped by the harness, so graph work must stay out of every M0/M1 brief.
-- Cache-key policy (implDigest in, envFingerprint out) can serve a stale result after an environment change that alters outputs without changing an op's implementation (a torch or CUDA kernel change). Joe must choose strict or shareable before results persist; reversing later changes the key domain and orphans every stored result.
+- Cache-key policy (implDigest in, envFingerprint out) can serve a stale result after an environment change that alters outputs without changing an op's implementation (a torch or CUDA kernel change). **Decided out by Joe (Nov 1)**; the recorded fingerprint is the drift signal (§7). Joe must choose strict or shareable before results persist; reversing later changes the key domain and orphans every stored result.
 - Float widening: pxr returns 0.1f as 0.10000000149011612. Any canonicaliser fed Python reprs instead of type-directed bytes splits F7 identity silently; the golden vectors in M3's test are the only guard.
-- Two deferrals drift from Blueprint v5.3 and need Joe's word: §5.1 puts the scheduler on tokio (this design keeps all threads in Python through M8) and §11 Phase 0 lists Outcome, identity registry and intent ledger (this design lands Outcome at M4 and identity at M3). Documented deferral, not silent drift.
+- **Accepted by Joe (Nov 1), drafted as B22 and B23 in the v5.4 draft:** two deferrals drift from Blueprint v5.3: §5.1 puts the scheduler on tokio (this design keeps all threads in Python through M8) and §11 Phase 0 lists Outcome, identity registry and intent ledger (this design lands Outcome at M4 and identity at M3). Documented deferral, not silent drift.
 - The content-addressed result layout makes cross-project hits reference another project's results layer; an archived project breaks provenance of adopted results unless they are re-authored locally before archive.
 - The 50k-prim rotation and 500-prim batch limits are Moneta numbers from USD 0.25.5. Until re-measured on 26.5 (M6) they are unknown, not defaults.
 - Attempt time per mode is unmeasured; the plan's hypothesis is 25-30k tokens of prompt evaluation per attempt on 8 CPU threads. A warm shared CARGO_TARGET_DIR for every gate (plan C3) is mandatory, and the first run's ledger must report CPU vs GPU attempt time before any mission after M0 is scheduled.
