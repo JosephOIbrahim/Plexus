@@ -107,6 +107,15 @@ class Attempt:
     reply_file: str = ""  # the raw model reply, under .plexus_loop/<mission>/replies/
     detail: str = ""  # output of the failing gate or metric, shown to the next attempt
     syntax: list[str] = field(default_factory=list)  # changed .py files that don't compile, one line each
+    # Where the time went, in seconds of real (monotonic) time, to a tenth. None means not
+    # measured: that step never ran, or the row predates timing. Never read a missing value as 0.
+    # wall_s minus the parts is worktree setup and teardown, the changed-file scan and the
+    # syntax check.
+    wall_s: float | None = None  # the whole attempt, worktree in to worktree out
+    route_s: float | None = None  # choosing the step (one Jev call when the router is jev)
+    worker_s: float | None = None  # the worker: the model call plus writing its files
+    gates: list[dict] = field(default_factory=list)  # [{"name", "seconds", "ok"}], in run order
+    metric_s: float | None = None  # the metric run; only when every gate passed
 
 
 @dataclass
@@ -256,6 +265,11 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
     return "\n".join(lines)
 
 
+def _secs(t0: float) -> float:
+    """Seconds since a time.monotonic() reading, to a tenth."""
+    return round(time.monotonic() - t0, 1)
+
+
 def _longest_backtick_run(text: str) -> int:
     best = run = 0
     for ch in text:
@@ -305,13 +319,23 @@ class MissionRun:
             raise RefuseToStart("the mission names no gates, so nothing would guard a kept change")
 
     # -- one evaluation in a worktree -------------------------------------
-    def _evaluate(self, wt: Path, profile: Profile) -> tuple[str | None, MetricResult | None, str]:
-        """Run the gates, then the metric. Returns (why it failed or None, metric, output to show)."""
+    def _evaluate(self, wt: Path, profile: Profile,
+                  timing: Attempt | None = None) -> tuple[str | None, MetricResult | None, str]:
+        """Run the gates, then the metric. Returns (why it failed or None, metric, output to show).
+
+        With ``timing``, each gate's seconds and result, and the metric's seconds, go on it.
+        """
         for g in self.mission.gates:
+            t0 = time.monotonic()
             res = run_gate(g, wt, profile)
+            if timing is not None:
+                timing.gates.append({"name": g.name, "seconds": _secs(t0), "ok": res.passed})
             if not res.passed:
                 return f"gate '{g.name}' failed", None, f"$ {' '.join(g.cmd)}\n{res.tail}"
+        t0 = time.monotonic()
         m = measure(self.mission.metric, wt, profile)
+        if timing is not None:
+            timing.metric_s = _secs(t0)
         if m.value is None:
             return f"metric unavailable: {m.error}", m, m.tail
         return None, m, m.tail
@@ -380,17 +404,24 @@ class MissionRun:
             n += 1
             profile = self.profile_fn()
             a = Attempt(n=n, started=self.clock(), houdini=profile.houdini, device=profile.device)
+            t_attempt = time.monotonic()
             wt = wt_root / f"attempt-{n}"
             gitops.add_worktree(self.repo, wt, tip)
             try:
+                t0 = time.monotonic()
                 route = self.route_fn(mi, last, attempts)
+                a.route_s = _secs(t0)
                 a.route, a.route_note = route.label(), route.note
                 if route.step is not None:
                     self.log(f"[plexus-loop] attempt {n}: step {a.route}"
                              + (f" ({route.note})" if route.note else ""))
                 prompt = build_prompt(mi, wt, best, last, attempts, mi.worker.context_chars,
                                       step=route.step)
-                res = self.worker.attempt(wt, prompt, profile)
+                t0 = time.monotonic()
+                try:
+                    res = self.worker.attempt(wt, prompt, profile)
+                finally:
+                    a.worker_s = _secs(t0)
                 if getattr(res, "reply", ""):
                     a.reply_file = self._save_reply(started, n, res.reply)
                 a.changed = sorted(set(gitops.changed_paths(wt)) | set(getattr(res, "wrote", []) or []))
@@ -406,7 +437,7 @@ class MissionRun:
                 elif bad := [p for p in a.changed if not mi.in_focus(p)]:
                     a.reason = f"touched {bad[0]}, outside focus"
                 else:
-                    why, m, detail = self._evaluate(wt, profile)
+                    why, m, detail = self._evaluate(wt, profile, timing=a)
                     if m is not None:
                         a.metric = m.value
                     if why:
@@ -434,7 +465,10 @@ class MissionRun:
                 # A worker or filesystem error costs this attempt, never the run.
                 a.reason = f"attempt error: {type(e).__name__}: {e}"
             finally:
-                gitops.remove_worktree(self.repo, wt)
+                try:
+                    gitops.remove_worktree(self.repo, wt)
+                finally:
+                    a.wall_s = _secs(t_attempt)
 
             consecutive = 0 if a.kept else consecutive + 1
             attempts.append(a)
