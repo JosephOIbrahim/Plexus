@@ -5,9 +5,10 @@ a fresh git worktree, lets the worker change files, and is kept only when:
 
 1. every changed path is inside the mission's focus,
 2. no changed path is frozen,
-3. every gate passes,
-4. the metric improves by at least ``min_delta``, and
-5. (for pytest_failures) no tests went missing.
+3. every file its step lists was sent (a reply that leaves one out is never built),
+4. every gate passes,
+5. the metric improves by at least ``min_delta``, and
+6. (for pytest_failures) no tests went missing.
 
 A kept attempt is committed onto the harness branch. Nothing else in the repo
 moves. The run writes ``REVIEW.md`` for Joe, who decides what to promote.
@@ -224,7 +225,8 @@ class Attempt:
     # The dropped attempt's own step's target tests that failed, each "junit id\nits failure",
     # from the metric's junit report. The next prompt leads with them.
     target_failures: list[str] = field(default_factory=list)
-    # Files this dropped attempt passed every gate with, handed to the next prompt in full.
+    # Files this dropped attempt sent, handed to the next prompt in full: it passed every gate
+    # with them, or it left out a step file and they were never built.
     handed_on: list[str] = field(default_factory=list)
     # Ledger diagnostic: the step's files the dropped reply left out. The next prompt does not
     # use it; it lists what is absent from its own fresh worktree, which also lacks what was sent.
@@ -317,7 +319,8 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                  recent: list[Attempt], budget_chars: int, step: Step | None = None,
                  carried: tuple[int, dict[str, str]] | None = None) -> str:
     """The worker's prompt. ``carried`` is (attempt number, {path: text}) of the files a dropped
-    attempt that passed every gate wrote; it is shown only when that attempt is the last one."""
+    attempt sent, when it passed every gate or left out a step file; it is shown only when that
+    attempt is the last one."""
     lines = [
         f"# Mission: {mission.name}",
         "",
@@ -353,7 +356,9 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
     if step is not None:
         if step.files:
             lines += [f"Files this step writes: {', '.join(step.files)}. "
-                      "Send each new or rewritten file as a whole-file block; every .rs file always is one."]
+                      "Send each new or rewritten file as a whole-file block; every .rs file always is one. "
+                      "Your reply must include every one of these files, including any you leave as it is; "
+                      "a reply that leaves one out is dropped before anything is built."]
             if absent:
                 lines.append(f"Not in the repo yet, so your reply must include each in full: {', '.join(absent)}.")
             lines.append("")
@@ -378,7 +383,9 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                              "line the failure points at:")
                 lines += [f"> {q}" for q in quotes]
         if absent:
-            lines += [f"Its files are gone: every attempt starts from the last kept commit. Step {step.id} "
+            # A left-out drop never had every file, so "its files are gone" would misdescribe it.
+            gone = "" if left_out_of(dropped.reason) else "Its files are gone: "
+            lines += [f"{gone}every attempt starts from the last kept commit. Step {step.id} "
                       "needs these files, and none of them is in the repo. Send each one in full as a "
                       "whole-file block:"]
             lines += [f"- {p}" for p in absent]
@@ -416,9 +423,9 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             "## Your last attempt's files",
             f"{why} Its versions of these files are below. The repo no "
             "longer has them: every attempt starts from the last kept commit, so each is gone or back to "
-            "its last kept version. Resend every one of them in full, as whole-file blocks, with the fix, "
+            "its last kept version. Resend every one of them in full, as whole-file blocks, "
             + (f"together with every file it left out: {', '.join(left)}." if left
-               else "plus any other file the step needs."),
+               else "with the fix, plus any other file the step needs."),
         ]
         for rel, text in handed.items():
             fence = "`" * max(3, _longest_backtick_run(text) + 1)
@@ -639,6 +646,9 @@ class MissionRun:
                     # Never built or tested, so it cannot pass vacuously; its files go to the
                     # next prompt with the names of the ones it left out.
                     a.reason = f"{LEFT_OUT}: {', '.join(left)}"
+                    # compile() is not a build: a .py that cannot compile is named now rather
+                    # than handed back verbatim and caught by a gate one attempt later.
+                    a.syntax = syntax_errors(wt, a.changed)
                     carried = (n, carry_files(wt, a.changed, mi, route.step))
                     a.handed_on = list(carried[1])
                 else:

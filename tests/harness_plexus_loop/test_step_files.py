@@ -192,14 +192,19 @@ def _route(mission, last, attempts):
 def test_run_names_every_absent_step_file_after_a_drop(tmp_path):
     r = _repo(tmp_path)
     m = mission_from_dict(_raw(files=STEP_FILES))
-    def both(wt):  # a dropped attempt's files are gone, so the second sends b and c again
+    def leaves_out_c(wt):  # a left-out drop: a.py and b.py sent, c.py not
+        (wt / "plexus" / "a.py").write_text("A = 2\n")
         (wt / "plexus" / "b.py").write_text("B = 1\n")
+
+    def all_three(wt):  # a dropped attempt's files are gone, so the second sends every file again
+        leaves_out_c(wt)
         (wt / "plexus" / "c.py").write_text("C = 1\n")
-    w = Steps(lambda wt: (wt / "plexus" / "b.py").write_text("B = 1\n"), both)  # first leaves out c.py
+    w = Steps(leaves_out_c, all_three)
     report = MissionRun(m, r, worker=w, log=lambda s: None, route_fn=_route,
                         profile_fn=lambda: Profile(device="cpu", houdini="running")).run()
     first, second = report.attempts
-    assert not first.kept and first.missing == ["plexus/c.py"]  # a.py is in the kept commit
+    assert first.reason == "reply left out step files: plexus/c.py" and first.missing == ["plexus/c.py"]
+    assert second.reason == "no strict gain (5 vs best 5)"
     fb = _feedback(w.prompts[1])
     assert "- plexus/b.py" in fb and "- plexus/c.py" in fb  # b.py was sent, but it is gone too
     assert second.missing == []

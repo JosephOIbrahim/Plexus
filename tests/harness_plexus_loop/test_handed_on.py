@@ -73,8 +73,9 @@ def _write_both(wt):
 
 def test_a_gate_passing_drop_hands_its_files_to_the_next_prompt(tmp_path):
     r = _repo(tmp_path)
-    report, w = _run(r, _raw(), _write_both, lambda wt: (wt / "plexus" / "a.py").write_text("A = 3\n"))
-    first = report.attempts[0]
+    report, w = _run(r, _raw(), _write_both, _write_both)  # both complete: gate-passing, no-gain drops
+    first, second = report.attempts
+    assert first.reason == second.reason == "no strict gain (5 vs best 5)"
     assert not first.kept and first.handed_on == FILES
     section = w.prompts[1].split("## Your last attempt's files", 1)[1].split("## Where it stands", 1)[0]
     assert "file:plexus/a.py\nA = 1" in section and "file:plexus/b.py\nB = 2" in section
