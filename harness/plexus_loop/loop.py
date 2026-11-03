@@ -85,12 +85,15 @@ def syntax_errors(root: Path, paths: list[str]) -> list[str]:
 
 
 KNOWN_FIX_CHARS = 700  # one quoted brief line
+# The reason _evaluate gives a failing gate. Known fixes match that gate's output too.
+GATE_FAILED = re.compile(r"gate '[^']+' failed\Z")
 
 
 def known_fix_quotes(mission: Mission, repo: Path, failures: list[str]) -> list[str]:
     """The written-down fix for each recognised error in ``failures``, each quoted once.
 
-    A known fix matches with its regular expression against a target failure's text and quotes
+    A known fix matches with its regular expression against a target failure's text, or against
+    a failing gate's output when the attempt has no target failures (``build_prompt``), and quotes
     the line of its file that contains its anchor, read from ``repo`` (the attempt's tree at tip,
     so the quote is the version the worker is given). A missing file or anchor quotes nothing.
     """
@@ -362,6 +365,13 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                 lines.append("That is the end of the whole run, for context. Fix the target-test failures above first.")
             else:
                 lines.append("Fix the cause first. It is usually one rule or one error near the top of that output.")
+                # A failing gate (a build, a guard) has no target tests to match, so its known
+                # fixes match the gate output the worker was just shown.
+                quotes = known_fix_quotes(mission, repo, [detail]) if GATE_FAILED.match(dropped.reason) else []
+                if quotes:
+                    lines.append("It is a known error. The worker brief already gives its fix; apply it to the "
+                                 "line the output points at:")
+                    lines += [f"> {q}" for q in quotes]
         elif dropped.syntax:
             lines.append("Fix those files first.")
     handed: dict[str, str] = {}

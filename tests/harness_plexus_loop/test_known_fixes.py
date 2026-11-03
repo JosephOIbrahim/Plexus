@@ -121,12 +121,37 @@ def test_the_quote_sits_under_the_target_failure_in_the_prompt(tmp_path):
     assert "This is a known error" in fb
 
 
-def test_no_quote_without_target_failures(tmp_path):
+def test_a_failing_gate_quotes_the_fix_under_its_output(tmp_path):
+    # Run 11 attempts 1-2: `cargo build` failed in the core gate, so there were no target
+    # failures, and the brief's fix for the error it printed was never quoted.
     m, r = mission_from_dict(_raw()), _repo(tmp_path)
     a = Attempt(n=1, started=0.0, houdini="off", device="gpu", reason="gate 'ok' failed",
-                detail="null or expired layer appears only in gate output")
+                detail="$ build\nerror: null or expired layer near the top\n... the end of the gate output")
+    fb = build_prompt(m, r, 5, None, [a], 100000, step=m.steps[0]).split("## Why the last attempt was dropped", 1)[1]
+    i_out, i_note, i_quote = fb.index("the end of the gate output"), fb.index("It is a known error"), \
+        fb.index("> - `FindOrOpen` returns")
+    assert i_out < i_note < i_quote
+    assert fb.count("> - `FindOrOpen` returns") == 1
+
+
+def test_a_gate_failure_without_a_known_error_quotes_nothing(tmp_path):
+    m, r = mission_from_dict(_raw()), _repo(tmp_path)
+    a = Attempt(n=1, started=0.0, houdini="off", device="gpu", reason="gate 'ok' failed",
+                detail="$ build\nerror[E0425]: cannot find value `x` in this scope")
     p = build_prompt(m, r, 5, None, [a], 100000, step=m.steps[0])
-    assert "This is a known error" not in p
+    assert "known error" not in p
+
+
+@pytest.mark.parametrize("reason", ["no strict gain (5 vs best 5)", "metric unavailable: boom",
+                                    "tests went missing (3 collected, was 5)", "gate 'ok' failed twice"])
+def test_only_a_failing_gate_matches_its_output(tmp_path, reason):
+    # Other drops show the end of the metric run; matching it would quote fixes for tests of
+    # later steps, which are expected to fail.
+    m, r = mission_from_dict(_raw()), _repo(tmp_path)
+    a = Attempt(n=1, started=0.0, houdini="off", device="gpu", reason=reason,
+                detail="null or expired layer, from a later step's test")
+    p = build_prompt(m, r, 5, None, [a], 100000, step=m.steps[0])
+    assert "known error" not in p
 
 
 def test_every_acceptance_known_fix_resolves_to_one_brief_line():
