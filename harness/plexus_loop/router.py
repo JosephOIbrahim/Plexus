@@ -4,13 +4,17 @@ A mission can list ``[[steps]]``, each naming the tests it is aimed at. Before
 each attempt the harness narrows the steps in code to those whose targets
 still fail, then picks one:
 
-- ``kind = "first"`` takes the earliest eligible step. That is a known rule,
-  so it lives in code.
-- ``kind = "jev"`` asks TypeSafe's Jev model to choose among the eligible
-  steps from the latest test output and the reasons recent attempts were
-  dropped. That is the part ordinary code can't read: whether an error in a
-  later test actually points back at an earlier step's code. Any failure, or
-  a pick below ``min_confidence``, falls back to the earliest eligible step.
+- A step is *ready* when its targets still fail and every step it names in
+  ``after`` has no failing target left. Dependencies are known rules, so they
+  live in code: no router ever offers a step whose groundwork is missing.
+- ``kind = "first"`` takes the earliest ready step.
+- ``kind = "jev"`` asks TypeSafe's Jev model to choose among the ready steps,
+  from the latest test output, each step's own failing targets and the reasons
+  its recent attempts were dropped. That is the part ordinary code can't read:
+  which of several independent next steps the next attempt is most likely to
+  move. With one ready step there is nothing to choose and Jev is not called.
+  Any failure, or a pick below ``min_confidence``, falls back to the earliest
+  ready step.
 
 The route only shapes the prompt. Whether an attempt is kept is still decided
 by the gates and the metric, never by the router.
@@ -77,6 +81,23 @@ def eligible(steps: list[Step], failing: list[str]) -> list[Step]:
     return [s for s in steps if targets_failing(s, failing)]
 
 
+def ready(steps: list[Step], failing: list[str]) -> list[Step]:
+    """Eligible steps whose every ``after`` step has no failing target left."""
+    by_id = {s.id: s for s in steps}
+    return [s for s in eligible(steps, failing)
+            if all(not targets_failing(by_id[p], failing) for p in s.after if p in by_id)]
+
+
+def _attempts_on(step_id: str, recent: list[str]) -> list[str]:
+    """The reasons of ``recent`` drops routed to this step ("step S3 via first: ...")."""
+    out = []
+    for r in recent:
+        head, sep, reason = r.partition(": ")
+        if sep and head.split()[1:2] == [step_id]:
+            out.append(reason)
+    return out
+
+
 def _http_post(url: str, body: dict, headers: dict, timeout: int) -> dict:
     req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
                                  headers={**headers, "Content-Type": "application/json"})
@@ -99,14 +120,22 @@ def jev_request(spec: RouterSpec, steps: list[Step], failing: list[str], tail: s
                 "type": "choice",
                 "instructions": (
                     "A coding model gets exactly one attempt to make more of `failing_tests` pass. "
-                    "Which plan step should that attempt work on? Choose the earliest step whose code "
-                    "`latest_test_output_tail` shows is missing or broken. Choose a later step only "
-                    "when the output shows the earlier steps' code already works. If "
-                    "`recent_dropped_attempts` show the same step failing for the same reason, the "
-                    "step itself may still be right: keep it unless the output points elsewhere."
+                    "Every option is a plan step that is ready: the steps it builds on already pass, "
+                    "so any of them can be worked on now. Which one should that attempt work on? "
+                    "Choose the step whose next attempt is most likely to make at least one of its "
+                    "own failing tests pass. Read `latest_test_output_tail` and each option's "
+                    "`its_failing_tests` and `its_recent_drops`: favour a step whose failures point "
+                    "at one specific piece it owns and that the output shows how to fix. A step "
+                    "whose recent attempts were all dropped for the same reason is less likely to "
+                    "pass next time than a ready step that has not been tried yet."
                 ),
                 "criteria": {
-                    s.id: f"{s.text[:STEP_TEXT_FOR_ROUTER]} (aimed at: {', '.join(s.targets)})"
+                    s.id: {
+                        "what_it_builds": s.text[:STEP_TEXT_FOR_ROUTER],
+                        "aimed_at": list(s.targets),
+                        "its_failing_tests": failing_targets(s, failing),
+                        "its_recent_drops": _attempts_on(s.id, recent)[-3:],
+                    }
                     for s in steps
                 },
             }
@@ -122,27 +151,32 @@ def choose(spec: RouterSpec, steps: list[Step], failing: list[str], tail: str = 
     elig = eligible(steps, failing)
     if not elig:
         return Route(None, "none", note="no step targets a failing test")
-    if spec.kind == "first" or len(elig) == 1:
-        return Route(elig[0], "first")
+    rdy = ready(steps, failing)
+    if not rdy:
+        # Only when an earlier step's targets fail again after it was kept, or the mission's
+        # `after` lists cannot all be met: work on the earliest failing step, and say so.
+        return Route(elig[0], "first", note="no failing step has its prerequisites passing")
+    if spec.kind == "first" or len(rdy) == 1:
+        return Route(rdy[0], "first")
 
     key = api_key if api_key is not None else os.environ.get(spec.api_key_env, "")
     if not key:
-        return Route(elig[0], "fallback", note=f"{spec.api_key_env} is not set")
+        return Route(rdy[0], "fallback", note=f"{spec.api_key_env} is not set")
     try:
         out = (post or _http_post)(
             spec.host.rstrip("/") + "/v1/systemone",
-            jev_request(spec, elig, failing, tail, recent or []),
+            jev_request(spec, rdy, failing, tail, recent or []),
             {"Authorization": "Bearer " + key},
             spec.timeout_s,
         )
         ans = out["answers"]["next_step"]
         pick, conf = str(ans["choice"]), float(ans["confidence"])
     except Exception as e:  # noqa: BLE001 - network, auth, schema: all mean "route in code"
-        return Route(elig[0], "fallback", note=f"jev unavailable: {type(e).__name__}: {e}")
-    by_id = {s.id: s for s in elig}
+        return Route(rdy[0], "fallback", note=f"jev unavailable: {type(e).__name__}: {e}")
+    by_id = {s.id: s for s in rdy}
     if pick not in by_id:
-        return Route(elig[0], "fallback", note=f"jev picked unknown step {pick!r}")
+        return Route(rdy[0], "fallback", note=f"jev picked unknown step {pick!r}")
     if conf < spec.min_confidence:
-        return Route(elig[0], "fallback", conf, note=f"jev picked {pick} at {conf:.2f}, below "
-                                                     f"{spec.min_confidence:g}")
+        return Route(rdy[0], "fallback", conf, note=f"jev picked {pick} at {conf:.2f}, below "
+                                                    f"{spec.min_confidence:g}")
     return Route(by_id[pick], "jev", conf)

@@ -80,6 +80,9 @@ class Step:
     # Repo-relative files the step writes. The prompt lists them, and a dropped attempt after
     # which any of them is absent from the worktree has that named first in the next prompt.
     files: list[str] = field(default_factory=list)
+    # Ids of earlier steps this one builds on. The router offers a step only once every step
+    # it names has no failing target left, so a dependency is a rule in code, never a guess.
+    after: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -236,8 +239,16 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
             raise MissionError(f"[[steps]] {sid}: files must be repo-relative file paths")
         if len(set(files)) != len(files):
             raise MissionError(f"[[steps]] {sid}: files must not repeat")
+        raw_after = s.get("after", [])
+        if not isinstance(raw_after, list) or not all(isinstance(x, str) for x in raw_after):
+            raise MissionError(f"[[steps]] {sid}: after must be a list of step ids")
+        earlier = {p.id for p in steps}
+        if bad := [x for x in raw_after if x not in earlier]:
+            raise MissionError(f"[[steps]] {sid}: after names {bad[0]!r}, which is not an earlier step")
+        if len(set(raw_after)) != len(raw_after):
+            raise MissionError(f"[[steps]] {sid}: after must not repeat")
         steps.append(Step(id=sid, targets=targets, text=str(_req(s, "text", f"[[steps]] {sid}")),
-                          files=files))
+                          files=files, after=list(raw_after)))
     if len({s.id for s in steps}) != len(steps):
         raise MissionError("[[steps]] ids must be unique")
 

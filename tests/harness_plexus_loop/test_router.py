@@ -97,7 +97,7 @@ def test_jev_request_is_a_single_choice_question():
     assert len(body["state"]["latest_test_output_tail"]) == 3000
     assert body["state"]["recent_dropped_attempts"] == ["b", "c", "d"]
     q = body["questions"]["next_step"]
-    assert q["type"] == "choice" and T0 in q["criteria"]["S1"]
+    assert q["type"] == "choice" and q["criteria"]["S1"]["aimed_at"] == [T0]
 
 
 def _mission(**over):
