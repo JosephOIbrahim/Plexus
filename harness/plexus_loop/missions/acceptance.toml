@@ -9,6 +9,9 @@
 # Joe (Nov 3, before run 13, "A + set"): router "jev" again, over ready steps only (steps name
 # `after`); context_chars 120000 and num_ctx 49152; four S3 brief fixes with known fixes
 # (E0106, E0204, E0308, E0277); the harness drops a reply that leaves out any step file.
+# Joe (Nov 3, 17:00, after run 13 attempts 1-2): run 14 is the bounded Option A try. S3 starts from
+# the brief's full-signature predicate.rs skeleton and writes no unit tests; two more known fixes
+# from run 13 attempt 1. If run 14 keeps nothing, the next run starts from prep/option-b, no ask.
 
 [mission]
 name = "acceptance"
