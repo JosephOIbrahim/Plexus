@@ -10,6 +10,8 @@ Rules:
   the submodule pkg.name when that is a module); nothing under plexus/ imports agent.* or
   cognitive.*; plexus.core.* never imports plexus.organs.cozy; rank 0/1 modules and package
   __init__ files never import pxr. Imports are read at module AND function scope.
+- Every package __init__.py under plexus/ holds a docstring and nothing else, except
+  plexus/schema/__init__.py, where CONTRACT.md puts plugin_dir().
 - Rust (crates/plexus-core/src): lib.rs only declares modules; a module may use crate::X
   only for a strictly lower rank; only py.rs names pyo3.
 - Workspace: at most two members, plexus-core and plexus-usd; no build.rs.
@@ -34,6 +36,8 @@ NO_PXR = {
 RUST_RANK = {"error": 0, "outcome": 1, "predicate": 2, "budget": 2, "canon": 2, "graph": 2,
              "composer": 3, "py": 4}
 WORKSPACE_ALLOWED = {"crates/plexus-core", "crates/plexus-usd"}
+# CONTRACT.md: `from plexus.schema import plugin_dir`. No other package exports anything.
+INIT_MAY_DEFINE = {"plexus/schema/__init__.py"}
 
 
 def _module_name(path: Path) -> str:
@@ -92,6 +96,37 @@ def test_pxr_only_from_rank_two_up():
     bad = [f"{m} imports {i}" for m, imps in _python_graph().items() if m in NO_PXR
            for i in imps if i == "pxr" or i.startswith("pxr.")]
     assert bad == [], "these modules must stay free of pxr:\n" + "\n".join(bad)
+
+
+def init_problem(path: Path) -> str | None:
+    """Why this package ``__init__.py`` is more than one docstring, or None when it is not."""
+    try:
+        body = ast.parse(path.read_text(encoding="utf-8"), filename=str(path)).body
+    except SyntaxError as e:
+        return f"does not parse ({e.msg}, line {e.lineno})"
+    if not body:
+        return None
+    first, rest = body[0], body[1:]
+    if not (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)):
+        rest = body
+    if rest:
+        return f"line {rest[0].lineno} is code; delete everything after the docstring"
+    return None
+
+
+def test_package_inits_hold_a_docstring_only():
+    inits = sorted(PLEXUS.rglob("__init__.py")) if PLEXUS.is_dir() else []
+    bad = []
+    for p in inits:
+        rel = p.relative_to(REPO).as_posix()
+        if rel in INIT_MAY_DEFINE:
+            continue
+        why = init_problem(p)
+        if why:
+            bad.append(f"{rel}: {why}")
+    assert bad == [], ("package __init__.py files hold a docstring only; import submodules "
+                       "directly (from plexus.core.axon import PlexusAxon):\n" + "\n".join(bad))
 
 
 def _targets(path: Path, mods: set[str]) -> set[str]:

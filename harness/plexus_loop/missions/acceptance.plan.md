@@ -281,3 +281,11 @@ Joe asked for Jev's read on the open decisions, shown before anything is applied
 *What it costs, and the rule that covers it.* Until the move, Claude can still edit the rules that steer every attempt. So any change to the guard during this mission is its own commit, shown to Joe before the next run, as the `3ac9c54` cycle fix was. Claude does not change the guard while a run is going.
 
 *After the mission.* Joe copies the draft into `tests/acceptance/guards/` (with an empty `__init__.py`) and commits it from his own terminal. Claude then repoints the `layers` gate to `tests/acceptance/guards`, deletes the harness copy and the draft, and updates this section.
+
+**Run 9's S2 keep is merged, and the guard now enforces docstring-only package inits (Joe, Nov 2: option 1).** `b18ebd0` (run 9 attempt 4, T1 passes, 10 → 9) is merged into `mission/acceptance` as `ccee44c`. The reviewer's verdict was keep-with-note: one hard-ish gap and several S4 notes.
+
+*The gap.* Both new package inits carried `__doc__ = __file__` after the docstring, which the brief has forbidden since `950b997` but nothing checked. The `layers` guard now fails any `plexus/**/__init__.py` with code after its docstring (`test_package_inits_hold_a_docstring_only`), except `plexus/schema/__init__.py`, where CONTRACT.md puts `plugin_dir()`. The draft copy in `docs/plexus/drafts/` carries the same check.
+
+*The one edit in worker files.* Claude deleted the two `__doc__ = __file__` lines in the same commit as the check. Without that the tree fails its own guard, and the worker could not land the fix: an attempt that only deletes them gains nothing on the metric, and any other attempt drops at `layers` first. phase1 stays at 9 failing after the deletion (checked). This is the only time in the mission Claude has edited worker-written code, and it is limited to package-marker lines.
+
+*The S4 notes.* The brief gains "What the kept S2 code still owes S4" (polling list instead of `queue.Queue`, no real 50 ms window, no pending counter or `idle()`, a lock in the notice callback, swallowed subscriber errors, `cool()` dropping queued events, the missing `def "<id>"` child, a hand-built plugin path, inner `Path` imports). S4's `files` now include `plexus/core/axon.py` and `plexus/membrane/exchange.py`, so the step prompt names them.

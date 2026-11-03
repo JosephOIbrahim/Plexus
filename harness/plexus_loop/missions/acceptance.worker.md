@@ -215,6 +215,16 @@ Write every schema and attribute T0 lists, with its exact type and token order.
 
 So an event is in a neuron's scope when one of its paths `HasPrefix(scope)`, or a resynced path is an ancestor of scope. An info-only `/` never puts an event in scope by itself. `changed(P)` is true when `P` is in the info-only set, or `P` or one of its ancestors is resynced.
 
+**What the kept S2 code still owes S4** (review of run 9 attempt 4, Nov 2). T1 passes on it, but S4's `wait_idle` cannot be built on it as it stands. S4 sends `plexus/core/axon.py` and `plexus/membrane/exchange.py` again, whole, with these fixed:
+- `axon.py`: the queue is a plain list popped by a loop that sleeps `debounce_s` when it is empty, so there is no real 50 ms window and nothing to wait on. Replace it with `queue.Queue()`; the dispatcher blocks on `get(timeout=0.1)`, then drains with `get(timeout=remaining)` until 50 ms after that first event.
+- `axon.py`: there is no pending counter. Add one: `+1` in the callback at enqueue, `-1` after every subscriber has returned for the coalesced event. Expose `idle() -> bool` (pending is 0 and no window is open) for the runtime's `wait_idle` to poll alongside its running actions.
+- `axon.py`: `_on_notice` still does `with self._queue_lock:`. Drop that lock and the `_queue_lock` attribute; `queue.Queue.put` is thread-safe on its own.
+- `axon.py`: a subscriber exception is swallowed with `pass`. Print it with `traceback.print_exc()` to stderr and keep dispatching, so a failing action shows in the test output.
+- `axon.py`: `cool()` sets the stop flag and joins, dropping whatever is queued. Revoke the listener first, then let the dispatcher deliver what is already queued before it exits.
+- `exchange.py`: the new `from_<id>.usda` holds only `def "Exchange"`. Add the `def "<id>"` child under it (see "Membrane and stage"), with a variable such as `f"/Exchange/{participant_id}"`.
+- `exchange.py`: the plugin is registered from a hand-built path. Use `from plexus.schema import plugin_dir` and `Plug.Registry().RegisterPlugins(str(plugin_dir()))`.
+- `exchange.py` and `stagekit.py` import `Path` a second time inside a function; delete those inner imports.
+
 **Dataclasses.** A dict or set default must be `field(default_factory=dict)` (or `frozenset()` for frozensets); a literal `{}` default raises when the class is defined.
 
 **Budget order.** Evaluate the predicate first. On a match, `v = budget.peek(now)`:

@@ -93,8 +93,8 @@ text = "Rust grammar-v0 predicate, all whole files. crates/plexus-core/src/predi
 [[steps]]
 id = "S4"
 targets = ["tests/acceptance/phase1/test_t5_gate.py::test_write_inside_allowlist_lands"]
-files = ["plexus/core/neuron.py", "plexus/membrane/gate.py"]
-text = "Runtime start/stop/wait_idle: on each coalesced StageEvent, filter by the neuron's scope, evaluate it with Predicate.eval(changed, values) from S3 (changed: list of str paths from the event; values: dict of the composed values of Predicate.paths(); no Rust change in this step), run the action on a worker thread with a ctx whose author() checks the path allowlist (plexus/membrane/gate.py: /Exchange/<participant>/** plus granted paths), defines missing ancestors as def, authors the value and plexus:sourceLayer into the edit layer, and saves the layer. Define /Plexus/Neurons/<name> with PlexusNeuronAPI in the edit layer at register()."
+files = ["plexus/core/neuron.py", "plexus/membrane/gate.py", "plexus/core/axon.py", "plexus/membrane/exchange.py"]
+text = "Runtime start/stop/wait_idle. First resend plexus/core/axon.py and plexus/membrane/exchange.py whole with the fixes the brief lists under 'What the kept S2 code still owes S4' (queue.Queue with a real 50 ms window, a pending counter and idle(), no lock in the callback, the def <id> child in the participant layer); wait_idle polls axon.idle() and the running actions. Then: on each coalesced StageEvent, filter by the neuron's scope, evaluate it with Predicate.eval(changed, values) from S3 (changed: list of str paths from the event; values: dict of the composed values of Predicate.paths(); no Rust change in this step), run the action on a worker thread with a ctx whose author() checks the path allowlist (plexus/membrane/gate.py: /Exchange/<participant>/** plus granted paths), defines missing ancestors as def, authors the value and plexus:sourceLayer into the edit layer, and saves the layer. Define /Plexus/Neurons/<name> with PlexusNeuronAPI in the edit layer at register()."
 
 [[steps]]
 id = "S5"
