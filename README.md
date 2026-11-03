@@ -6,7 +6,7 @@
 
 **Projects that compose into each other while they run.**
 
-Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents, called **neurons**, stay asleep until a cheap, exact check on the stage fires. Render and compute engines plug in as swappable **organs**.
+Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents, called **neurons**, stay dormant until a cheap, exact check on the stage fires. Render and compute engines plug in as swappable **organs**.
 
 *Plexus is a working title.*
 
@@ -31,7 +31,7 @@ Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents
 | Idea | What it means in practice |
 |---|---|
 | **The stage is the truth** | Every project is a USD layer. Composition settles conflicts. No locks, no merges, no hidden runtime state. |
-| **Wake only when needed** | A neuron sleeps until its predicate fires, for example `delta(/Exchange/LookState.temperature) > 0.2`. A budget caps how often it can wake. |
+| **Wake only when needed** | A neuron stays dormant until its predicate comes true, for example `delta(/Exchange/LookState.temperature) > 0.2`. A budget caps how often it can wake. |
 | **Engines are organs** | ComfyUI, Houdini or anything else sits behind one organ contract, so it can be swapped. |
 
 ---
@@ -108,7 +108,7 @@ They live in `tests/acceptance/` and are frozen: only Joe may change them.
 | **T0** · Schema gate | The four Plexus schemas register in USD, and every attribute survives a save and reload. |
 | **T1** · Propagation | A's change shows up in B in under 250 ms (95th percentile over 50 tries). |
 | **T2** · Predicate precision | A 0.3 change wakes the neuron once, a 0.1 change never does, and two 0.15 changes wake it once. A bad predicate fails at registration. |
-| **T3** · Budget | Too many wakes trip the budget. Three trips in a row mute the neuron, visibly. |
+| **T3** · Budget | Wakes over the budget are refused. Three refused in a row mute the neuron, and the stage says so. |
 | **T4** · Provenance | The neuron's hint names the layer it came from, and B's property stack agrees. |
 | **T5** · Gate | A write outside the neuron's allowlist is dropped and flagged. One inside lands. |
 | **T6** · Truth | Kill both processes, reopen the files, and every value is still there. |
@@ -199,6 +199,7 @@ The hooks in `.claude/settings.json` enforce these. `CLAUDE.md` explains them.
 | Every diagram in one place | [`docs/plexus/DIAGRAMS.md`](docs/plexus/DIAGRAMS.md) |
 | How the harness works | [`harness/plexus_loop/README.md`](harness/plexus_loop/README.md) and [`program.md`](harness/plexus_loop/program.md) |
 | Where the last session stopped | [`harness/CAPSULE.md`](harness/CAPSULE.md) |
+| The words Plexus uses | [`docs/plexus/VOICE.md`](docs/plexus/VOICE.md) |
 
 ---
 

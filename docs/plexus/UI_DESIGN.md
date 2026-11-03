@@ -16,10 +16,12 @@ These six come out of the study and the Jev pass together. Each one is a rule a 
 
 1. **Every claim on screen reads real state.** "Stopping", "Parked", "Not on stage", "Reverted" and "Unknown" each read an opinion that is actually on the stage or the session layer. A card settles only when the runtime confirms. The reference panel's worst failures were surfaces that sat apart from what enforced them: approval cards drawn but never reached, a "revert" that was really a global undo.
 2. **Unknown is its own mark, and never a default pass.** Verified, Broken, Unknown, idle and working each get a distinct mark. Green is unreachable from a no-data state. This is the visual half of the `Outcome` lesson in the scaffold plan (§3.2 #5).
-3. **Waiting for Joe is parked, never blocking.** A proposal that needs Joe becomes a parked card; the neuron sleeps; either verb (named for the act, or Discard) is an opinion written to the session layer, and the neuron's predicate wakes on it. Nothing times out on its own.
+3. **Waiting for Joe is parked, never blocking.** A proposal that needs Joe becomes a parked card; the neuron stays dormant; either verb (named for the act, or Discard) is an opinion written to the session layer, and the neuron's predicate wakes on it. Nothing times out on its own.
 4. **Words and weight carry hierarchy; colour is budgeted.** Two accents at most (actions; live agent presence), a muted verdict trio inside content, and organ outputs (images, video) as the only colour on their surface. A test counts hues.
 5. **Mono for anything compared character by character, sans for prose, three sizes.** Prim paths, sublayer names, intent hashes, organ ids and predicate text are mono. Quiet comes from caps and tracking, never a fourth grey.
 6. **A halt is a request until confirmed.** Stop moves to a visible Stopping state that names what is still running; each organ job resolves to cancelled-confirmed or Unknown before the state settles, and a restart never resumes work by itself.
+
+The words on every surface come from [`VOICE.md`](VOICE.md): one word per thing, from the right vocabulary.
 
 ---
 
@@ -62,14 +64,14 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 | Stop | rail | Single-stage; named Stopping state; per-job list (Joe) |
 | Liveness and retry | rail | Idle / busy / stalled from heartbeats; intent-hash retry breaker |
 | Turn revert | rail | Revert mutes the turn's delta layer |
-| Approval tray | rail | Parked-proposals inbox + stage diff and cost |
+| Parked-proposals tray | rail | Parked-proposals inbox + stage diff and cost |
 | Turn limit | rail | Three-part closing sentence |
 | Denial | rail | Becomes a parked proposal or a do-it-yourself verb |
 | Admission | rail | Per-organ / per-budget refusal in a sentence |
 | Session | rail | Session layer per project; close = detach |
 | Long-job progress | rail | Counted line (n of m), no graphic |
 | Transcript | rail | Provenance log, one row per opinion |
-| Gate card | rail | Predicate + intent hash, stage diff, budget, act-named verbs, no countdown |
+| Parked-proposal card | rail | Predicate + intent hash, stage diff, budget, act-named verbs, no countdown |
 | Refused send | status bar | Refuse, keep the draft, one sentence (Joe: placement) |
 | Status sentence | status bar | One sentence per project, fixed precedence (Joe: placement) |
 | Connection | status bar | Lasting per-organ state with last error and next retry |
@@ -203,9 +205,9 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Not taken:** Host undo groups as rollback (already in NEXTGEN_SCAFFOLD_PLAN §3.2 'Do not take'), and any revert that routes through a model.
 - **Jev:** Jev opt0 p 0.97, confidence 0.96, copy risk of the closest option 0.36 · routed here at 0.81
 
-**Approval card layout, verbs, countdown and settled states** (`consent-card-surface`)
+**Parked-proposal card layout, verbs, countdown and settled states** (`consent-card-surface`)
 
-- **Decision:** A parked-proposals tray (an inbox) with counts in the header; the graph node of the parked neuron carries the same badge and opens the card **+** Card plus a stage diff preview (what will change) and the cost in budget units next to Approve
+- **Decision:** A parked-proposals tray (an inbox) with counts in the header; the graph node of the parked neuron carries the same badge and opens the card **+** Card plus a stage diff preview (what will change) and the cost in budget units next to the act-named verb
 - **Why it fits Plexus:** The parked proposal (§3.2 idea 1) needs a face. A card shows the neuron, the intent, the prims or organ it touches, the budget it will spend, and the level as a phrase. Either verb (named for the act, or Discard; see the gate card below) writes an opinion into the session layer. The card settles only when that opinion is confirmed on the stage. If the write fails, the card says Not on stage and stays live. The settled record lives in provenance, not the card.
 - **Reference idea (SYNAPSE, ideas only):** Approval cards appear inline in the conversation's slot. The header gives the level as a plain phrase ('Heads up' / 'Quick review' / 'Approve?' / 'Confirm'), then the operation in mono, then the agent. The body is the description, and the critical level says 'Arbitrary code execution' in words. The footer has a countdown on the left and the verbs on the right. Hierarchy comes from weight, not hue: Approve is bold because a timeout rejects, Reject is regular. The card's level accent was deliberately removed, and the only warm note left is a BLOCKED tag. Critical approval asks for a modal confirm. Review-level cards offer REVERT instead. A decision that didn't reach the gate shows NOT RECORDED and keeps the card live with its verbs. A decision that landed replaces the verbs with an APPROVED or REJECTED tag, disables the card, then hides it, and the chat line becomes the record. The work view comes forward on its own only when a card needs action. — `C:\Users\User\SYNAPSE\python\synapse\panel\gate_widget.py:26-55, 236-322, 352-374, 395-418, 656-715; synapse_panel.py:1628-1631, 1710-1727, 3049-3074; designsystem\tokens.py:864-869`. Did it work: The card design is careful, but it never ran. Every in-process path approves on its own, so no operation has ever waited on a card (artist_findings.json id TRUST-1, blocker; C:\Users\User\SYNAPSE\CLAUDE.md:64-66). A denied tool dead-ends in the chat because the card is wired to a different path (U2, blocker). The parked-state fix is already in NEXTGEN_SCAFFOLD_PLAN §3.2 idea 1; this pattern covers only the card.
 - **Not taken:** Countdown auto-reject on a blocking wait, and a card that is drawn but not wired to the path that actually enforces the gate.
@@ -257,10 +259,10 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 - **Not taken:** The two-speaker identity colours, the HTML-table technique.
 - **Jev:** pass 1 picked opt0, ruled turns (p 0.95), at copy risk 0.55, which fails the visual 0.5. Pass 3: opt1, the provenance log, adopt 0.67 / copy 0.21, the best remaining (opt2, split chat and activity log, adopt 0.46 / copy 0.51, does not qualify) · routed here at 0.52
 
-**Approval / gate card** (`consent-card-weight`)
+**Parked-proposal card** (`consent-card-weight`)
 
 - **Decision:** A parked-proposal card in Plexus's own form: the predicate that fired and the intent hash on top, a stage diff of exactly what will change, the budget it will spend, and two verbs named for the act (for example Publish to exchange / Discard). Hierarchy by weight; no countdown, because a parked proposal never times out.
-- **Why it fits Plexus:** Use this for the acts that always need Joe (Blueprint §5.2 item 7), drawn as the parked proposal from plan §3.2 #1: the neuron sleeps and the card waits. Hierarchy comes from weight and words, not colour. Give the card a real edge. Choose each verb's name once across the whole product, and only promise a scope the undo can actually deliver.
+- **Why it fits Plexus:** Use this for the acts that always need Joe (Blueprint §5.2 item 7), drawn as the parked proposal from plan §3.2 #1: the neuron stays dormant and the card waits. Hierarchy comes from weight and words, not colour. Give the card a real edge. Choose each verb's name once across the whole product, and only promise a scope the undo can actually deliver.
 - **Reference idea (SYNAPSE, ideas only):** The gate level is never a border hue or tag. The header is a sentence-case phrase per level (heads up, quick review, approve?, confirm), set as a label, with the operation in mono and the agent in quiet mono. The body is plain text; the critical level adds one plain line naming the risk, with no colour and no pulse. The footer has a mono countdown on the left (timed levels only) and verbs on the right. The verbs carry no hue; the consequential verb is bold because a timeout defaults to reject. A decided card shows a neutral or blocked tag in the countdown slot and hides its verbs. — `python/synapse/panel/gate_widget.py:27-55, 196-230, 291-321`. Did it work: Partly failed. With tone borders removed, the card's border is the same grey as its fill, so it has no painted edge and the corner radius is its only boundary (Claude outputs/panel-design-state-2026-09-16.md:72-90). Three different controls labelled with the same revert verb meant three different scopes (same doc :172-180).
 - **Not taken:** The level phrases verbatim, the timeout numbers, the card class.
 - **Jev:** pass 2 (per-option): adopt 0.80, copy risk 0.27 — a Plexus-native variant, chosen because the closest option tripped the copy-risk rule in pass 1 · routed here at 0.99
@@ -279,7 +281,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 **Status sentence and state-gated controls** (`one-status-sentence`)
 
 - **Decision:** One sentence per project with a fixed precedence; neuron state as node badges in the graph
-- **Why it fits Plexus:** Plexus needs one runtime-state sentence per project or neuron, picked by an explicit precedence rule. A good order: stopping > waking/running > parked-for-Joe > settled-result > runtime connection. Each state gets a fixed colour role used for that state only, never decoration, and the controls follow from the state. Because Plexus has many neurons asleep at once, the sentence can sit at project level, with neuron-level marks in the graph (the node-editor convention: a badge on the node, the sentence in the status bar).
+- **Why it fits Plexus:** Plexus needs one runtime-state sentence per project or neuron, picked by an explicit precedence rule. A good order: stopping > waking/running > parked-for-Joe > settled-result > runtime connection. Each state gets a fixed colour role used for that state only, never decoration, and the controls follow from the state. Because Plexus has many neurons dormant at once, the sentence can sit at project level, with neuron-level marks in the graph (the node-editor convention: a badge on the node, the sentence in the status bar).
 - **Reference idea (SYNAPSE, ideas only):** The header shows one mark and one short sentence, chosen by one precedence rule: a turn in flight (working or stopping) beats a finished turn ('Result ready'), which beats the connection's state at rest ('Not connected', 'Worth a look', 'Ready'). 'Idle' is never shown on its own, because at rest the connection is what the panel reports, so a fresh panel says 'Not connected', not 'Ready'. Six states map to six fixed colour roles: grow = connected, fire = working, signal = idle, warn = warning, error = error, slate = offline. While a turn runs, the mark doubles as the halt control. Stop is visible only while working. Connect and REVERT are switched off while working. — `C:\Users\User\SYNAPSE\python\synapse\panel\synapse_panel.py:4452-4478, 4515-4528, 4420-4424, 2587-2593; designsystem\tokens.py:854-861`. Did it work: Partly. The precedence rule exists to fix the panel's first line saying 'Ready.' before it had connected to anything or been given a model (artist_findings.json id FR-2, major). A related problem, that at rest you can't tell 'configured' from 'never configured', was logged as FR-4. Reading the code, the model token now carries a separate live/off state for this (synapse_panel.py:4480-4513). No GUI confirmation was found.
 - **Not taken:** The state names and colour tokens themselves.
 - **Jev:** Jev opt0 p 0.87, confidence 0.80, copy risk of the closest option 0.44; pass 3 copy 0.22 (under the visual 0.5) · routed here at 0.30; **status bar confirmed by Joe**
@@ -336,7 +338,7 @@ Pass 3 was a copy check on each existing pick, not a re-decision, so these runne
 
 1. **Shape-coded status marks** (filled, hollow, dashed), so the five marks survive colour-blindness and greyscale: adopt 0.86, copy 0.17. Composes with the five inspector marks.
 2. **A composition-arc overlay on the canvas** (reference and payload arcs badged): adopt 0.76, copy 0.17. Composes with the layer-stack step list in the inspector.
-3. **A count strip beside the project status sentence** (asleep / waking / parked / failed, clickable to filter the graph): adopt 0.74, copy 0.31.
+3. **A count strip beside the project status sentence** (dormant / waking / parked / failed, clickable to filter the graph): adopt 0.74, copy 0.31.
 4. **A sortable per-sublayer receipt table**: adopt 0.76, copy 0.47. Composes with the one-line node receipt and inspector rows.
 
 ---
