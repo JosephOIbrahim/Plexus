@@ -125,8 +125,8 @@ def known_fix_quotes(mission: Mission, repo: Path, failures: list[str]) -> list[
 CARRY_CHARS = 40_000  # the most of a dropped attempt's files the next prompt carries
 # The reason given to a reply that leaves out any of its step's files. Such a reply is dropped
 # before the gates: run 12 attempts 1 and 3 sent only predicate.rs, lib.rs never declared the
-# module, and every gate passed on code that was never compiled. The router and the next prompt
-# read the left-out names back from this reason.
+# module, and every gate passed on code that was never compiled. The next prompt reads the left-out
+# names back from this reason (left_out_of); the router hands the whole reason to Jev as a recent drop.
 LEFT_OUT = "reply left out step files"
 
 
@@ -228,8 +228,9 @@ class Attempt:
     # Files this dropped attempt sent, handed to the next prompt in full: it passed every gate
     # with them, or it left out a step file and they were never built.
     handed_on: list[str] = field(default_factory=list)
-    # Ledger diagnostic: the step's files the dropped reply left out. The next prompt does not
-    # use it; it lists what is absent from its own fresh worktree, which also lacks what was sent.
+    # Ledger diagnostic: the step's files absent from the worktree after the attempt, whatever the reply
+    # sent. A file at tip the reply did not send is not here (that is a LEFT_OUT drop). The next prompt
+    # does not use it; it lists what is absent from its own fresh worktree, which also lacks what was sent.
     missing: list[str] = field(default_factory=list)
     # Where the time went, in seconds of real (monotonic) time, to a tenth. None means not
     # measured: that step never ran, or the row predates timing. Never read a missing value as 0.
@@ -384,8 +385,8 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                 lines += [f"> {q}" for q in quotes]
         if absent:
             # A left-out drop never had every file, so "its files are gone" would misdescribe it.
-            gone = "" if left_out_of(dropped.reason) else "Its files are gone: "
-            lines += [f"{gone}every attempt starts from the last kept commit. Step {step.id} "
+            lead = "Every" if left_out_of(dropped.reason) else "Its files are gone: every"
+            lines += [f"{lead} attempt starts from the last kept commit. Step {step.id} "
                       "needs these files, and none of them is in the repo. Send each one in full as a "
                       "whole-file block:"]
             lines += [f"- {p}" for p in absent]

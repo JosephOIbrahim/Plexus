@@ -54,9 +54,12 @@ def _clip(*texts: str) -> str:
 
 def run_gate(gate: Gate, worktree: Path, profile: Profile) -> GateResult:
     try:
+        # errors="replace": a byte the locale cannot decode (rustc echoing a worker's '”' or '←')
+        # costs one character, never the stream. Without it the reader thread dies and the
+        # output comes back None, so the next prompt would show nothing of the error.
         r = subprocess.run(
             gate.cmd, cwd=worktree, env=profile.environ(), capture_output=True, text=True,
-            timeout=gate.timeout_s, check=False)
+            errors="replace", timeout=gate.timeout_s, check=False)
     except subprocess.TimeoutExpired:
         return GateResult(gate.name, False, "timed out")
     except OSError as e:
@@ -82,7 +85,7 @@ def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> Metric
                metric.target, f"--junitxml={junit}"]
         try:
             r = subprocess.run(cmd, cwd=worktree, env=profile.environ(), capture_output=True,
-                               text=True, timeout=metric.timeout_s, check=False)
+                               text=True, errors="replace", timeout=metric.timeout_s, check=False)
         except subprocess.TimeoutExpired:
             return MetricResult(None, error="metric run timed out")
         tail = _tail(r.stdout, r.stderr)
@@ -128,7 +131,7 @@ def _command(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:
     """Run the mission's command and read a number from its last output line."""
     try:
         r = subprocess.run(metric.cmd, cwd=worktree, env=profile.environ(), capture_output=True,
-                           text=True, timeout=metric.timeout_s, check=False)
+                           text=True, errors="replace", timeout=metric.timeout_s, check=False)
     except subprocess.TimeoutExpired:
         return MetricResult(None, error="metric command timed out")
     except OSError as e:

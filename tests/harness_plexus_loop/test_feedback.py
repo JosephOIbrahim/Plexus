@@ -101,6 +101,30 @@ def test_a_long_gate_output_keeps_its_first_error_and_command_in_the_prompt(tmp_
     assert "FIRST-ERROR" in section and "\n$ " in section and "left out" in section
 
 
+def test_a_gate_output_with_an_undecodable_byte_still_reaches_the_prompt(tmp_path):
+    # One lone 0x9D is undecodable under cp1252 and UTF-8 alike. Without errors="replace" the
+    # reader thread dies, stdout comes back None, and the whole output is lost, not one character.
+    r = _repo(tmp_path)
+    odd = [PY, "-c", "import os,sys; bad=os.path.exists('plexus/bad.txt'); "
+           "sys.stdout.buffer.write(b'RULE: plexus.core must stay free of pxr\\n' + b'\\x9d\\n' "
+           "if bad else b'ok\\n'); sys.exit(1 if bad else 0)"]
+    m = mission_from_dict({
+        "mission": {"name": "demo", "goal": "g", "requires": ["tests/acceptance"], "focus": ["plexus/**"],
+                    "frozen": ["tests/acceptance/**"]},
+        "metric": {"kind": "command", "cmd": [PY, "-c", "print(open('plexus/score.txt').read().strip())"]},
+        "gates": [{"name": "core", "cmd": odd}],
+        "budget": {"attempts": 2, "hours": 1, "max_consecutive_failures": 5},
+    })
+    w = Steps(_write("plexus/bad.txt", "x"), _write("plexus/score.txt", "4\n"))
+    report = MissionRun(m, r, worker=w, log=lambda s: None,
+                        profile_fn=lambda: Profile(device="cpu", houdini="running")).run()
+    assert report.attempts[0].reason == "gate 'core' failed"
+    section = w.prompts[1].split("## Why the last attempt was dropped", 1)[1]
+    # The "$ cmd" line echoes the gate's own source, so only a newline-bounded RULE line is
+    # the gate's output.
+    assert "\nRULE: plexus.core must stay free of pxr\n" in section
+
+
 def test_no_strict_gain_shows_the_metric_output(tmp_path):
     r = _repo(tmp_path)
     # A real change to the file that leaves the score at 5: kept by no gate, judged by the metric.

@@ -33,7 +33,7 @@ Jev routed each element to the surface it belongs on. Five elements are system-w
 |---|---|---|
 | **Graph canvas** | Nodes, ports, edges; the graph a user builds and runs | A thin progress rule plus a heartbeat dot on each running node (the dot also carries the three stop states) |
 | **Inspector** | The selected node, layer or neuron: parameters, provenance, which opinion wins | The five-mark status display (Verified, Broken, Unknown, idle, working) with reasons inline, result receipts, the opinion stack, stage-state visualisation |
-| **Activity rail** | Neuron wakes, parked proposals, running organ jobs, budgets, the provenance log | Stop / Stopping, approvals, denials, turn limits, undo, admission, long-job counts, liveness, the provenance log, session persistence (close = detach) |
+| **Activity rail** | Neuron wakes, parked proposals, running organ jobs, budgets, the provenance log | Stop / Stopping, parked proposals, denials, turn limits, undo, admission, long-job counts, liveness, the provenance log, session persistence (close = detach) |
 | **Status bar** | One line of global state: connection, composer, CPU/GPU, unknowns | Connection loss and reconnect, the one-sentence status and a refused send (both confirmed by Joe) |
 | **CLI** and **MCP** | Runs and reports without a UI; other agents driving Plexus | Nothing in this pass routed here first; both read the same state model |
 
@@ -239,7 +239,7 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 **History persistence, scene switching, and closing the panel** (`conversation-follows-stage`)
 
 - **Decision:** Session layer per project, rebind waits for in-flight wakes, close = detach
-- **Why it fits Plexus:** In Plexus the session lives on the stage: each project's conversation and provenance is a layer next to its USD layer, so it follows the project by construction. Switching projects in the surface waits for in-flight wakes or shows them still running in the old project. Closing the surface is a detach: neurons keep sleeping and waking under their budgets, and reopening shows what happened while it was closed.
+- **Why it fits Plexus:** In Plexus the session lives on the stage: each project's conversation and provenance is a layer next to its USD layer, so it follows the project by construction. Switching projects in the surface waits for in-flight wakes or shows them still running in the old project. Closing the surface is a detach: neurons stay dormant and wake under their budgets, and reopening shows what happened while it was closed.
 - **Reference idea (SYNAPSE, ideas only):** The conversation is pinned to the scene file it was loaded from. When a file is opened or a new scene started, the panel saves the old conversation and loads the new scene's, but waits if a turn is in flight so the answer lands in the right scene. Save As moves the conversation to the new location. Work from the previous host session is parked, not lost, with a one-line notice and a restore command. Closing the panel saves the conversation and detaches; it doesn't shut down the host-side machinery, so protection stays on for work still finishing. — `C:\Users\User\SYNAPSE\python\synapse\panel\synapse_panel.py:3871-3906, 3923-3992, 4711-4778`. Did it work: Partly. A full re-render of restored turns is still to do (synapse_panel.py:3883-3884). Otherwise unknown; no finding or GUI test was seen.
 - **Jev:** Jev opt0 p 0.87, confidence 0.80, copy risk of the closest option 0.16 · routed here at 0.51
 

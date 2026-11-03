@@ -24,7 +24,7 @@ It builds on the closed artist word table in `docs/plexus/ADVANCEMENT_RESEARCH_2
 | **parked** | A proposal waiting for Joe. The neuron stays dormant; nothing times out | pending approval, blocked |
 | **lands** | A write reached the neuron's own layer and was saved | succeeded, committed |
 
-The artist words for results come from the research table: Working, Verified, Already made, Broken, Unknown, plus the rail states Parked and Stopping, which are not marks. Renaming Verified to Made is Joe's open wording call.
+The artist words for results come from the research table: Working, Verified, Already made, Broken, Unknown. They are states, not marks: each maps onto one of the five marks `UI_DESIGN.md` decided (Verified, Broken, Unknown, idle, working) through the state-to-mark table in `ux.state-model` (Already made is Verified with a 'cache hit' reason). Parked and Stopping are rail states, not marks. `idle` names only that mark, never a neuron's resting state. Renaming Verified to Made is Joe's open wording call.
 
 ## Three verbs for what didn't happen
 
@@ -58,4 +58,4 @@ These never appear in Plexus code, tokens or UI text:
 
 ## Names recorded, not renamed
 
-These names are frozen in the Spec, the tests or `CONTRACT.md`. They stay as they are and are batched for Spec Patch 02 rather than changed piecemeal: `cool()`; `CozyOrgan` beside the organ id `comfyui`; `created` and `createdAt`; `budgetWindow`; the frozen test file names; and the Spec's gate terms above.
+These names are frozen in the Spec, the tests or `CONTRACT.md`. They stay as they are and are batched for Spec Patch 02 rather than changed piecemeal: `cool()`; `CozyOrgan` beside the organ id `comfyui`; `created` and `createdAt`; `budgetWindow`; `trip`, the Spec's and T3's name for a wake the budget gate refused (the budget answers wake, trip or mute; in prose the wake is refused); the frozen test file names; and the Spec's gate terms above.
