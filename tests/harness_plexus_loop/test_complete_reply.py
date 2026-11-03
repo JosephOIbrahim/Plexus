@@ -109,6 +109,7 @@ def test_the_next_prompt_names_what_was_left_out_and_never_says_it_passed(tmp_pa
     assert "passed every gate" not in second
     # a.py is absent after the drop, and the list must not call a left-out reply's files "gone"
     assert "Its files are gone" not in second and "- plexus/a.py" in second
+    assert "Every attempt starts from the last kept commit" in second  # the lead word after a left-out drop
 
 
 def test_a_complete_reply_is_built_and_can_be_kept(tmp_path):

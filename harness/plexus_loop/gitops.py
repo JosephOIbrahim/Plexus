@@ -24,7 +24,12 @@ def git(repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
     if env:
         full_env = dict(os.environ)
         full_env.update(env)
-    r = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, env=full_env, check=False)
+    # git prints index paths as UTF-8 bytes (status -z does not quote them), so the real name
+    # comes back whatever the locale; errors="replace" costs one character, never the stream,
+    # the same reason as metrics.run_gate.
+    r = subprocess.run(
+        ["git", *args], cwd=repo, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", env=full_env, check=False)
     if r.returncode != 0:
         raise GitError(f"git {' '.join(args)}: {r.stderr.strip()}")
     return r.stdout

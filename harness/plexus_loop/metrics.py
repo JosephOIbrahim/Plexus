@@ -55,8 +55,9 @@ def _clip(*texts: str) -> str:
 def run_gate(gate: Gate, worktree: Path, profile: Profile) -> GateResult:
     try:
         # errors="replace": a byte the locale cannot decode (rustc echoing a worker's '”' or '←')
-        # costs one character, never the stream. Without it the reader thread dies and the
-        # output comes back None, so the next prompt would show nothing of the error.
+        # costs a replacement character (plus mojibake for that character's other bytes), never
+        # the stream. Without it the reader thread dies and the output comes back None, so the
+        # next prompt would show nothing of the error.
         r = subprocess.run(
             gate.cmd, cwd=worktree, env=profile.environ(), capture_output=True, text=True,
             errors="replace", timeout=gate.timeout_s, check=False)

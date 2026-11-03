@@ -150,6 +150,27 @@ def test_a_metric_run_keeps_every_failing_test_id(tmp_path, monkeypatch):
     assert a.failing == ids and [t.split("\n", 1)[0] for t in a.target_failures] == ids[:1]
 
 
+def test_a_kept_attempt_keeps_the_failing_tests_that_remain(tmp_path, monkeypatch):
+    from harness.plexus_loop import loop
+    from harness.plexus_loop.metrics import MetricResult
+    # The field promises the whole list whenever the metric ran, kept or not: the ledger's
+    # kept row is where a reader learns what the harness branch still fails after that commit.
+    ids = ["tests.acceptance.phase1.test_t2::test_bad", "tests.acceptance.phase1.test_t6::test_truth"]
+    calls: list[int] = []
+
+    def fake_measure(metric, wt, profile):  # the baseline sees both failing; every later run, one
+        calls.append(1)
+        return MetricResult(2.0, failing=list(ids)) if len(calls) == 1 else MetricResult(1.0, failing=ids[1:])
+    monkeypatch.setattr(loop, "measure", fake_measure)
+    m = replace(_mission(), steps=[Step("S1", ["tests/acceptance/phase1/test_t2.py"], "x")],
+                router=RouterSpec(kind="first"))
+    r = _repo(tmp_path)
+    a, b = MissionRun(m, r, worker=_Steps(_write("plexus/a.txt", "x"), _write("plexus/b.txt", "y")),
+                      log=lambda s: None, profile_fn=lambda: Profile(device="cpu", houdini="running")).run().attempts
+    assert a.kept and a.route == "S1 via first" and a.failing == ids[1:] and a.target_failures == []
+    assert not b.kept and b.reason.startswith("no strict gain") and b.failing == ids[1:]
+
+
 def test_a_null_response_is_an_empty_reply_not_a_crash(tmp_path, monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen",
                         lambda req, timeout: _Resp(json.dumps(dict(BODY, response=None)).encode()))
