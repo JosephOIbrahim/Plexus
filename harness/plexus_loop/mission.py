@@ -227,6 +227,9 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
     steps = []
     for s in raw.get("steps", []):
         sid = str(_req(s, "id", "[[steps]]"))
+        # One token: the router attributes drops by parsing "step <id> via ...: reason".
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", sid):
+            raise MissionError(f"[[steps]] {sid!r}: a step id is one token of letters, digits, '_', '.' or '-'")
         targets = [str(x) for x in _req(s, "targets", f"[[steps]] {sid}")]
         if not targets:
             raise MissionError(f"[[steps]] {sid}: targets must name at least one test")
@@ -242,13 +245,21 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
         raw_after = s.get("after", [])
         if not isinstance(raw_after, list) or not all(isinstance(x, str) for x in raw_after):
             raise MissionError(f"[[steps]] {sid}: after must be a list of step ids")
-        earlier = {p.id for p in steps}
+        earlier = {p.id: p for p in steps}
         if bad := [x for x in raw_after if x not in earlier]:
             raise MissionError(f"[[steps]] {sid}: after names {bad[0]!r}, which is not an earlier step")
         if len(set(raw_after)) != len(raw_after):
             raise MissionError(f"[[steps]] {sid}: after must not repeat")
+        # Close `after` over what each named step itself builds on, so readiness holds through the
+        # whole chain: a step whose groundwork two levels down fails again is not ready either.
+        # Earlier steps are already closed, and only earlier ids are allowed, so this cannot loop.
+        closed: list[str] = []
+        for x in raw_after:
+            for y in [x, *earlier[x].after]:
+                if y not in closed:
+                    closed.append(y)
         steps.append(Step(id=sid, targets=targets, text=str(_req(s, "text", f"[[steps]] {sid}")),
-                          files=files, after=list(raw_after)))
+                          files=files, after=closed))
     if len({s.id for s in steps}) != len(steps):
         raise MissionError("[[steps]] ids must be unique")
 

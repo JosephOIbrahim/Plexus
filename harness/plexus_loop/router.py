@@ -105,9 +105,36 @@ def _http_post(url: str, body: dict, headers: dict, timeout: int) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+READY_INSTRUCTIONS = (
+    "A coding model gets exactly one attempt to make more of `failing_tests` pass. "
+    "Every option is a plan step that is ready: the steps it builds on already pass, "
+    "so any of them can be worked on now. Which one should that attempt work on? "
+    "Choose the step whose next attempt is most likely to make at least one of its "
+    "own failing tests pass. Read `latest_test_output_tail` and each option's "
+    "`its_failing_tests` and `its_recent_drops`: favour a step whose failures point "
+    "at one specific piece it owns and that the output shows how to fix. A step "
+    "whose recent attempts were all dropped for the same reason is less likely to "
+    "pass next time than a ready step that has not been tried yet."
+)
+# For a mission whose steps name no `after`: nothing says the options are ready, so the
+# question keeps the earliest-first rule the router used before prerequisites existed.
+ORDERED_INSTRUCTIONS = (
+    "A coding model gets exactly one attempt to make more of `failing_tests` pass. "
+    "Which plan step should that attempt work on? Choose the earliest step whose code "
+    "`latest_test_output_tail` shows is missing or broken. Choose a later step only "
+    "when the output shows the earlier steps' code already works. If "
+    "`recent_dropped_attempts` show the same step failing for the same reason, the "
+    "step itself may still be right: keep it unless the output points elsewhere."
+)
+
+
 def jev_request(spec: RouterSpec, steps: list[Step], failing: list[str], tail: str,
-                recent: list[str]) -> dict:
-    """The System One request body for one routing decision."""
+                recent: list[str], graph: bool = True) -> dict:
+    """The System One request body for one routing decision.
+
+    ``graph`` says whether the mission's steps name prerequisites, so that every option really
+    is ready; without them the question keeps the earliest-first wording.
+    """
     return {
         "model": spec.model,
         "state": {
@@ -118,17 +145,7 @@ def jev_request(spec: RouterSpec, steps: list[Step], failing: list[str], tail: s
         "questions": {
             "next_step": {
                 "type": "choice",
-                "instructions": (
-                    "A coding model gets exactly one attempt to make more of `failing_tests` pass. "
-                    "Every option is a plan step that is ready: the steps it builds on already pass, "
-                    "so any of them can be worked on now. Which one should that attempt work on? "
-                    "Choose the step whose next attempt is most likely to make at least one of its "
-                    "own failing tests pass. Read `latest_test_output_tail` and each option's "
-                    "`its_failing_tests` and `its_recent_drops`: favour a step whose failures point "
-                    "at one specific piece it owns and that the output shows how to fix. A step "
-                    "whose recent attempts were all dropped for the same reason is less likely to "
-                    "pass next time than a ready step that has not been tried yet."
-                ),
+                "instructions": READY_INSTRUCTIONS if graph else ORDERED_INSTRUCTIONS,
                 "criteria": {
                     s.id: {
                         "what_it_builds": s.text[:STEP_TEXT_FOR_ROUTER],
@@ -153,8 +170,9 @@ def choose(spec: RouterSpec, steps: list[Step], failing: list[str], tail: str = 
         return Route(None, "none", note="no step targets a failing test")
     rdy = ready(steps, failing)
     if not rdy:
-        # Only when an earlier step's targets fail again after it was kept, or the mission's
-        # `after` lists cannot all be met: work on the earliest failing step, and say so.
+        # Unreachable for a mission that loads: `after` names only earlier steps, so the earliest
+        # failing step's prerequisites all pass and it is always ready. Kept for Step lists built
+        # by hand (tests, tools), where `after` may point forward.
         return Route(elig[0], "first", note="no failing step has its prerequisites passing")
     if spec.kind == "first" or len(rdy) == 1:
         return Route(rdy[0], "first")
@@ -165,7 +183,7 @@ def choose(spec: RouterSpec, steps: list[Step], failing: list[str], tail: str = 
     try:
         out = (post or _http_post)(
             spec.host.rstrip("/") + "/v1/systemone",
-            jev_request(spec, rdy, failing, tail, recent or []),
+            jev_request(spec, rdy, failing, tail, recent or [], graph=any(s.after for s in steps)),
             {"Authorization": "Bearer " + key},
             spec.timeout_s,
         )
