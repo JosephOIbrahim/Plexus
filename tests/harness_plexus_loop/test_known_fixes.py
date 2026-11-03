@@ -178,20 +178,7 @@ def test_the_real_null_layer_quote_carries_the_whole_fix():
     ("AttributeError: type object 'Notice' has no attribute 'ObjectsChanged'", "`Tf.Notice.ObjectsChanged` does not exist"),
     ("None.None(Layer, ListProxy_SdfSubLayerTypePolicy) did not match C++ signature", "`layer.subLayerPaths` is a live"),
     ("NameError: name 'Usd' is not defined", "Import every `pxr` module"),
-    ("error[E0255]: the name `PredicateError` is defined multiple times", "never import anything as `PredicateError`"),
-    ("error[E0277]: can't compare `&f64` with `f64`", "compare numbers by value"),
-    ("error[E0599]: no method named `len` found for enum `Clause` in the current scope", "returns what it parsed"),
-    ("error[E0308]: mismatched types\n    |         ^^^^^ expected `f64`, found `Value`", "holds an `f64`, never a `Value`"),
-    ("AssertionError: predicate.rs (rank 2) uses crate::py (rank 4)", "only for a strictly lower rank"),
-    # run 12, rows 52, 54 and 55: the texts rustc printed, as the ledger's `detail` holds them
-    ("error[E0106]: missing lifetime specifier\n   --> crates/plexus-core/src/predicate.rs:196:58",
-     "must name the lifetime"),
-    ("error[E0204]: the trait `Copy` cannot be implemented for this type", "and nothing else"),
-    ("error[E0308]: mismatched types\n    |   expected `Result<(f64, &str), String>`, found `Option<_>`",
-     "never an `Option`"),
-    ("error[E0277]: `predicate::PredicateError` cannot be converted to a Python object", "defines no error type"),
-    ("error[E0277]: the trait bound `predicate::PredicateError: PyErrArguments` is not satisfied",
-     "defines no error type"),
+    # Option B: the Rust cases live with the port draft (docs/plexus/drafts/port_rust_brief.md).
 ])
 def test_each_real_run_error_finds_its_fix_in_the_real_brief(error, anchor):
     m = load_mission(REPO / "harness" / "plexus_loop" / "missions" / "acceptance.toml")

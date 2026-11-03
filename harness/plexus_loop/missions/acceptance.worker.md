@@ -17,27 +17,22 @@ You make one change per attempt. The harness keeps it only if every gate passes 
 
 - **An edit to an existing file:** one unified diff in a ```` ```diff ```` block, with `a/` and `b/` path prefixes, `--- a/<path>`, `+++ b/<path>`, and hunks whose context lines start with a space.
 - Nothing else inside either kind of block: no commentary, no `?` lines, no placeholders.
-- **Every `.rs` file, `lib.rs` included, goes in a whole-file block, never a diff.** They are short, and a diff against them breaks more easily than the file.
 
 ## What exists already
 
 - `plexus/__init__.py` (empty package) and `crates/plexus-core` (a Cargo crate whose `py.rs` holds an empty PyO3 module `plexus._core` with `__version__`). The `core` gate builds it and copies the library to `plexus/_core.pyd`; you never build anything yourself.
 - `tests/acceptance/CONTRACT.md` is the exact Python surface the tests call. Match its names and signatures.
 
-## The split (decided: Option A)
+## The split (Option B for phase 1, staged)
 
-- **Python** owns everything that touches `pxr`: the `Tf.Notice` callback, the event queue, one dispatcher thread with a 50 ms debounce, action worker threads, `wait_idle`, reading composed values, authoring, saving, and the path allowlist gate.
-- **Rust** (`plexus._core`) owns the pure logic: `compile_predicate(source, scope) -> Predicate` (raises `PredicateError`), `Predicate.paths()`, `Predicate.seed(values)`, `Predicate.eval(changed, values) -> bool`, `Predicate.commit_wake(values)`, and `Budget(wakes, window_s)` with `peek(now)` and `admit(now)` returning `"wake" | "trip" | "mute"`. Only `str`, `int`, `float`, `bool`, `None`, `list`, `tuple`, `dict` cross. Rust never owns a clock: Python passes `now` from the runtime's injected clock.
-- `plexus/core/predicate.py` re-exports `PredicateError` from `plexus._core`, so `pytest.raises` matches.
-- Rust module layout: `lib.rs` holds only comment lines, `mod name;` lines, and `#[cfg(feature = "python")]` on the line before `mod py;`. No `use`, `pub use` or `#![...]`. Declare a module in the same reply that creates its file: `mod predicate;` in S3, `mod budget;` in S7.
-- `py.rs` is the only file that names pyo3, comments included (the guard greps the raw text for `pyo3`). Every `#[pyclass]` and the `#[pymodule]` live there.
-- The only `.rs` file names the layers gate accepts in `crates/plexus-core/src` are `lib`, `py`, `predicate` and `budget` (later `error`, `outcome`, `canon`, `graph`, `composer`). Any other name, such as `parser.rs`, `scope.rs` or `cache.rs`, fails the gate.
-- A module may write `crate::X` only for a strictly lower rank: error 0, outcome 1, predicate/budget/canon/graph 2, composer 3, py 4. So `predicate.rs` and `budget.rs` never name each other.
-- Leave `crates/plexus-core/Cargo.toml` alone. `default = []` stays empty, because the `cargo` gate runs `cargo test` without the `python` feature.
+- **Python owns everything in phase 1.** The `Tf.Notice` callback, the event queue, one dispatcher thread with a 50 ms debounce, action worker threads, `wait_idle`, reading composed values, authoring, saving, the path allowlist gate, and the pure logic too: the predicate and the budget.
+- `plexus/core/predicate.py` (no `pxr` import) holds `class PredicateError(ValueError)`, `compile_predicate(source: str, scope: str) -> Predicate`, and `class Predicate` with `paths() -> list[str]`, `seed(values: dict) -> None`, `eval(changed: list[str], values: dict) -> bool` and `commit_wake(values: dict) -> None`. `values` maps a path to `float | int | bool | str`; a missing key means no value.
+- `plexus/core/budget.py` (no `pxr` import, no clock) holds `class Budget(wakes: int, window_s: float)` with `peek(now: float) -> str` (pure) and `admit(now: float) -> str`, each `"wake"`, `"trip"` or `"mute"`. The runtime passes `now` from its injected clock.
+- Nothing under `crates/` changes in phase 1: `crates/**`, `Cargo.toml` and `Cargo.lock` are frozen. The scaffold crate still builds in the `core` and `cargo` gates, and `plexus/_core.pyd` keeps its `__version__` only. The Rust port is its own mission later, behind this same surface; `docs/plexus/drafts/port_rust_brief.md` keeps its facts.
 
 ## Rules the gates enforce
 
-- Change only `plexus/**`, `crates/**`, `Cargo.toml`, `Cargo.lock`.
+- Change only `plexus/**`. `crates/**`, `Cargo.toml` and `Cargo.lock` are frozen for phase 1.
 - Never import `agent`, `cognitive` or anything from them, at any scope. Never copy code from them.
 - No engine vocabulary anywhere under `plexus/` or `crates/` (the T8 test scans `.py .rs .toml .json .usda`): not `cfg`, `KSampler`, `prompt_id`, `class_type`, `SaveImage`, `LoadImage` or other ComfyUI node names. In Rust, `#[cfg(...)]` attributes are fine; the word `cfg` anywhere else is not. No `[target.'cfg(...)']` table in any Cargo.toml and no `build.rs`.
 - Modules that must not import `pxr`: `plexus/__init__.py`, `plexus/schema`, `plexus/core/__init__.py`, `plexus/core/predicate.py`, `plexus/membrane/__init__.py`, `plexus/organs/__init__.py`. No import cycles.
@@ -47,114 +42,7 @@ You make one change per attempt. The harness keeps it only if every gate passes 
 
 ## Facts you would otherwise learn by failing
 
-**pyo3 0.30 (checked: pyo3 0.30.1, abi3-py311, Python 3.14.2, cargo 1.99.1).** Older pyo3 idioms do not compile. `PyObject` no longer exists (use `Py<PyAny>` or `&Bound<'_, PyDict>`). `fn _core(py: Python, m: &PyModule)` fails. `py.get_type_bound::<T>()` fails. In S3, write `py.rs` whole, exactly as this block: it has no `PyBudget` and no `crate::budget`, because `budget.rs` does not exist until S7. Copy its `use` lines as they are. `PredicateError` is the name `create_exception!` defines, so never import anything as `PredicateError`: `use crate::predicate::{Value, Error as PredicateError};` fails with E0255, "the name `PredicateError` is defined multiple times".
-
-```rust
-//! The Python extension module `plexus._core`. The only file that names pyo3.
-
-use std::collections::HashMap;
-
-use pyo3::create_exception;
-use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
-
-use crate::predicate::Value;
-
-create_exception!(plexus._core, PredicateError, PyValueError);
-
-/// dict[str, float | int | bool | str | None] -> Rust values. None and other types are left out.
-fn to_values(d: &Bound<'_, PyDict>) -> PyResult<HashMap<String, Value>> {
-    let mut out = HashMap::new();
-    for (k, v) in d.iter() {
-        let key: String = k.extract()?;
-        let val = if let Ok(b) = v.extract::<bool>() {
-            Value::Bool(b) // bool first: True also extracts as 1.0
-        } else if let Ok(x) = v.extract::<f64>() {
-            Value::Num(x)
-        } else if let Ok(s) = v.extract::<String>() {
-            Value::Str(s)
-        } else {
-            continue;
-        };
-        out.insert(key, val);
-    }
-    Ok(out)
-}
-
-#[pyclass(name = "Predicate")]
-struct PyPredicate {
-    inner: crate::predicate::Predicate,
-}
-
-#[pymethods]
-impl PyPredicate {
-    fn paths(&self) -> Vec<String> {
-        self.inner.paths()
-    }
-    fn seed(&mut self, values: &Bound<'_, PyDict>) -> PyResult<()> {
-        self.inner.seed(&to_values(values)?);
-        Ok(())
-    }
-    fn eval(&self, changed: Vec<String>, values: &Bound<'_, PyDict>) -> PyResult<bool> {
-        Ok(self.inner.eval(&changed, &to_values(values)?))
-    }
-    fn commit_wake(&mut self, values: &Bound<'_, PyDict>) -> PyResult<()> {
-        self.inner.commit_wake(&to_values(values)?);
-        Ok(())
-    }
-}
-
-#[pyfunction]
-fn compile_predicate(source: &str, scope: &str) -> PyResult<PyPredicate> {
-    crate::predicate::compile(source, scope)
-        .map(|inner| PyPredicate { inner })
-        .map_err(PredicateError::new_err)
-}
-
-#[pymodule]
-fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    m.add("PredicateError", m.py().get_type::<PredicateError>())?;
-    m.add_class::<PyPredicate>()?;
-    m.add_function(wrap_pyfunction!(compile_predicate, m)?)?;
-    Ok(())
-}
-```
-
-**In S7 only, `py.rs` gains three pieces,** in the same reply that adds `mod budget;`: this block after `compile_predicate`, and `m.add_class::<PyBudget>()?;` on the line after `m.add_class::<PyPredicate>()?;`.
-
-```rust
-#[pyclass(name = "Budget")]
-struct PyBudget {
-    inner: crate::budget::Budget,
-}
-
-#[pymethods]
-impl PyBudget {
-    #[new]
-    fn new(wakes: u32, window_s: f64) -> Self {
-        PyBudget { inner: crate::budget::Budget::new(wakes, window_s) }
-    }
-    fn peek(&self, now: f64) -> &'static str {
-        self.inner.peek(now)
-    }
-    fn admit(&mut self, now: f64) -> &'static str {
-        self.inner.admit(now)
-    }
-}
-```
-
-What this fixes for the other files:
-- `predicate.rs` must provide `pub enum Value { Num(f64), Str(String), Bool(bool) }`, `pub fn compile(source: &str, scope: &str) -> Result<Predicate, String>`, and `Predicate` methods `paths(&self) -> Vec<String>`, `seed(&mut self, &HashMap<String, Value>)`, `eval(&self, &[String], &HashMap<String, Value>) -> bool` and `commit_wake(&mut self, &HashMap<String, Value>)`.
-- The `#[pyclass(name = ...)]` wrappers keep the Rust struct names free. Pyclass fields must be thread-safe: no `Rc`, `RefCell` or `Cell`; mutate through `&mut self`.
-- A key missing from `values` means the attribute has no value. Python passes `changed` as a list of `str(path)`.
-- In `predicate.rs`, compare numbers by value. A `HashMap` lookup or a `match` on a reference gives `&f64`; dereference it before comparing (`*current > value`, or bind by value with `Some(&Value::Num(current))`). Comparing `&f64` with `f64` fails with E0277, "can't compare `&f64` with `f64`".
-- Each parse function in `predicate.rs` returns what it parsed and the input it did not consume: `fn parse_clause<'a>(s: &'a str, scope: &str) -> Result<(Clause, &'a str), String>`, and the AND loop continues from that rest. A function that takes two `&str` and returns a borrow must name the lifetime, exactly as that signature does: the same function written without `<'a>` fails with E0106, "missing lifetime specifier". A `Clause` does not know its own length: `rest[clause.len()..]` fails with E0599, "no method named `len` found for enum `Clause`".
-- A `delta` clause holds an `f64`, never a `Value`: parse its number with `s.parse::<f64>()` and return an `Err` for anything else. Only an `attr` clause holds a `Value`. `Clause::Delta { path, cmp, value }` with a `Value` fails with E0308, "mismatched types: expected `f64`, found `Value`".
-- `Value` derives `Debug, Clone, PartialEq` and nothing else. It holds a `String`, so `#[derive(Copy)]` on it fails with E0204, "the trait `Copy` cannot be implemented for this type". Where a copy is needed, `.clone()` it.
-- `compile` and every parse function return a `Result`, never an `Option`: take their value with `if let Ok(x) = ...` or `match ... { Ok(x) => ..., Err(e) => ... }`, and pass an `Err` up with `?`. `if let Some(x) = parse_clause(...)` fails with E0308, "mismatched types: expected `Result<...>`, found `Option<_>`".
-- `predicate.rs` defines no error type: `compile` returns `Result<Predicate, String>`, and `py.rs` turns that `String` into Python's `PredicateError` with `.map_err(PredicateError::new_err)`, as its block shows. A `struct PredicateError` or `enum PredicateError` of your own in `predicate.rs` cannot cross into Python: pyo3 fails with E0277, "`PredicateError` cannot be converted to a Python object" and "the trait bound `PredicateError: PyErrArguments` is not satisfied".
+**The Python predicate (S3) and budget (S7), as rules.** `compile_predicate` parses `clause { "AND" clause }`, where a clause is `changed(path)`, `delta(path) cmp number`, `attr(path) cmp literal` or `exists(path)` and `cmp` is one of `> >= < <= == !=`; `OR`, trailing text or an unknown clause raises `PredicateError`. A path is inside the scope when the part before its first `.` equals the scope or starts with the scope followed by `/` (a plain `startswith(scope)` would accept `/Exchange/LookStateX` for `/Exchange/LookState`); an outside path raises `PredicateError` at compile time, never at fire time. `paths()` lists every path the clauses name, once each, in first-appearance order. The delta cache maps a path to the number last committed; only `seed` and `commit_wake` write it and `eval` only reads it, so sub-threshold changes accumulate until a wake commits them. `eval` holds when every clause holds: `changed` when the path is in the event's list; `delta` when the path has a numeric value, the cache has one, and `abs(value - cached) cmp number` holds; `attr` when the composed value compares as asked (numbers as numbers; strings and bools only with `==` and `!=`; different kinds are never equal); `exists` when the path has a value. Compare numbers as floats and never truncate them. Parse a number with `float(text)` and raise `PredicateError` on `ValueError`. The budget: a wake at `t` counts while `now < t + window_s`; `admit(now)` returns `"wake"` when fewer than `wakes` wakes are live and records this one, `"trip"` otherwise and counts it, and `"mute"` on the third consecutive trip and forever after; a wake resets the trip count; `peek(now)` returns what `admit(now)` would return without recording anything.
 
 **Codeless schema plugin (T0), checked on usd-core 26.5.** `plexus/schema/__init__.py` defines `plugin_dir()` returning `Path(__file__).parent`. Next to it, `plugInfo.json` and `generatedSchema.usda`. The `Types` key must differ from the schema's identifier; the identifier is the alias. Shape, for one schema and one attribute:
 
