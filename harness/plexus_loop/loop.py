@@ -316,6 +316,12 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
         "a/ and b/ prefixes) inside a ```diff block.",
         "- Make the smallest change that moves the number. Don't skip, delete or weaken tests.",
     ]
+    # Ollama reuses the cached prefix of the previous prompt, so everything that is the same on
+    # every attempt of a run (this header, then the context files) comes first, and everything
+    # that changes per attempt (the step, the last drop, handed-on files, the score, the metric
+    # tail) follows the files. Run 12 attempt 1 spent 709 of its 1473 model seconds reading a
+    # 24,464-token prompt, most of it the same brief and tests every time.
+    head, lines = lines, []
     if step is not None:
         lines += [
             "",
@@ -410,11 +416,13 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
         mfence = "`" * max(3, _longest_backtick_run(last.tail) + 1)
         lines += ["", "## Latest metric output (tail)", mfence, last.tail, mfence]
 
-    used = sum(len(x) for x in lines)
-    # A handed-on file is shown once, in the attempt's version above, never again at its tip version.
+    reply = ["", "## Your reply",
+             "New or fully rewritten files: one ```file:<path> block each, holding the whole file. "
+             "Edits to existing files: one ```diff block with a/ and b/ prefixes. Nothing else inside either."]
+    used = sum(len(x) for x in head + lines + reply)
+    # A handed-on file is shown once, in the attempt's version below, never again at its tip version.
     files = [f for f in _context_files(mission, repo) if f not in handed]
-    if files:
-        lines += ["", "## Files"]
+    file_blocks: list[str] = ["", "## Files"] if files else []
     for rel in files:
         try:
             text = (repo / rel).read_text(encoding="utf-8")
@@ -424,14 +432,11 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
         tail = "" if text.endswith("\n") else "\n"
         block = f"\n{fence}file:{rel}\n{text}{tail}{fence}"
         if used + len(block) > budget_chars:
-            lines.append(f"\n(further files left out to fit the {budget_chars}-character budget)")
+            file_blocks.append(f"\n(further files left out to fit the {budget_chars}-character budget)")
             break
-        lines.append(block)
+        file_blocks.append(block)
         used += len(block)
-    lines += ["", "## Your reply",
-              "New or fully rewritten files: one ```file:<path> block each, holding the whole file. "
-              "Edits to existing files: one ```diff block with a/ and b/ prefixes. Nothing else inside either."]
-    return "\n".join(lines)
+    return "\n".join(head + file_blocks + lines + reply)
 
 
 def _secs(t0: float) -> float:

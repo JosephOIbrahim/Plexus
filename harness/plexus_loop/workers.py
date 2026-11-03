@@ -322,12 +322,18 @@ def ollama_stats(body: dict) -> dict:
     return out
 
 
+OLLAMA_KEEP_ALIVE = "15m"
+
+
 class OllamaWorker:
     def __init__(self, spec: WorkerSpec):
         self.spec = spec
 
     def payload(self, prompt: str, profile: Profile) -> dict:
-        body: dict = {"model": self.spec.model, "prompt": prompt, "stream": False}
+        # keep_alive holds the model, and with it the cached prompt prefix, through the gates
+        # between attempts (Ollama's default is 5 minutes; the unit gate alone takes over 2).
+        body: dict = {"model": self.spec.model, "prompt": prompt, "stream": False,
+                      "keep_alive": OLLAMA_KEEP_ALIVE}
         options = dict(profile.ollama_options)
         if self.spec.num_ctx > 0:
             # Without it the server's default window can drop the front of a long prompt,

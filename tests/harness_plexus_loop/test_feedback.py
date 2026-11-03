@@ -79,7 +79,8 @@ def test_a_failed_gate_shows_its_output_in_the_next_prompt(tmp_path):
     assert "## Why the last attempt was dropped" not in first
     assert "## Why the last attempt was dropped" in second
     assert "gate 'layers' failed" in second and "RULE: plexus.core must stay free of pxr" in second
-    assert second.index("## Why the last attempt was dropped") < second.index("## Files")
+    # The files come first so Ollama can reuse their cached prefix; the drop follows them.
+    assert second.index("## Files") < second.index("## Why the last attempt was dropped")
 
 
 def test_a_long_gate_output_keeps_its_first_error_and_command_in_the_prompt(tmp_path):
