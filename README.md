@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/plexus-logo-720.png" alt="Plexus" width="360">
+  <img src="assets/plexus-logo-720.jpg" alt="Plexus" width="360">
 </p>
 
 <p align="center">
