@@ -319,9 +319,16 @@ Each element gives: the decision; why it fits Plexus; the reference idea it came
 6. **Spacing takes Jev's preferred option as restated:** named Plexus roles on a 4-px grid, gaps stepping down at least one grid step per nesting level, checked by a layout test. This overrides the visual 0.5 rule for this element only.
 7. **The Unknown mark, with the other four status marks, lives in the inspector.** The canvas carries no verdict marks as a result.
 
+### Decided by Joe (Nov 3)
+
+From the Nov 3 design review, which used Pentagram's Cohere identity as a reference for method only (one root element every surface derives from; generators as the identity), never for its look.
+
+8. **The root element is the ordered line.** Every line that carries information on a Plexus surface is one of two things, and ends in a mark that names its verdict: a layer in a strength-ordered stack (the resolved value first, then the stack that produced it, strongest first, as USD resolves), or a measured span of time or count. Structural edges, such as the `bg-rule` on cards and panes, are exempt and stay as decided. Working concept line: *timing from biology, order from composition*.
+9. **The mark never shows state.** The felt disc with its slit is a still emblem. It is never lit, animated or used as a status light, and no value is encoded in its slit. The slit stays a hairline at one fixed angle, stops short of the centre and is never widened into a wedge; the letters of the wordmark are never cut. State lives in the five inspector marks, node badges and rail states (decision 7). The felt black and the paper grey of the render stay in photographs and never become UI colour tokens.
+
 ### Still open
 
-Nothing. Every element in §3 is decided.
+Every element in §3 is decided. From the Nov 3 review, three calls are Joe's: whether deliberate holds (a muted neuron, a parked proposal, `Outcome.blocked`) stay rail states and badges with their reason written inline (recommended) or get a sixth, shape-coded mark; the type families and base size; and the two accent values (presence and action), chosen independently of the mark.
 
 ### Optional additions Jev scored well
 
