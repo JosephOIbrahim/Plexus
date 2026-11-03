@@ -48,3 +48,12 @@ def test_a_syntax_error_is_reported_not_raised(tmp_path: Path):
 def test_only_the_schema_package_may_define_names():
     # CONTRACT.md: `from plexus.schema import plugin_dir`; no other package export is called.
     assert INIT_MAY_DEFINE == {"plexus/schema/__init__.py"}
+
+
+def test_a_bom_is_fine_and_bad_bytes_are_named(tmp_path: Path):
+    p = tmp_path / "__init__.py"
+    p.write_bytes(b'\xef\xbb\xbf"""Plexus core."""\n')
+    assert init_problem(p) is None
+    p.write_bytes(b'"""caf\xe9"""\n')
+    why = init_problem(p)
+    assert why is not None and why.startswith(("does not parse", "does not decode"))

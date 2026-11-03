@@ -101,9 +101,11 @@ def test_pxr_only_from_rank_two_up():
 def init_problem(path: Path) -> str | None:
     """Why this package ``__init__.py`` is more than one docstring, or None when it is not."""
     try:
-        body = ast.parse(path.read_text(encoding="utf-8"), filename=str(path)).body
+        body = ast.parse(path.read_bytes(), filename=str(path)).body
     except SyntaxError as e:
         return f"does not parse ({e.msg}, line {e.lineno})"
+    except ValueError as e:
+        return f"does not decode ({e})"
     if not body:
         return None
     first, rest = body[0], body[1:]
