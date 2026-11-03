@@ -89,7 +89,7 @@ text = "Membrane, stagekit and axon in Python. Create plexus/core/__init__.py an
 id = "S3"
 targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_bad_predicates_fail_at_registration"]
 files = ["crates/plexus-core/src/predicate.rs", "crates/plexus-core/src/lib.rs", "crates/plexus-core/src/py.rs", "plexus/core/predicate.py", "plexus/core/neuron.py"]
-text = "Rust grammar-v0 predicate, all whole files. crates/plexus-core/src/predicate.rs in plain Rust with the Value enum, compile() and Predicate signatures the brief lists: clauses changed, delta, attr, exists joined by AND only; OR or any other text is an Err; every path is absolute and inside the scope, meaning the part before the first '.' equals the scope or starts with scope + '/' (a plain starts_with would accept /Exchange/LookStateX). paths() gives each path once, in order. eval handles all four clause kinds, with delta compared against a cache that only seed and commit_wake write. Add #[cfg(test)] unit tests for OR, out-of-scope, and two 0.15 steps that wake once. lib.rs adds mod predicate;. py.rs is the brief's skeleton without the Budget parts. plexus/core/predicate.py: from plexus._core import PredicateError, compile_predicate. plexus/core/neuron.py: NeuronRuntime.__init__ (register_participant first, then open the composed exchange as its stage, so the sublayer append never reaches its axon; edit_layer is Sdf.Layer.FindOrOpen of its own from_<id>.usda, the same object the stage composes) and register(), which calls compile_predicate(predicate, scope) before anything else, so PredicateError propagates."
+text = "Rust grammar-v0 predicate, all whole files. crates/plexus-core/src/predicate.rs in plain Rust with the Value enum, compile() and Predicate signatures the brief lists: clauses changed, delta, attr, exists joined by AND only; OR or any other text is an Err; every path is absolute and inside the scope, meaning the part before the first '.' equals the scope or starts with scope + '/' (a plain starts_with would accept /Exchange/LookStateX). paths() gives each path once, in order. eval handles all four clause kinds, with delta compared against a cache that only seed and commit_wake write. Add #[cfg(test)] unit tests for OR, out-of-scope, and two 0.15 steps that wake once. lib.rs adds mod predicate;. py.rs is the brief's py.rs block, copied exactly; it has no Budget parts. plexus/core/predicate.py: from plexus._core import PredicateError, compile_predicate. plexus/core/neuron.py: NeuronRuntime.__init__ (register_participant first, then open the composed exchange as its stage, so the sublayer append never reaches its axon; edit_layer is Sdf.Layer.FindOrOpen of its own from_<id>.usda, the same object the stage composes) and register(), which calls compile_predicate(predicate, scope) before anything else, so PredicateError propagates."
 
 [[steps]]
 id = "S4"
@@ -191,3 +191,28 @@ anchor = "Package `__init__.py` files hold a docstring only"
 match = '''_on_notice[\s\S]*object has no attribute '_\w*(lock|Lock)''''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "So it takes no lock"
+
+[[known_fixes]]
+match = '''the name `PredicateError` is defined multiple times'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "never import anything as `PredicateError`"
+
+[[known_fixes]]
+match = '''can't compare `&f64` with `f64`|can't compare `f64` with `&f64`'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "In `predicate.rs`, compare numbers by value"
+
+[[known_fixes]]
+match = '''no method named `len` found for (enum|struct) `Clause`'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "Each parse function in `predicate.rs` returns what it parsed"
+
+[[known_fixes]]
+match = '''expected `f64`, found `Value`|expected `Value`, found `f64`'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "A `delta` clause holds an `f64`, never a `Value`"
+
+[[known_fixes]]
+match = '''\.rs \(rank \d\) uses crate::\w+ \(rank \d\)'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "A module may write `crate::X` only for a strictly lower rank"

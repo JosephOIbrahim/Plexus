@@ -47,7 +47,7 @@ You make one change per attempt. The harness keeps it only if every gate passes 
 
 ## Facts you would otherwise learn by failing
 
-**pyo3 0.30 (checked: pyo3 0.30.1, abi3-py311, Python 3.14.2, cargo 1.99.1).** Older pyo3 idioms do not compile. `PyObject` no longer exists (use `Py<PyAny>` or `&Bound<'_, PyDict>`). `fn _core(py: Python, m: &PyModule)` fails. `py.get_type_bound::<T>()` fails. Write `py.rs` whole, from this file (in S3, leave out the three `PyBudget` pieces; S7 adds them):
+**pyo3 0.30 (checked: pyo3 0.30.1, abi3-py311, Python 3.14.2, cargo 1.99.1).** Older pyo3 idioms do not compile. `PyObject` no longer exists (use `Py<PyAny>` or `&Bound<'_, PyDict>`). `fn _core(py: Python, m: &PyModule)` fails. `py.get_type_bound::<T>()` fails. In S3, write `py.rs` whole, exactly as this block: it has no `PyBudget` and no `crate::budget`, because `budget.rs` does not exist until S7. Copy its `use` lines as they are. `PredicateError` is the name `create_exception!` defines, so never import anything as `PredicateError`: `use crate::predicate::{Value, Error as PredicateError};` fails with E0255, "the name `PredicateError` is defined multiple times".
 
 ```rust
 //! The Python extension module `plexus._core`. The only file that names pyo3.
@@ -112,6 +112,19 @@ fn compile_predicate(source: &str, scope: &str) -> PyResult<PyPredicate> {
         .map_err(PredicateError::new_err)
 }
 
+#[pymodule]
+fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    m.add("PredicateError", m.py().get_type::<PredicateError>())?;
+    m.add_class::<PyPredicate>()?;
+    m.add_function(wrap_pyfunction!(compile_predicate, m)?)?;
+    Ok(())
+}
+```
+
+**In S7 only, `py.rs` gains three pieces,** in the same reply that adds `mod budget;`: this block after `compile_predicate`, and `m.add_class::<PyBudget>()?;` on the line after `m.add_class::<PyPredicate>()?;`.
+
+```rust
 #[pyclass(name = "Budget")]
 struct PyBudget {
     inner: crate::budget::Budget,
@@ -130,22 +143,15 @@ impl PyBudget {
         self.inner.admit(now)
     }
 }
-
-#[pymodule]
-fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    m.add("PredicateError", m.py().get_type::<PredicateError>())?;
-    m.add_class::<PyPredicate>()?;
-    m.add_class::<PyBudget>()?;
-    m.add_function(wrap_pyfunction!(compile_predicate, m)?)?;
-    Ok(())
-}
 ```
 
 What this fixes for the other files:
 - `predicate.rs` must provide `pub enum Value { Num(f64), Str(String), Bool(bool) }`, `pub fn compile(source: &str, scope: &str) -> Result<Predicate, String>`, and `Predicate` methods `paths(&self) -> Vec<String>`, `seed(&mut self, &HashMap<String, Value>)`, `eval(&self, &[String], &HashMap<String, Value>) -> bool` and `commit_wake(&mut self, &HashMap<String, Value>)`.
 - The `#[pyclass(name = ...)]` wrappers keep the Rust struct names free. Pyclass fields must be thread-safe: no `Rc`, `RefCell` or `Cell`; mutate through `&mut self`.
 - A key missing from `values` means the attribute has no value. Python passes `changed` as a list of `str(path)`.
+- In `predicate.rs`, compare numbers by value. A `HashMap` lookup or a `match` on a reference gives `&f64`; dereference it before comparing (`*current > value`, or bind by value with `Some(&Value::Num(current))`). Comparing `&f64` with `f64` fails with E0277, "can't compare `&f64` with `f64`".
+- Each parse function in `predicate.rs` returns what it parsed and the input it did not consume: `fn parse_clause(s: &str) -> Result<(Clause, &str), String>`, and the AND loop continues from that rest. A `Clause` does not know its own length: `rest[clause.len()..]` fails with E0599, "no method named `len` found for enum `Clause`".
+- A `delta` clause holds an `f64`, never a `Value`: parse its number with `s.parse::<f64>()` and return an `Err` for anything else. Only an `attr` clause holds a `Value`. `Clause::Delta { path, cmp, value }` with a `Value` fails with E0308, "mismatched types: expected `f64`, found `Value`".
 
 **Codeless schema plugin (T0), checked on usd-core 26.5.** `plexus/schema/__init__.py` defines `plugin_dir()` returning `Path(__file__).parent`. Next to it, `plugInfo.json` and `generatedSchema.usda`. The `Types` key must differ from the schema's identifier; the identifier is the alias. Shape, for one schema and one attribute:
 
