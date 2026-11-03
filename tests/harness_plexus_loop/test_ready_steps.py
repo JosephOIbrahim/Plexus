@@ -9,10 +9,11 @@ that are all ready, from the test output and each step's own recent drops.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import pytest
 
-from harness.plexus_loop.mission import MissionError, RouterSpec, Step, mission_from_dict
+from harness.plexus_loop.mission import MissionError, RouterSpec, Step, load_mission, mission_from_dict
 from harness.plexus_loop.router import choose, jev_request, ready
 
 PY = sys.executable
@@ -142,3 +143,26 @@ def test_a_reason_holding_its_own_colons_is_attributed_whole():
 def test_step_ids_are_one_token_and_after_holds_ids(bad, why):
     with pytest.raises(MissionError, match=why):
         mission_from_dict(_raw([bad]))
+
+
+def test_the_real_mission_offers_only_s3_while_s3_fails():
+    # Run 12 attempt 1's real failing list: nine tests, S3's target among them. Under the old
+    # router S8 was eligible here; now only S3 is ready, so Jev is not even asked.
+    repo = Path(__file__).resolve().parents[2]
+    m = load_mission(repo / "harness" / "plexus_loop" / "missions" / "acceptance.toml")
+    failing = [P1 + "test_t2_predicate_precision::test_delta_threshold_and_cache[one-0.3-wakes-once]",
+               P1 + "test_t2_predicate_precision::test_delta_threshold_and_cache[one-0.1-never-wakes]",
+               P1 + "test_t2_predicate_precision::test_delta_threshold_and_cache[two-0.15-wake-once]",
+               P1 + "test_t2_predicate_precision::test_bad_predicates_fail_at_registration",
+               P1 + "test_t3_budget::test_budget_trips_then_mutes_visibly",
+               P1 + "test_t4_provenance::test_grade_hint_is_attributed_to_the_neuron_layer",
+               P1 + "test_t5_gate::test_write_outside_allowlist_is_dropped_and_flagged",
+               P1 + "test_t5_gate::test_write_inside_allowlist_lands",
+               P1 + "test_t6_truth::test_kill_both_processes_and_reopen"]
+    assert m.router.kind == "jev" and [s.id for s in ready(m.steps, failing)] == ["S3"]
+    # once S3 and S4 pass, only S5 is ready: S6 and S7 need its wake counting (T5-outside and
+    # T3 assert h.wakes == 1). Once S5 passes too, S6 and S7 are ready together and S8 waits.
+    after_s4 = [f for f in failing if "test_bad_predicates" not in f and "inside_allowlist" not in f]
+    assert [s.id for s in ready(m.steps, after_s4)] == ["S5"]
+    after_s5 = [f for f in after_s4 if "delta_threshold" not in f and "test_t4_provenance" not in f]
+    assert [s.id for s in ready(m.steps, after_s5)] == ["S6", "S7"]

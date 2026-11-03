@@ -183,6 +183,15 @@ def test_the_real_null_layer_quote_carries_the_whole_fix():
     ("error[E0599]: no method named `len` found for enum `Clause` in the current scope", "returns what it parsed"),
     ("error[E0308]: mismatched types\n    |         ^^^^^ expected `f64`, found `Value`", "holds an `f64`, never a `Value`"),
     ("AssertionError: predicate.rs (rank 2) uses crate::py (rank 4)", "only for a strictly lower rank"),
+    # run 12, rows 52, 54 and 55: the texts rustc printed, as the ledger's `detail` holds them
+    ("error[E0106]: missing lifetime specifier\n   --> crates/plexus-core/src/predicate.rs:196:58",
+     "must name the lifetime"),
+    ("error[E0204]: the trait `Copy` cannot be implemented for this type", "and nothing else"),
+    ("error[E0308]: mismatched types\n    |   expected `Result<(f64, &str), String>`, found `Option<_>`",
+     "never an `Option`"),
+    ("error[E0277]: `predicate::PredicateError` cannot be converted to a Python object", "defines no error type"),
+    ("error[E0277]: the trait bound `predicate::PredicateError: PyErrArguments` is not satisfied",
+     "defines no error type"),
 ])
 def test_each_real_run_error_finds_its_fix_in_the_real_brief(error, anchor):
     m = load_mission(REPO / "harness" / "plexus_loop" / "missions" / "acceptance.toml")

@@ -6,6 +6,9 @@
 # Joe's decisions (Nov 1): Option A, narrowed unit gate, this file and C1-C6 as written,
 # no maturin in pyproject.toml, five Jev-routed attempts for the first run.
 # Joe (Nov 3, after run 10): router "first" (earliest failing step), worker timeout 3600 s.
+# Joe (Nov 3, before run 13, "A + set"): router "jev" again, over ready steps only (steps name
+# `after`); context_chars 120000 and num_ctx 49152; four S3 brief fixes with known fixes
+# (E0106, E0204, E0308, E0277); the harness drops a reply that leaves out any step file.
 
 [mission]
 name = "acceptance"
@@ -65,13 +68,19 @@ kind = "ollama"
 model = "qwen3-coder:30b"
 host = "http://127.0.0.1:11434"
 timeout_s = 3600
-context_chars = 100000
-num_ctx = 40960
+# Run 12 attempt 4's prompt at 100000 chars cut plexus/membrane/exchange.py and the schema
+# files (checked against the rebuilt prompt). 120000 holds every run 12 prompt whole; at the
+# measured ~3.7 chars per token that is ~32k tokens, and 49152 leaves room for a 6k-token reply.
+context_chars = 120000
+num_ctx = 49152
 
 [router]
-kind = "first"
+# Joe (Nov 3): Jev for routing. Steps name their prerequisites (`after`), so Jev only ever
+# chooses among steps that are ready; with one ready step it is not called at all. 0.5 is the
+# docs' floor below which a pick falls back to the earliest ready step.
+kind = "jev"
 model = "jev-latest"
-min_confidence = 0.3
+min_confidence = 0.5
 
 [[steps]]
 id = "S1"
@@ -81,42 +90,49 @@ text = "Schema plugin: plexus/schema/__init__.py with plugin_dir() returning the
 
 [[steps]]
 id = "S2"
+after = ["S1"]
 targets = ["tests/acceptance/phase1/test_t1_propagation.py"]
 files = ["plexus/core/__init__.py", "plexus/membrane/__init__.py", "plexus/membrane/exchange.py", "plexus/core/stagekit.py", "plexus/core/axon.py"]
 text = "Membrane, stagekit and axon in Python. Create plexus/core/__init__.py and plexus/membrane/__init__.py with a docstring only; never edit plexus/__init__.py; axon.py and stagekit.py never import each other. Files: plexus/membrane/exchange.py (create_exchange, register_participant, participants; registers the schema plugin in-process at import), plexus/core/stagekit.py (create_project: a root layer whose def /Exchange carries Sdf.Reference(<exchange.usda path>, '/Exchange') with an explicit prim path, because without one or a defaultPrim on exchange.usda B gets an unresolved-reference error and composes nothing; and whose /Project has PlexusProjectAPI with plexus:projectId; create_exchange and create_project use Sdf.Layer.FindOrOpen and call CreateNew only when the file is missing), and plexus/core/axon.py (StageEvent dataclass; PlexusAxon(stage, debounce_s=0.05) with subscribe, start, cool; a Tf.Notice callback that only copies paths and enqueues; one dispatcher thread that coalesces within the debounce window and calls subscribers outside the callback)."
 
 [[steps]]
 id = "S3"
+after = ["S2"]
 targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_bad_predicates_fail_at_registration"]
 files = ["crates/plexus-core/src/predicate.rs", "crates/plexus-core/src/lib.rs", "crates/plexus-core/src/py.rs", "plexus/core/predicate.py", "plexus/core/neuron.py"]
 text = "Rust grammar-v0 predicate, all whole files. crates/plexus-core/src/predicate.rs in plain Rust with the Value enum, compile() and Predicate signatures the brief lists: clauses changed, delta, attr, exists joined by AND only; OR or any other text is an Err; every path is absolute and inside the scope, meaning the part before the first '.' equals the scope or starts with scope + '/' (a plain starts_with would accept /Exchange/LookStateX). paths() gives each path once, in order. eval handles all four clause kinds, with delta compared against a cache that only seed and commit_wake write. Add #[cfg(test)] unit tests for OR, out-of-scope, and two 0.15 steps that wake once. lib.rs adds mod predicate;. py.rs is the brief's py.rs block, copied exactly; it has no Budget parts. plexus/core/predicate.py: from plexus._core import PredicateError, compile_predicate. plexus/core/neuron.py: NeuronRuntime.__init__ (register_participant first, then open the composed exchange as its stage, so the sublayer append never reaches its axon; edit_layer is Sdf.Layer.FindOrOpen of its own from_<id>.usda, the same object the stage composes) and register(), which calls compile_predicate(predicate, scope) before anything else, so PredicateError propagates."
 
 [[steps]]
 id = "S4"
+after = ["S3"]
 targets = ["tests/acceptance/phase1/test_t5_gate.py::test_write_inside_allowlist_lands"]
 files = ["plexus/core/neuron.py", "plexus/membrane/gate.py", "plexus/core/axon.py", "plexus/membrane/exchange.py", "plexus/core/stagekit.py"]
 text = "Runtime start/stop/wait_idle. First resend plexus/core/axon.py, plexus/membrane/exchange.py and plexus/core/stagekit.py whole with the fixes the brief lists under 'What the kept S2 code still owes S4' (queue.Queue with a real 50 ms window, a pending counter and idle(), no lock in the callback, the def <id> child in the participant layer); wait_idle polls axon.idle() and the running actions. Then: on each coalesced StageEvent, filter by the neuron's scope, evaluate it with Predicate.eval(changed, values) from S3 (changed: list of str paths from the event; values: dict of the composed values of Predicate.paths(); no Rust change in this step), run the action on a worker thread with a ctx whose author() checks the path allowlist (plexus/membrane/gate.py: /Exchange/<participant>/** plus granted paths), defines missing ancestors as def, authors the value and plexus:sourceLayer into the edit layer, and saves the layer. Define /Plexus/Neurons/<name> with PlexusNeuronAPI in the edit layer at register()."
 
 [[steps]]
 id = "S5"
+after = ["S4"]
 targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_delta_threshold_and_cache", "tests/acceptance/phase1/test_t4_provenance.py"]
 files = ["plexus/core/neuron.py"]
 text = "Delta wiring in plexus/core/neuron.py. predicate.rs already evaluates delta since S3: touch it only to fix a bug its own unit tests show, and add no .rs file. register() calls Predicate.seed with the composed values of Predicate.paths(); right before the action runs, call commit_wake with the same values eval saw, so sub-threshold changes accumulate; plexus:sourceLayer on the authored prim names the edit layer; the neuron returns to state dormant after each wake and wakes counts on the handle."
 
 [[steps]]
 id = "S6"
+after = ["S5"]
 targets = ["tests/acceptance/phase1/test_t5_gate.py::test_write_outside_allowlist_is_dropped_and_flagged"]
 files = ["plexus/core/neuron.py", "plexus/membrane/gate.py"]
 text = "A write outside the allowlist is dropped (nothing lands in any exchange layer) and the neuron prim gets an attribute whose name starts with plexus:flag holding a non-empty value, saved in the edit layer."
 
 [[steps]]
 id = "S7"
+after = ["S5"]
 targets = ["tests/acceptance/phase1/test_t3_budget.py"]
 files = ["crates/plexus-core/src/budget.rs", "crates/plexus-core/src/lib.rs", "crates/plexus-core/src/py.rs", "plexus/core/neuron.py"]
 text = "Rust Budget in crates/plexus-core/src/budget.rs, plain Rust: Budget::new(wakes: u32, window_s: f64), peek(&self, now: f64) -> &'static str (pure) and admit(&mut self, now: f64) -> &'static str, each wake, trip or mute. A wake at t counts while now < t + window_s; a wake resets the trip count; the third consecutive trip mutes; once muted, always mute. Add #[cfg(test)] tests where Budget::new(1, 10.0) admitted at t = 0, 2, 4, 6 gives wake, trip, trip, mute. lib.rs adds mod budget;. py.rs, whole file, gains the brief's PyBudget block and its add_class line. The runtime follows Budget order in the brief with the injected clock; on mute it writes plexus:state = muted plus a plexus:flag attribute on the neuron prim in the edit layer, saved."
 
 [[steps]]
 id = "S8"
+after = ["S5", "S6", "S7"]
 targets = ["tests/acceptance/phase1/test_t6_truth.py"]
 files = ["plexus/core/neuron.py"]
 text = "Every opinion the runtime authors is saved as it lands, including plexus:state, plexus:lastWake and flags, so a runtime killed mid-session and reopened from disk reproduces all composed state."
@@ -216,3 +232,24 @@ anchor = "A `delta` clause holds an `f64`, never a `Value`"
 match = '''\.rs \(rank \d\) uses crate::\w+ \(rank \d\)'''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "A module may write `crate::X` only for a strictly lower rank"
+
+# Run 12 (Joe, Nov 3, "A + set"): the four rustc errors its five-file replies dropped on.
+[[known_fixes]]
+match = '''missing lifetime specifier'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "must name the lifetime"
+
+[[known_fixes]]
+match = '''the trait `Copy` cannot be implemented for this type'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "`Value` derives `Debug, Clone, PartialEq` and nothing else"
+
+[[known_fixes]]
+match = '''expected `Result<[^`]*>`, found `Option<[^`]*>`|expected `Option<[^`]*>`, found `Result<[^`]*>`'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "return a `Result`, never an `Option`"
+
+[[known_fixes]]
+match = '''PredicateError` cannot be converted to a Python object|PredicateError: PyErrArguments` is not satisfied'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "`predicate.rs` defines no error type"
