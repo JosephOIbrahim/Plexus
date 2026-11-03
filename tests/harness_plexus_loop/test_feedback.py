@@ -134,6 +134,7 @@ def test_a_command_metric_output_with_an_undecodable_byte_still_scores(tmp_path)
     res = measure(Metric(kind="command", cmd=odd), tmp_path,
                   Profile(device="cpu", houdini="running"))
     assert res.value == 4.0 and res.error == "" and "4" in res.tail
+    assert chr(0xFFFD) in res.tail  # the replacement character the decode left where the byte was
 
 
 def test_a_pytest_metric_output_with_an_undecodable_byte_keeps_its_tail(tmp_path, monkeypatch):
@@ -153,6 +154,7 @@ def test_a_pytest_metric_output_with_an_undecodable_byte_keeps_its_tail(tmp_path
                   Profile(device="cpu", houdini="running"))
     assert res.value == 0.0 and res.total == 1 and res.error == ""
     assert "1 passed" in res.tail
+    assert chr(0xFFFD) in res.tail  # the byte reached the pipe and was replaced, not swallowed
 
 
 def test_a_changed_path_with_a_non_ascii_name_still_reaches_the_ledger(tmp_path):

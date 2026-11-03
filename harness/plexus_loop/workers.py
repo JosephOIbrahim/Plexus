@@ -189,8 +189,11 @@ def _git_apply(worktree: Path, diff: str) -> subprocess.CompletedProcess:
         f.write(diff)
         patch = f.name
     try:
+        # git echoes the patch's paths raw in UTF-8; decoded as the locale, one non-ASCII name
+        # killed the reader thread and stderr came back None (the same class as gitops.git).
         return subprocess.run(["git", "apply", "--whitespace=nowarn", "--recount", patch],
-                              cwd=worktree, capture_output=True, text=True, check=False)
+                              cwd=worktree, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", check=False)
     finally:
         Path(patch).unlink(missing_ok=True)
 

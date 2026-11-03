@@ -87,6 +87,21 @@ def test_a_failed_diff_reports_the_first_real_error_without_temp_paths(tmp_path)
     assert not res.ok and "error" in res.note and "tmp" not in res.note.lower()
 
 
+def test_a_failed_diff_on_a_non_ascii_path_still_reports_the_error(tmp_path):
+    # git apply echoes the patch's path raw in UTF-8. Decoded as cp1252, the second byte of 'Á'
+    # killed the reader thread, stderr came back None, and _first_error raised AttributeError
+    # out of the attempt: a dead run with no ledger row. Under a UTF-8 locale this holds on its
+    # own; under cp1252 it exercises the decode.
+    r = _repo(tmp_path)
+    (r / "plexus" / "Ávila.py").write_text("one\ntwo\n", encoding="utf-8")
+    for args in (["add", "-A"], ["commit", "-q", "-m", "avila"]):
+        subprocess.run([*GIT, *args], cwd=r, check=True, capture_output=True)
+    bad = "--- a/plexus/Ávila.py\n+++ b/plexus/Ávila.py\n@@ -1,2 +1,2 @@\n ONE\n-two\n+TWO\n"
+    res = apply_diff(r, bad)
+    assert not res.ok and "error: patch failed" in res.note and "Ávila" in res.note  # the real name, not a mojibake
+    assert (r / "plexus" / "Ávila.py").read_text(encoding="utf-8") == "one\ntwo\n"  # nothing applied
+
+
 # -- replies --------------------------------------------------------------------
 
 def test_apply_reply_writes_whole_files_then_applies_the_diff(tmp_path):

@@ -32,8 +32,9 @@ OVERRIDE_ENV = "PLEXUS_LOOP_HOUDINI"
 def _list_process_names() -> list[str]:
     if sys.platform.startswith("win"):
         out = subprocess.run(
-            ["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=15, check=True
-        ).stdout
+            ["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, errors="replace",
+            timeout=15, check=True
+        ).stdout or ""
         names = []
         for line in out.splitlines():
             line = line.strip()

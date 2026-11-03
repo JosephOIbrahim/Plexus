@@ -272,7 +272,8 @@ def _pid_alive(pid: int) -> bool | None:
     if sys.platform.startswith("win"):
         try:
             out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-                                 capture_output=True, text=True, timeout=15, check=False).stdout
+                                 capture_output=True, text=True, errors="replace", timeout=15,
+                                 check=False).stdout or ""
         except Exception:  # noqa: BLE001 - can't tell
             return None
         return f'"{pid}"' in out
@@ -482,7 +483,9 @@ def _longest_backtick_run(text: str) -> int:
 
 
 def _context_files(mission: Mission, repo: Path) -> list[str]:
-    tracked = gitops.git(repo, "ls-files").splitlines()
+    # -z: without it git C-quotes a non-ASCII path ("plexus/\303\201vila.py"), which then fails
+    # in_focus on its leading quote and silently leaves the prompt.
+    tracked = [p for p in gitops.git(repo, "ls-files", "-z").split("\0") if p]
     ctx = [p for p in mission.context if (repo / p).is_file()]
     focus = [p for p in tracked if mission.in_focus(p) and not mission.is_frozen(p) and p not in ctx]
     return ctx + sorted(focus)
