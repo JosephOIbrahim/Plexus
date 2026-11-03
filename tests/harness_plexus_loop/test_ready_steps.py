@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from harness.plexus_loop.mission import MissionError, RouterSpec, Step, load_mission, mission_from_dict
-from harness.plexus_loop.router import choose, jev_request, ready
+from harness.plexus_loop.router import ORDERED_INSTRUCTIONS, READY_INSTRUCTIONS, choose, jev_request, ready
 
 PY = sys.executable
 P1 = "tests.acceptance.phase1."
@@ -79,7 +79,7 @@ def test_each_option_carries_its_own_failing_tests_and_recent_drops():
     assert q["criteria"]["S6"]["its_recent_drops"] == ["gate 'core' failed", "gate 'core' failed"]
     assert q["criteria"]["S7"]["its_recent_drops"] == ["no strict gain (5 vs best 5)"]
     assert q["criteria"]["S7"]["aimed_at"] == ["tests/acceptance/phase1/test_t3_budget.py"]
-    assert "ready" in q["instructions"]
+    assert q["instructions"] == READY_INSTRUCTIONS
 
 
 def _raw(steps):
@@ -122,10 +122,11 @@ def test_a_mission_without_after_keeps_the_earliest_first_question():
     flat = [Step(s.id, s.targets, s.text) for s in STEPS]
     seen = []
     choose(JEV, flat, AFTER_S4, post=fake_jev("S6", 0.9, seen), api_key="k")
-    assert "earliest step" in seen[0]["questions"]["next_step"]["instructions"]
+    # Compared whole: "ready" alone also sits in the earliest-first question ("already works").
+    assert seen[0]["questions"]["next_step"]["instructions"] == ORDERED_INSTRUCTIONS
     seen.clear()
     choose(JEV, STEPS, AFTER_S4, post=fake_jev("S6", 0.9, seen), api_key="k")
-    assert "ready" in seen[0]["questions"]["next_step"]["instructions"]
+    assert seen[0]["questions"]["next_step"]["instructions"] == READY_INSTRUCTIONS
 
 
 def test_a_reason_holding_its_own_colons_is_attributed_whole():
@@ -133,6 +134,15 @@ def test_a_reason_holding_its_own_colons_is_attributed_whole():
     q = jev_request(JEV, ready(STEPS, AFTER_S4), AFTER_S4, "tail", recent)["questions"]["next_step"]
     assert q["criteria"]["S6"]["its_recent_drops"] == ["worker: ollama call failed: TimeoutError: timed out"]
     assert q["criteria"]["S7"]["its_recent_drops"] == []
+
+
+def test_a_drop_belongs_to_the_whole_step_id_only():
+    # "step S60 via ..." is S60's line: a prefix match would also hand it to S6.
+    steps = [Step("S6", STEPS[2].targets, "Publication gate."), Step("S60", STEPS[3].targets, "Rust budget.")]
+    recent = ["step S60 via first: gate 'core' failed", "step S6 via first: no strict gain (5 vs best 5)"]
+    crit = jev_request(JEV, steps, AFTER_S4, "tail", recent)["questions"]["next_step"]["criteria"]
+    assert crit["S6"]["its_recent_drops"] == ["no strict gain (5 vs best 5)"]
+    assert crit["S60"]["its_recent_drops"] == ["gate 'core' failed"]
 
 
 @pytest.mark.parametrize("bad, why", [
