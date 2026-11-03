@@ -2,7 +2,7 @@
 
 **One word per thing, and each word from the right vocabulary.** This page is the lexicon every Plexus surface uses: the README, the docs, the harness output, release notes, error messages, the panel and the stage's own flags.
 
-It builds on the closed artist word table in `docs/plexus/ADVANCEMENT_RESEARCH_2026-11.md` (`ux.state-model`) rather than starting a second one, and it follows the root element in `UI_DESIGN.md` §5, decision 8: every line that carries information ends in a word that names its verdict.
+It builds on the closed artist word table in `docs/plexus/ADVANCEMENT_RESEARCH_2026-11.md` (`ux.state-model`) rather than starting a second one, and it follows the root element in `UI_DESIGN.md` §5, decision 8: every line that carries information ends in a mark that names its verdict; in words, the verdict leads (Voice, below).
 
 ## Three vocabularies, three territories
 

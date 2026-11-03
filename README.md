@@ -6,7 +6,7 @@
 
 **Projects that compose into each other while they run.**
 
-Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents, called **neurons**, stay dormant until a cheap, exact check on the stage fires. Render and compute engines plug in as swappable **organs**.
+Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents, called **neurons**, stay dormant until a cheap, exact check on the stage comes true. Render and compute engines plug in as swappable **organs**.
 
 *Plexus is a working title.*
 

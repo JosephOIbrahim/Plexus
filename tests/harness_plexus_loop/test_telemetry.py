@@ -15,7 +15,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from harness.plexus_loop import MissionRun
-from harness.plexus_loop.loop import Attempt
+from harness.plexus_loop.loop import GATE_FAILED, Attempt
 from harness.plexus_loop.mission import RouterSpec, Step, WorkerSpec, mission_from_dict
 from harness.plexus_loop.profile import Profile
 from harness.plexus_loop.workers import OllamaWorker, WorkerResult, ollama_stats
@@ -111,6 +111,9 @@ def test_a_gate_drop_names_its_gate_and_keeps_its_reason(tmp_path):
     r = _repo(tmp_path)
     a, b = _run(r, _write("plexus/bad.txt", "x", {"eval_count": 7}), _write("plexus/score.txt", "4\n")).attempts
     assert (a.reason, a.failed_gate, a.failing) == ("gate 'second' failed", "second", [])
+    # The next prompt quotes a failing gate's known fixes only for a reason GATE_FAILED
+    # matches, so this wording and that pattern must change together.
+    assert GATE_FAILED.match(a.reason)
     assert a.ollama == {"eval_count": 7}
     assert b.kept and b.failed_gate == "" and b.ollama == {}
 
