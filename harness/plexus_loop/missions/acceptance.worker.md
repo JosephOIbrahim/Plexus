@@ -155,6 +155,145 @@ What this fixes for the other files:
 - `Value` derives `Debug, Clone, PartialEq` and nothing else. It holds a `String`, so `#[derive(Copy)]` on it fails with E0204, "the trait `Copy` cannot be implemented for this type". Where a copy is needed, `.clone()` it.
 - `compile` and every parse function return a `Result`, never an `Option`: take their value with `if let Ok(x) = ...` or `match ... { Ok(x) => ..., Err(e) => ... }`, and pass an `Err` up with `?`. `if let Some(x) = parse_clause(...)` fails with E0308, "mismatched types: expected `Result<...>`, found `Option<_>`".
 - `predicate.rs` defines no error type: `compile` returns `Result<Predicate, String>`, and `py.rs` turns that `String` into Python's `PredicateError` with `.map_err(PredicateError::new_err)`, as its block shows. A `struct PredicateError` or `enum PredicateError` of your own in `predicate.rs` cannot cross into Python: pyo3 fails with E0277, "`PredicateError` cannot be converted to a Python object" and "the trait bound `PredicateError: PyErrArguments` is not satisfied".
+- Compare `f64` values directly (`a < b`, `a >= b`); never cast with `as` to compare. `*a as i32 < *b as i32` does not even parse: rustc reads `i32 <` as the start of generic arguments ("`<` is interpreted as a start of generic arguments for `i32`, not a comparison"), and an `i32` cast would also throw away the 0.15 steps T2 measures.
+- `values.get(path)` gives an `Option<&Value>`: match it in one step, `if let Some(Value::Num(n)) = values.get(path)`. Binding the `&Value` first and then matching `Some(..)` on it fails with E0308, "expected `Value`, found `Option<_>`".
+
+**In S3, `predicate.rs` starts from this skeleton** (checked: `cargo check` passes on it as written, with unused warnings only). Keep every type, derive and signature exactly as written, lifetimes included; replace each `todo!()` with its body; add no `use` beyond `std`, no `crate::`, no `#[cfg(test)]` and no error type. Nothing in it does anything yet: `compile`'s grammar, the scope rule, `paths()` order, the delta cache rule and every comparison are yours to write inside these signatures.
+
+```rust
+//! Predicate grammar v0 (PLEXUS_SPEC.md §4), in plain Rust.
+//!
+//! predicate := clause { "AND" clause }
+//! clause    := "changed(" path ")" | "delta(" path ")" cmp number
+//!            | "attr(" path ")" cmp literal | "exists(" path ")"
+//! cmp       := ">" | ">=" | "<" | "<=" | "==" | "!="
+//!
+//! No OR. Every path is absolute and inside the neuron's scope. This file names nothing
+//! outside std: no other module of this crate and no Python types; py.rs wraps it.
+
+use std::collections::HashMap;
+
+/// A composed attribute value as Python hands it over. It holds a `String`, so it is
+/// never `Copy`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
+    Num(f64),
+    Str(String),
+    Bool(bool),
+}
+
+/// One comparison operator of the grammar.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Cmp {
+    Gt,
+    Ge,
+    Lt,
+    Le,
+    Eq,
+    Ne,
+}
+
+impl Cmp {
+    /// `a <op> b` for two numbers.
+    fn holds(&self, a: f64, b: f64) -> bool {
+        todo!()
+    }
+
+    /// `actual <op> wanted` for an `attr` clause: numbers compare as numbers; strings and
+    /// bools only with `==` and `!=`; two different kinds are never equal.
+    fn holds_values(&self, actual: &Value, wanted: &Value) -> bool {
+        todo!()
+    }
+}
+
+/// One clause. A `delta` threshold is an `f64`, never a `Value`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Clause {
+    Changed { path: String },
+    Delta { path: String, cmp: Cmp, value: f64 },
+    Attr { path: String, cmp: Cmp, value: Value },
+    Exists { path: String },
+}
+
+/// A compiled predicate. `paths` holds every path the clauses name, once each, in the
+/// order they first appear. `cache` is the delta cache: written only by `seed` and
+/// `commit_wake`, never by `eval`.
+#[derive(Debug, Clone)]
+pub struct Predicate {
+    clauses: Vec<Clause>,
+    paths: Vec<String>,
+    cache: HashMap<String, f64>,
+}
+
+/// Compile `source` for a neuron whose scope is `scope`. Clauses are joined by `AND` only;
+/// `OR`, trailing text or an unknown clause is an `Err`. A path outside the scope is an
+/// `Err` here, at registration, never at fire time.
+pub fn compile(source: &str, scope: &str) -> Result<Predicate, String> {
+    todo!()
+}
+
+impl Predicate {
+    /// Every path the clauses name, once each, in order.
+    pub fn paths(&self) -> Vec<String> {
+        todo!()
+    }
+
+    /// Fill the delta cache from the composed values at registration.
+    pub fn seed(&mut self, values: &HashMap<String, Value>) {
+        todo!()
+    }
+
+    /// True when every clause holds against `changed` (the event's paths) and `values`
+    /// (the composed values of `paths()`; a missing key means no value). Reads the cache,
+    /// never writes it.
+    pub fn eval(&self, changed: &[String], values: &HashMap<String, Value>) -> bool {
+        todo!()
+    }
+
+    /// Move the delta cache to the values the wake saw.
+    pub fn commit_wake(&mut self, values: &HashMap<String, Value>) {
+        todo!()
+    }
+}
+
+/// True when `path` is inside `scope`: the prim part (before the first `.`) equals `scope`
+/// or starts with `scope` followed by `/`. A plain `starts_with(scope)` would accept
+/// `/Exchange/LookStateX` for the scope `/Exchange/LookState`.
+fn in_scope(path: &str, scope: &str) -> bool {
+    todo!()
+}
+
+// Each parser returns what it parsed and the input it did not consume, and the AND loop in
+// `compile` continues from that rest. A parser that takes two `&str` names the lifetime of
+// the one it returns a slice of.
+
+/// One clause from the start of `s`, with the rest of `s` after it.
+fn parse_clause<'a>(s: &'a str, scope: &str) -> Result<(Clause, &'a str), String> {
+    todo!()
+}
+
+/// A path up to the closing `)`, checked with `in_scope`, with the rest after the `)`.
+fn parse_path<'a>(s: &'a str, scope: &str) -> Result<(String, &'a str), String> {
+    todo!()
+}
+
+/// A comparison operator, the two-character forms tried before `>` and `<`, with the rest
+/// after it.
+fn parse_cmp<'a>(s: &'a str) -> Result<(Cmp, &'a str), String> {
+    todo!()
+}
+
+/// A number parsed with `str::parse::<f64>`, also when it ends the input, with the rest
+/// after it.
+fn parse_number<'a>(s: &'a str) -> Result<(f64, &'a str), String> {
+    todo!()
+}
+
+/// A literal: a number, a quoted string, or a bare token, with the rest after it.
+fn parse_literal<'a>(s: &'a str) -> Result<(Value, &'a str), String> {
+    todo!()
+}
+```
 
 **Codeless schema plugin (T0), checked on usd-core 26.5.** `plexus/schema/__init__.py` defines `plugin_dir()` returning `Path(__file__).parent`. Next to it, `plugInfo.json` and `generatedSchema.usda`. The `Types` key must differ from the schema's identifier; the identifier is the alias. Shape, for one schema and one attribute:
 

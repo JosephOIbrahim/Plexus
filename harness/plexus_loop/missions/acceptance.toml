@@ -100,7 +100,7 @@ id = "S3"
 after = ["S2"]
 targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_bad_predicates_fail_at_registration"]
 files = ["crates/plexus-core/src/predicate.rs", "crates/plexus-core/src/lib.rs", "crates/plexus-core/src/py.rs", "plexus/core/predicate.py", "plexus/core/neuron.py"]
-text = "Rust grammar-v0 predicate, all whole files. crates/plexus-core/src/predicate.rs in plain Rust with the Value enum, compile() and Predicate signatures the brief lists: clauses changed, delta, attr, exists joined by AND only; OR or any other text is an Err; every path is absolute and inside the scope, meaning the part before the first '.' equals the scope or starts with scope + '/' (a plain starts_with would accept /Exchange/LookStateX). paths() gives each path once, in order. eval handles all four clause kinds, with delta compared against a cache that only seed and commit_wake write. Add #[cfg(test)] unit tests for OR, out-of-scope, and two 0.15 steps that wake once. lib.rs adds mod predicate;. py.rs is the brief's py.rs block, copied exactly; it has no Budget parts. plexus/core/predicate.py: from plexus._core import PredicateError, compile_predicate. plexus/core/neuron.py: NeuronRuntime.__init__ (register_participant first, then open the composed exchange as its stage, so the sublayer append never reaches its axon; edit_layer is Sdf.Layer.FindOrOpen of its own from_<id>.usda, the same object the stage composes) and register(), which calls compile_predicate(predicate, scope) before anything else, so PredicateError propagates."
+text = "Rust grammar-v0 predicate, all whole files. crates/plexus-core/src/predicate.rs in plain Rust with the Value enum, compile() and Predicate signatures the brief lists: clauses changed, delta, attr, exists joined by AND only; OR or any other text is an Err; every path is absolute and inside the scope, meaning the part before the first '.' equals the scope or starts with scope + '/' (a plain starts_with would accept /Exchange/LookStateX). paths() gives each path once, in order. eval handles all four clause kinds, with delta compared against a cache that only seed and commit_wake write. Start predicate.rs from the brief's skeleton with every type and signature unchanged and every todo!() replaced; no unit tests in S3 (S5 adds them). lib.rs adds mod predicate;. py.rs is the brief's py.rs block, copied exactly; it has no Budget parts. plexus/core/predicate.py: from plexus._core import PredicateError, compile_predicate. plexus/core/neuron.py: NeuronRuntime.__init__ (register_participant first, then open the composed exchange as its stage, so the sublayer append never reaches its axon; edit_layer is Sdf.Layer.FindOrOpen of its own from_<id>.usda, the same object the stage composes) and register(), which calls compile_predicate(predicate, scope) before anything else, so PredicateError propagates."
 
 [[steps]]
 id = "S4"
@@ -114,7 +114,7 @@ id = "S5"
 after = ["S4"]
 targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_delta_threshold_and_cache", "tests/acceptance/phase1/test_t4_provenance.py"]
 files = ["plexus/core/neuron.py"]
-text = "Delta wiring in plexus/core/neuron.py. predicate.rs already evaluates delta since S3: touch it only to fix a bug its own unit tests show, and add no .rs file. register() calls Predicate.seed with the composed values of Predicate.paths(); right before the action runs, call commit_wake with the same values eval saw, so sub-threshold changes accumulate; plexus:sourceLayer on the authored prim names the edit layer; the neuron returns to state dormant after each wake and wakes counts on the handle."
+text = "Delta wiring in plexus/core/neuron.py. predicate.rs already evaluates delta since S3: touch it only to fix a bug T2 shows, and add no .rs file. register() calls Predicate.seed with the composed values of Predicate.paths(); right before the action runs, call commit_wake with the same values eval saw, so sub-threshold changes accumulate; plexus:sourceLayer on the authored prim names the edit layer; the neuron returns to state dormant after each wake and wakes counts on the handle."
 
 [[steps]]
 id = "S6"
@@ -253,3 +253,14 @@ anchor = "return a `Result`, never an `Option`"
 match = '''PredicateError` cannot be converted to a Python object|PredicateError: PyErrArguments` is not satisfied'''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "`predicate.rs` defines no error type"
+
+# Run 13 attempt 1 (row 56): a cast before `<` parsed as generics; `Some(..)` matched on a `&Value`.
+[[known_fixes]]
+match = '''is interpreted as a start of generic arguments for `(i|u|f)(8|16|32|64|128|size)`'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "never cast with `as` to compare"
+
+[[known_fixes]]
+match = '''expected `Value`, found `Option<[^`]*>`|expected `Option<[^`]*>`, found `Value`'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "gives an `Option<&Value>`"

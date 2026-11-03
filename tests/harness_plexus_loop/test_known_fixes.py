@@ -192,6 +192,10 @@ def test_the_real_null_layer_quote_carries_the_whole_fix():
     ("error[E0277]: `predicate::PredicateError` cannot be converted to a Python object", "defines no error type"),
     ("error[E0277]: the trait bound `predicate::PredicateError: PyErrArguments` is not satisfied",
      "defines no error type"),
+    # run 13 attempt 1, row 56
+    ("error: `<` is interpreted as a start of generic arguments for `i32`, not a comparison",
+     "never cast with `as` to compare"),
+    ("error[E0308]: mismatched types\n    |   expected `Value`, found `Option<_>`", "gives an `Option<&Value>`"),
 ])
 def test_each_real_run_error_finds_its_fix_in_the_real_brief(error, anchor):
     m = load_mission(REPO / "harness" / "plexus_loop" / "missions" / "acceptance.toml")
