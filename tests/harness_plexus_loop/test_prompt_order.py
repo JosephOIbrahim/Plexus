@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from harness.plexus_loop.loop import Attempt, build_prompt
+from harness.plexus_loop.metrics import MetricResult
 from harness.plexus_loop.mission import mission_from_dict
 from harness.plexus_loop.workers import OLLAMA_KEEP_ALIVE, OllamaWorker
 from harness.plexus_loop.mission import WorkerSpec
@@ -60,10 +61,14 @@ def _files_end(p: str) -> int:
 
 def test_the_files_come_before_everything_that_changes_per_attempt(tmp_path):
     m, r = _mission(), _repo(tmp_path)
-    p = build_prompt(m, r, 5, None, [_drop(1, "gate 'core' failed", "$ build\nerror: one")], 100000, step=m.steps[0])
+    # A gate-passing drop: the one kind that both hands its files on and follows a metric run.
+    last = MetricResult(5.0, tail="E   AssertionError: the end of the run")
+    p = build_prompt(m, r, 5, last, [_drop(1, "no strict gain (5 vs best 5)", "the end of the run")], 100000,
+                     step=m.steps[0], carried=(1, {"plexus/new.py": "Y = 2\n"}))
     i_files = p.index("## Files")
-    for later in ("## This attempt", "## Why the last attempt was dropped", "## Where it stands",
-                  "## Recent attempts that were not kept", "## Your reply"):
+    for later in ("## This attempt", "## Why the last attempt was dropped", "## Your last attempt's files",
+                  "## Where it stands", "## Recent attempts that were not kept", "## Latest metric output (tail)",
+                  "## Your reply"):
         assert i_files < p.index(later), later
     assert p.index("file:docs/brief.md") < _files_end(p) and p.index("file:plexus/kept.py") < _files_end(p)
 

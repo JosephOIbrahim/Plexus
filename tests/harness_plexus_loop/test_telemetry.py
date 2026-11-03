@@ -11,11 +11,12 @@ import io
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from harness.plexus_loop import MissionRun
 from harness.plexus_loop.loop import Attempt
-from harness.plexus_loop.mission import WorkerSpec, mission_from_dict
+from harness.plexus_loop.mission import RouterSpec, Step, WorkerSpec, mission_from_dict
 from harness.plexus_loop.profile import Profile
 from harness.plexus_loop.workers import OllamaWorker, WorkerResult, ollama_stats
 
@@ -114,6 +115,16 @@ def test_a_gate_drop_names_its_gate_and_keeps_its_reason(tmp_path):
     assert b.kept and b.failed_gate == "" and b.ollama == {}
 
 
+def test_a_worker_failure_still_records_the_model_timing(tmp_path):
+    # A reply with no block to apply cost the same model time, and its row must say where it went.
+    r = _repo(tmp_path)
+
+    def no_blocks(wt):
+        return WorkerResult(False, "model reply held no unified diff and no file block", stats={"eval_count": 9})
+    a, _ = _run(r, no_blocks, _write("plexus/score.txt", "4\n")).attempts
+    assert a.reason.startswith("worker: ") and a.ollama == {"eval_count": 9}
+
+
 def test_every_row_in_the_ledger_carries_the_new_fields(tmp_path):
     r = _repo(tmp_path)
     _run(r, _write("plexus/bad.txt", "x", {"eval_count": 7}), _write("plexus/score.txt", "4\n"))
@@ -126,9 +137,14 @@ def test_a_metric_run_keeps_every_failing_test_id(tmp_path, monkeypatch):
     from harness.plexus_loop.metrics import MetricResult
     ids = ["tests.acceptance.phase1.test_t2::test_bad", "tests.acceptance.phase1.test_t6::test_truth"]
     monkeypatch.setattr(loop, "measure", lambda metric, wt, profile: MetricResult(5.0, failing=list(ids)))
+    # A step aimed at the first id only: `failing` keeps both, `target_failures` only its own.
+    m = replace(_mission(), steps=[Step("S1", ["tests/acceptance/phase1/test_t2.py"], "x")],
+                router=RouterSpec(kind="first"))
     r = _repo(tmp_path)
-    a, _ = _run(r, _write("plexus/a.txt", "x"), _write("plexus/b.txt", "y")).attempts
-    assert a.reason.startswith("no strict gain") and a.failing == ids and a.failed_gate == ""
+    a, _ = MissionRun(m, r, worker=_Steps(_write("plexus/a.txt", "x"), _write("plexus/b.txt", "y")),
+                      log=lambda s: None, profile_fn=lambda: Profile(device="cpu", houdini="running")).run().attempts
+    assert a.route == "S1 via first" and a.reason.startswith("no strict gain") and a.failed_gate == ""
+    assert a.failing == ids and [t.split("\n", 1)[0] for t in a.target_failures] == ids[:1]
 
 
 def test_a_null_response_is_an_empty_reply_not_a_crash(tmp_path, monkeypatch):

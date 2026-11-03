@@ -91,7 +91,8 @@ class KnownFix:
     """A recognised failure and where its fix is written down.
 
     When a dropped attempt's own target test fails with text matching ``match`` (a regular
-    expression), the next prompt quotes the line of ``file`` that contains ``anchor`` under it.
+    expression), or it has no target failures and its failing gate's output matches, the next
+    prompt quotes the line of ``file`` that contains ``anchor`` under the failure or the output.
     """
 
     match: str
