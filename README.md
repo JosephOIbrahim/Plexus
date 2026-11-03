@@ -10,21 +10,19 @@ Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents
 
 *Plexus is a working title.*
 
----
+## Where it stands
 
-## Where it stands · Nov 2, 2026
-
-**Phase 1: 1 of 11 frozen tests passes** (T0, the schema gate), on `plexus-loop/acceptance`. Nothing is merged.
+<!-- plexus:status -->
+**Phase 1 · 2 of 11 frozen tests pass** (T0, the schema gate; T1, propagation) · Nov 3, 2026
+<!-- /plexus:status -->
 
 | Done | Not yet |
 |---|---|
-| Blueprint v5.3, Engineering Spec v2.1, Phase 1 tests frozen (11) | T1 to T6: propagation, predicates, budget, provenance, gate, truth |
+| Blueprint v5.3, Engineering Spec v2.1, Phase 1 tests frozen (11) | T2 to T6: predicates, budget, provenance, gate, truth |
 | Scaffold: `plexus/` package, `crates/plexus-core` Cargo workspace, PyO3 builds | The four contracts: Safety, Memory, Ledger, Composer |
-| The build harness, `harness/plexus_loop/`, and its first run (5 attempts, 1 kept) | |
+| The build harness, `harness/plexus_loop/`, and two kept steps: the schema plugin, and the membrane, stagekit and axon | Plexus packaging; nothing is on `main` yet |
 
-**Next step:** the next batch of `acceptance` attempts, run from the kept commit `4e494b3`. The reply-handling fix that blocked attempts 2 to 5 has landed (`15bc013`). Where the last session stopped: [`harness/CAPSULE.md`](harness/CAPSULE.md).
-
----
+**You are here:** Phase 0 is partly done, Phase 1 is in progress, Phases 2 to 5 are ahead. The roadmap is drawn in [Diagrams §1](docs/plexus/DIAGRAMS.md#1--roadmap-you-are-here). The live run, and where the last session stopped: [`harness/CAPSULE.md`](harness/CAPSULE.md).
 
 ## The idea, in three lines
 
@@ -34,43 +32,13 @@ Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents
 | **Wake only when needed** | A neuron stays dormant until its predicate comes true, for example `delta(/Exchange/LookState.temperature) > 0.2`. A budget caps how often it can wake. |
 | **Engines are organs** | ComfyUI, Houdini or anything else sits behind one organ contract, so it can be swapped. |
 
----
-
-## You are here
-
-```mermaid
-flowchart LR
-    P0["Phase 0<br/>Seed + contracts<br/>(partly done)"]:::partial
-    P1["Phase 1<br/>The slice<br/>tests T0 to T6<br/>(in progress · T0 passes)"]:::next
-    P2["Phase 2<br/>Projection +<br/>ComfyUI organ<br/>tests T7, T8"]
-    P3["Phase 3<br/>Safety"]
-    P4["Phase 4<br/>Triage +<br/>foresight"]
-    P5["Phase 5<br/>Simultaneity"]
-    P0 --> P1 --> P2 --> P3 --> P4 --> P5
-    classDef partial fill:#dcefdc,stroke:#2e7d32,color:#111
-    classDef next fill:#fff1bf,stroke:#a67c00,stroke-width:3px,color:#111
-```
-
----
-
 ## How it fits together
 
 **Each layer calls only the layer below it, or a contract.** Rust goes where code is hot, long-running or must be exact. Python stays where code must be flexible, or where what Plexus calls is Python-only: usd-core (Pixar ships no official Rust bindings) and the LLM SDKs.
 
-```mermaid
-flowchart TB
-    L5["L5 · Surfaces<br/>MCP server · CLI · panel<br/>Python, written new · Comfy-Cozy as reference"]
-    L4["L4 · Organs<br/>ComfyUI organ · any engine behind the organ contract"]
-    L3["L3 · Projection<br/>stage prims to organ intent, pure functions<br/>Python, written new · Comfy-Cozy as reference"]
-    L2["L2 · Nervous system<br/>scheduler · predicates · budgets · tools<br/>Rust, plexus-core"]
-    L1["L1 · Contracts<br/>Safety · Memory · Ledger · Composer<br/>defined in Rust, owned by Plexus"]
-    L0["L0 · Substrate<br/>composed stage · writer sublayers · exchange<br/>usd-core 26.5 of record · openusd in shadow"]
-    L5 --> L4 --> L3 --> L2 --> L1 --> L0
-```
+Six layers, from surfaces down to the composed stage, each with the language it is written in: [Diagrams §2](docs/plexus/DIAGRAMS.md#2--layers).
 
 **When something Plexus depends on is missing, the call says so.** It never reports success from a stub. Safety fails closed, memory narrows to the local stage, and the ledger queues claims for later.
-
----
 
 ## The first slice (Phase 1)
 
@@ -99,9 +67,7 @@ flowchart LR
     X -.->|"change notice"| N
 ```
 
-### The tests that define "done"
-
-They live in `tests/acceptance/` and are frozen: only Joe may change them.
+**The tests that define "done".** They live in `tests/acceptance/` and are frozen: only Joe may change them.
 
 | Test | In plain words |
 |---|---|
@@ -117,15 +83,13 @@ They live in `tests/acceptance/` and are frozen: only Joe may change them.
 
 More pictures, including the wake pipeline and the Python/Rust split: **[docs/plexus/DIAGRAMS.md](docs/plexus/DIAGRAMS.md)**.
 
----
-
 ## How Plexus gets built
 
 **Claude plans and reviews. A local model makes the attempts. Joe decides what gets promoted.**
 
 An attempt is kept only when every gate passes (`layers`, `core`, `cargo`, `unit`) and at least one more frozen test passes. Eight drops in a row, the budget, or a stop file ends the run. Nothing merges by itself. The full loop is drawn in [Diagrams §6](docs/plexus/DIAGRAMS.md#6--build-harness).
 
-### Run it
+**Run it.**
 
 **Step 1 of 3 · Check the mission.** Says whether the next attempt would run on the CPU or the GPU.
 
@@ -153,7 +117,7 @@ python -m harness.plexus_loop stop
 | `/mission acceptance` | Setup, plan, stop for Joe, then run and review on his go. |
 | `/report` | Writes the mission report and refreshes `harness/CAPSULE.md`. |
 
-### What you need
+**What you need.**
 
 | Tool | Version | Why |
 |---|---|---|
@@ -161,8 +125,6 @@ python -m harness.plexus_loop stop
 | usd-core | 26.5 exactly: `pip install usd-core==26.5 pytest` | Composer of record; matches Houdini 22's USD 0.26.5. The root `pyproject.toml` is still the comfy-cozy package until `plexus/` packaging lands. |
 | Rust | stable, with cargo | Builds `plexus._core`. The `core` gate runs cargo and copies the library into `plexus/`. This mission doesn't use maturin. |
 | Ollama | with `qwen3-coder:30b` pulled | The harness's default worker |
-
----
 
 ## Where things live
 
@@ -176,8 +138,6 @@ python -m harness.plexus_loop stop
 | `PLEXUS_SPEC.md` | Engineering Spec v2.1 + Patch 01 | Joe |
 | `agent/`, `cognitive/`, `panel/`, … | Seeded Comfy-Cozy code, kept as history for now. Plexus doesn't build on it. | Joe decides whether it stays; conventions in `CLAUDE.cozy.md` |
 
----
-
 ## Rules that don't bend
 
 - **Nothing from Synapse comes into Plexus.** No code, imports, packages, shared contracts or dependencies. It is one architectural reference among several.
@@ -187,8 +147,6 @@ python -m harness.plexus_loop stop
 - **Houdini open, or can't tell? Then CPU.** The harness does this itself.
 
 The hooks in `.claude/settings.json` enforce these. `CLAUDE.md` explains them.
-
----
 
 ## Read next
 
@@ -200,8 +158,6 @@ The hooks in `.claude/settings.json` enforce these. `CLAUDE.md` explains them.
 | How the harness works | [`harness/plexus_loop/README.md`](harness/plexus_loop/README.md) and [`program.md`](harness/plexus_loop/program.md) |
 | Where the last session stopped | [`harness/CAPSULE.md`](harness/CAPSULE.md) |
 | The words Plexus uses | [`docs/plexus/VOICE.md`](docs/plexus/VOICE.md) |
-
----
 
 ## Comfy-Cozy, the predecessor
 
