@@ -223,6 +223,14 @@ class Attempt:
     worker_s: float | None = None  # the worker: the model call plus writing its files
     gates: list[dict] = field(default_factory=list)  # [{"name", "seconds", "ok"}], in run order
     metric_s: float | None = None  # the metric run; only when every gate passed
+    # The gate that stopped the attempt, by name, or "". `reason` keeps its wording, because
+    # the router and the next prompt read it; this is the structured copy.
+    failed_gate: str = ""
+    # Every failing test's junit id from the metric run (the whole list, not just the step's
+    # targets), or [] when the metric did not run.
+    failing: list[str] = field(default_factory=list)
+    # The model server's own timing for the worker call (workers.ollama_stats), or {}.
+    ollama: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -492,6 +500,8 @@ class MissionRun:
             if timing is not None:
                 timing.gates.append({"name": g.name, "seconds": _secs(t0), "ok": res.passed})
             if not res.passed:
+                if timing is not None:
+                    timing.failed_gate = g.name
                 return f"gate '{g.name}' failed", None, f"$ {' '.join(g.cmd)}\n{res.tail}"
         t0 = time.monotonic()
         m = measure(self.mission.metric, wt, profile)
@@ -584,6 +594,7 @@ class MissionRun:
                     res = self.worker.attempt(wt, prompt, profile)
                 finally:
                     a.worker_s = _secs(t0)
+                a.ollama = dict(getattr(res, "stats", None) or {})
                 if getattr(res, "reply", ""):
                     a.reply_file = self._save_reply(started, n, res.reply)
                 a.changed = sorted(set(gitops.changed_paths(wt)) | set(getattr(res, "wrote", []) or []))
@@ -602,6 +613,7 @@ class MissionRun:
                     why, m, detail = self._evaluate(wt, profile, timing=a)
                     if m is not None:
                         a.metric = m.value
+                        a.failing = list(m.failing)
                     if why:
                         a.reason, a.detail = why, detail
                     elif best_total is not None and m.total is not None and m.total < best_total:

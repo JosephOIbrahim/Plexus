@@ -35,6 +35,8 @@ class WorkerResult:
     note: str = ""
     reply: str = ""  # the model's raw reply, saved by the loop so failed attempts can be read
     wrote: list[str] = field(default_factory=list)  # paths written by whole-file blocks
+    # The model server's own account of the call, when it gives one (ollama_stats).
+    stats: dict = field(default_factory=dict)
 
 
 class Worker(Protocol):
@@ -301,6 +303,25 @@ def apply_reply(worktree: Path, reply: str) -> WorkerResult:
     return WorkerResult(True, "; ".join(notes), reply, wrote)
 
 
+# Ollama's /api/generate reply carries its own timing next to the text: token counts, and
+# durations in nanoseconds. Kept so a slow attempt can say whether reading the prompt or
+# writing the reply took the time, which decides whether prompt caching is worth doing.
+OLLAMA_COUNTS = ("prompt_eval_count", "eval_count")
+OLLAMA_DURATIONS = ("total_duration", "load_duration", "prompt_eval_duration", "eval_duration")
+
+
+def ollama_stats(body: dict) -> dict:
+    """The counts as ints and the durations as seconds (to a tenth, ``_s`` names), present keys only."""
+    out: dict = {}
+    for k in OLLAMA_COUNTS:
+        if isinstance(body.get(k), int):
+            out[k] = body[k]
+    for k in OLLAMA_DURATIONS:
+        if isinstance(body.get(k), (int, float)):
+            out[k.removesuffix("_duration") + "_s"] = round(body[k] / 1e9, 1)
+    return out
+
+
 class OllamaWorker:
     def __init__(self, spec: WorkerSpec):
         self.spec = spec
@@ -324,10 +345,14 @@ class OllamaWorker:
         )
         try:
             with urllib.request.urlopen(req, timeout=self.spec.timeout_s) as resp:
-                reply = json.loads(resp.read().decode("utf-8")).get("response", "")
+                body = json.loads(resp.read().decode("utf-8"))
         except Exception as e:  # noqa: BLE001 - network, timeout, bad JSON all mean no attempt
             return WorkerResult(False, f"ollama call failed: {type(e).__name__}: {e}")
-        return apply_reply(worktree, reply)
+        if not isinstance(body, dict):
+            return WorkerResult(False, "ollama call failed: the reply was not a JSON object")
+        res = apply_reply(worktree, body.get("response", "") or "")
+        res.stats = ollama_stats(body)
+        return res
 
 
 class CommandWorker:
