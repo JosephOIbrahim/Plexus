@@ -95,9 +95,13 @@ def test_only_the_last_attempt_is_handed_on(tmp_path):
     # attempt 1's files as if they were the last attempt's.
     r = _repo(tmp_path)
     raw = _raw(gate_fails_on="plexus/bad.txt", attempts=3)
-    report, w = _run(r, raw, _write_both, lambda wt: (wt / "plexus" / "bad.txt").write_text("x"),
-                     lambda wt: (wt / "plexus" / "a.py").write_text("A = 9\n"))
+
+    def both_and_bad(wt):  # sends the step's files too, so it reaches the gate and fails there
+        _write_both(wt)
+        (wt / "plexus" / "bad.txt").write_text("x")
+    report, w = _run(r, raw, _write_both, both_and_bad, _write_both)
     assert report.attempts[0].handed_on and not report.attempts[1].handed_on
+    assert report.attempts[1].reason == "gate 'layers' failed"
     assert "## Your last attempt's files" in w.prompts[1]
     assert "## Your last attempt's files" not in w.prompts[2]
 

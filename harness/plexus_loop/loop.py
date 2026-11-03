@@ -122,6 +122,22 @@ def known_fix_quotes(mission: Mission, repo: Path, failures: list[str]) -> list[
 
 
 CARRY_CHARS = 40_000  # the most of a dropped attempt's files the next prompt carries
+# The reason given to a reply that leaves out any of its step's files. Such a reply is dropped
+# before the gates: run 12 attempts 1 and 3 sent only predicate.rs, lib.rs never declared the
+# module, and every gate passed on code that was never compiled. The router and the next prompt
+# read the left-out names back from this reason.
+LEFT_OUT = "reply left out step files"
+
+
+def left_out(step: Step | None, sent: list[str]) -> list[str]:
+    """The step's files the reply did not send, in the step's order."""
+    return [f for f in (step.files if step else []) if f not in sent]
+
+
+def left_out_of(reason: str) -> list[str]:
+    """The file names a LEFT_OUT reason lists, or [] for any other reason."""
+    head, sep, names = reason.partition(": ")
+    return [x for x in names.split(", ") if x] if sep and head == LEFT_OUT else []
 
 
 def carry_files(root: Path, changed: list[str], mission: Mission, step: Step | None) -> dict[str, str]:
@@ -343,7 +359,8 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             lines.append("")
         lines.append("Do this step only. Later steps get their own attempts.")
     dropped = recent[-1] if recent and not recent[-1].kept else None
-    if dropped is not None and (dropped.detail or dropped.syntax or absent or dropped.target_failures):
+    if dropped is not None and (dropped.detail or dropped.syntax or absent or dropped.target_failures
+                                or left_out_of(dropped.reason)):
         lines += [
             "",
             "## Why the last attempt was dropped",
@@ -391,13 +408,17 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
     handed: dict[str, str] = {}
     if dropped is not None and carried and carried[0] == dropped.n and carried[1]:
         handed = carried[1]
+        left = left_out_of(dropped.reason)
+        why = (f"Attempt {dropped.n} left out {', '.join(left)}, so nothing it sent was built or tested."
+               if left else f"Attempt {dropped.n} passed every gate.")
         lines += [
             "",
             "## Your last attempt's files",
-            f"Attempt {dropped.n} passed every gate. Its versions of these files are below. The repo no "
+            f"{why} Its versions of these files are below. The repo no "
             "longer has them: every attempt starts from the last kept commit, so each is gone or back to "
             "its last kept version. Resend every one of them in full, as whole-file blocks, with the fix, "
-            "plus any other file the step needs.",
+            + (f"together with every file it left out: {', '.join(left)}." if left
+               else "plus any other file the step needs."),
         ]
         for rel, text in handed.items():
             fence = "`" * max(3, _longest_backtick_run(text) + 1)
@@ -557,7 +578,7 @@ class MissionRun:
         self.log(f"[plexus-loop] {mi.name}: baseline {baseline:g} on {tip[:10]} ({profile.device})")
 
         attempts: list[Attempt] = []
-        carried: tuple[int, dict[str, str]] | None = None  # files of the last gate-passing drop
+        carried: tuple[int, dict[str, str]] | None = None  # files of the last gate-passing or left-out drop
         consecutive = 0
         stop = "finished"
         n = 0
@@ -614,6 +635,12 @@ class MissionRun:
                     a.reason = f"touched frozen path {bad[0]}"
                 elif bad := [p for p in a.changed if not mi.in_focus(p)]:
                     a.reason = f"touched {bad[0]}, outside focus"
+                elif left := left_out(route.step, a.changed):
+                    # Never built or tested, so it cannot pass vacuously; its files go to the
+                    # next prompt with the names of the ones it left out.
+                    a.reason = f"{LEFT_OUT}: {', '.join(left)}"
+                    carried = (n, carry_files(wt, a.changed, mi, route.step))
+                    a.handed_on = list(carried[1])
                 else:
                     why, m, detail = self._evaluate(wt, profile, timing=a)
                     if m is not None:

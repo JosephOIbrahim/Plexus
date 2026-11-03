@@ -215,6 +215,9 @@ def test_run_records_no_missing_on_a_keep(tmp_path):
     m = mission_from_dict(raw)
 
     def all_three(wt):
+        # The step lists a.py, so the reply must send it too, kept commit or not: a step's
+        # files are the files every reply sends (complete-reply check, run 12).
+        (wt / "plexus" / "a.py").write_text("A = 2\n")
         (wt / "plexus" / "b.py").write_text("B = 1\n")
         (wt / "plexus" / "c.py").write_text("C = 1\n")
     report = MissionRun(m, r, worker=Steps(all_three), log=lambda s: None, route_fn=_route,
