@@ -5,6 +5,7 @@
 # worker only makes attempts inside one. Plan: missions/acceptance.plan.md.
 # Joe's decisions (Nov 1): Option A, narrowed unit gate, this file and C1-C6 as written,
 # no maturin in pyproject.toml, five Jev-routed attempts for the first run.
+# Joe (Nov 3, after run 10): router "first" (earliest failing step), worker timeout 3600 s.
 
 [mission]
 name = "acceptance"
@@ -63,12 +64,12 @@ timeout_s = 1800
 kind = "ollama"
 model = "qwen3-coder:30b"
 host = "http://127.0.0.1:11434"
-timeout_s = 1800
+timeout_s = 3600
 context_chars = 100000
 num_ctx = 40960
 
 [router]
-kind = "jev"
+kind = "first"
 model = "jev-latest"
 min_confidence = 0.3
 
