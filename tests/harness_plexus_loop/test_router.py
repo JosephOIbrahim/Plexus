@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from harness.plexus_loop import MissionRun
-from harness.plexus_loop.loop import build_prompt
+from harness.plexus_loop import MissionRun, loop
+from harness.plexus_loop.loop import Attempt, build_prompt
+from harness.plexus_loop.metrics import MetricResult
 from harness.plexus_loop.mission import MissionError, RouterSpec, Step, mission_from_dict
-from harness.plexus_loop.router import choose, eligible, jev_request
+from harness.plexus_loop.router import Route, choose, eligible, jev_request
 from harness.plexus_loop.profile import Profile
 from harness.plexus_loop.workers import WorkerResult
 
@@ -98,6 +100,33 @@ def test_jev_request_is_a_single_choice_question():
     assert body["state"]["recent_dropped_attempts"] == ["b", "c", "d"]
     q = body["questions"]["next_step"]
     assert q["type"] == "choice" and q["criteria"]["S1"]["aimed_at"] == [T0]
+
+
+def test_every_field_the_question_names_is_in_the_request():
+    # Backticks in the question mark field names: a field renamed on one side only would have
+    # Jev read for something the request no longer carries.
+    for graph in (True, False):
+        body = jev_request(JEV, STEPS, FAILING_ALL, "tail", [], graph=graph)
+        q = body["questions"]["next_step"]
+        fields = set(body["state"]) | {k for option in q["criteria"].values() for k in option}
+        named = set(re.findall(r"`(\w+)`", q["instructions"]))
+        assert named and named <= fields, named - fields
+
+
+def test_the_loops_own_drop_lines_reach_their_option(monkeypatch):
+    # The other jev tests type their drop lines by hand. default_route writes the real ones from
+    # Route.label(), and choose() hands them to jev_request: a change to either side alone would
+    # leave every option's its_recent_drops empty.
+    seen, real = [], loop.choose_route
+    monkeypatch.setattr(loop, "choose_route",
+                        lambda *a, **kw: real(*a, **kw, post=fake_jev("S5", 0.9, seen), api_key="k"))
+    m = mission_from_dict(_mission(steps=[{"id": s.id, "targets": s.targets, "text": s.text} for s in STEPS],
+                                   router={"kind": "jev"}))
+    drop = Attempt(n=1, started=0.0, houdini="off", device="cpu", reason="gate 'core' failed",
+                   route=Route(m.steps[1], "jev", 0.7).label())
+    assert loop.default_route(m, MetricResult(3.0, failing=FAILING_ALL[1:]), [drop]).step.id == "S5"
+    crit = seen[0][1]["questions"]["next_step"]["criteria"]
+    assert crit["S2"]["its_recent_drops"] == ["gate 'core' failed"] and crit["S5"]["its_recent_drops"] == []
 
 
 def _mission(**over):

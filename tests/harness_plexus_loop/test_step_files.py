@@ -107,6 +107,7 @@ def test_step_section_lists_the_files(tmp_path):
     p = build_prompt(m, _repo(tmp_path), 5, None, [], 100000, step=m.steps[0])
     section = p.split("## This attempt", 1)[1].split("## Where it stands", 1)[0]
     assert "Files this step writes: plexus/a.py, plexus/b.py, plexus/c.py." in section
+    assert "a reply that leaves one out is dropped before anything is built." in section
     # The first attempt of a run has no drop to learn from, so the step section names the absent
     # files itself; a.py is in the kept commit.
     assert "Not in the repo yet, so your reply must include each in full: plexus/b.py, plexus/c.py." in section

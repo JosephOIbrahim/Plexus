@@ -87,6 +87,21 @@ def test_a_failed_diff_reports_the_first_real_error_without_temp_paths(tmp_path)
     assert not res.ok and "error" in res.note and "tmp" not in res.note.lower()
 
 
+def test_a_failed_diff_on_a_non_ascii_path_still_reports_the_error(tmp_path):
+    # git apply echoes the patch's path raw in UTF-8. Decoded as cp1252, the second byte of 'Á'
+    # killed the reader thread, stderr came back None, and _first_error raised AttributeError
+    # out of the attempt: a dead run with no ledger row. Under a UTF-8 locale this holds on its
+    # own; under cp1252 it exercises the decode.
+    r = _repo(tmp_path)
+    (r / "plexus" / "Ávila.py").write_text("one\ntwo\n", encoding="utf-8")
+    for args in (["add", "-A"], ["commit", "-q", "-m", "avila"]):
+        subprocess.run([*GIT, *args], cwd=r, check=True, capture_output=True)
+    bad = "--- a/plexus/Ávila.py\n+++ b/plexus/Ávila.py\n@@ -1,2 +1,2 @@\n ONE\n-two\n+TWO\n"
+    res = apply_diff(r, bad)
+    assert not res.ok and "error: patch failed" in res.note and "Ávila" in res.note  # the real name, not a mojibake
+    assert (r / "plexus" / "Ávila.py").read_text(encoding="utf-8") == "one\ntwo\n"  # nothing applied
+
+
 # -- replies --------------------------------------------------------------------
 
 def test_apply_reply_writes_whole_files_then_applies_the_diff(tmp_path):
@@ -96,6 +111,20 @@ def test_apply_reply_writes_whole_files_then_applies_the_diff(tmp_path):
     assert res.ok and res.reply == reply and res.wrote == ["plexus/core/axon.py"]
     assert (r / "plexus" / "core" / "axon.py").read_text() == "class PlexusAxon:\n    pass\n"
     assert (r / "plexus" / "a.py").read_text() == "one\nTWO\nthree\n"
+
+
+def test_a_whole_file_block_identical_to_the_file_still_counts_as_written(tmp_path):
+    # The step section promises "including any you leave as it is", and the loop's complete-
+    # reply check reads the worker's `wrote` for exactly that file, since git sees no change in
+    # it. A write skipped for being identical (to spare cargo a rebuild, say) must still report.
+    r = _repo(tmp_path)
+    p = r / "plexus" / "b.py"
+    p.write_bytes(b"B = 0\n")  # LF at the tip, as a block is written, whatever core.autocrlf says
+    for args in (["add", "-A"], ["commit", "-q", "-m", "b"]):
+        subprocess.run([*GIT, *args], cwd=r, check=True, capture_output=True)
+    res = apply_reply(r, "```file:plexus/b.py\nB = 0\n```\n")
+    assert res.ok and res.wrote == ["plexus/b.py"] and p.read_bytes() == b"B = 0\n"
+    assert subprocess.run(["git", "status", "--porcelain"], cwd=r, capture_output=True, text=True).stdout == ""
 
 
 def test_a_diff_for_a_file_a_block_already_wrote_is_left_to_the_block(tmp_path):

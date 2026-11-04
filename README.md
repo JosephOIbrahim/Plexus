@@ -6,7 +6,7 @@
 
 **Projects that compose into each other while they run.**
 
-Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents, called **neurons**, stay dormant until a cheap, exact check on the stage fires. Render and compute engines plug in as swappable **organs**.
+Plexus is a runtime where **OpenUSD composition is the source of truth.** Agents, called **neurons**, stay dormant until a cheap, exact check on the stage comes true. Render and compute engines plug in as swappable **organs**.
 
 *Plexus is a working title.*
 
@@ -130,7 +130,7 @@ python -m harness.plexus_loop stop
 
 | Path | What it is | Who may change it |
 |---|---|---|
-| `plexus/` | New Plexus Python *(scaffold here; the kept schema plugin is on `plexus-loop/acceptance`)* | The worker, through the harness |
+| `plexus/` | New Plexus Python *(scaffold here; the two kept steps, the schema plugin and the membrane, stagekit and axon, are on `plexus-loop/acceptance`)* | The worker, through the harness |
 | `crates/`, `Cargo.toml` | Rust core `crates/plexus-core`, built by the `core` gate into `plexus/_core.pyd`, imported as `plexus._core` | The worker, through the harness |
 | `tests/acceptance/` | The frozen judge, plus `CONTRACT.md`, the Python surface the tests call | Joe only |
 | `harness/plexus_loop/` | The build harness, its `program.md` and mission files | Joe, and Claude when Joe says so |
