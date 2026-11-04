@@ -1,7 +1,7 @@
 """Exchange layer stack management."""
 
 from pathlib import Path
-from pxr import Sdf, Plug
+from pxr import Sdf, Tf, Usd, Plug
 
 def create_exchange(directory: Path) -> Path:
     """Writes directory/exchange.usda with an /Exchange prim and an empty sublayer list. Returns the path. Idempotent."""
@@ -15,8 +15,6 @@ def create_exchange(directory: Path) -> Path:
 
 def register_participant(exchange: Path, participant_id: str, grants=()) -> Path:
     """Appends from_<participantId>.usda as the weakest sublayer and returns its path. Idempotent."""
-    from pathlib import Path
-    
     participant_path = Path(exchange).parent / f"from_{participant_id}.usda"
     exchange_layer = Sdf.Layer.FindOrOpen(str(exchange))
     
@@ -25,6 +23,11 @@ def register_participant(exchange: Path, participant_id: str, grants=()) -> Path
         part_layer = Sdf.Layer.CreateNew(str(participant_path))
         prim = Sdf.CreatePrimInLayer(part_layer, "/Exchange")
         prim.specifier = Sdf.SpecifierDef
+        
+        # Add child prim for this participant
+        child_prim = Sdf.CreatePrimInLayer(part_layer, f"/Exchange/{participant_id}")
+        child_prim.specifier = Sdf.SpecifierDef
+        
         part_layer.Save()
     
     # Append to sublayers if not already present

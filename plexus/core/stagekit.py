@@ -5,8 +5,6 @@ from pxr import Sdf
 
 def create_project(path: Path, exchange: Path, project_id: str) -> Path:
     """Writes a project root layer whose def /Exchange carries Sdf.Reference(<exchange.usda path>, '/Exchange') with an explicit prim path, because without one or a defaultPrim on exchange.usda B gets an unresolved-reference error and composes nothing; and whose /Project has PlexusProjectAPI with plexus:projectId."""
-    from pathlib import Path
-    
     layer = Sdf.Layer.FindOrOpen(str(path)) or Sdf.Layer.CreateNew(str(path))
     
     # Create the Exchange prim with reference
