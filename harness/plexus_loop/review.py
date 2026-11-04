@@ -46,7 +46,11 @@ def write_review(path: Path, mission: Mission, r: RunReport) -> None:
     ]
     for a in r.attempts:
         score = "" if a.metric is None else f"{a.metric:g}"
-        why = a.reason.replace("|", "/")
+        fr = a.fix_route  # what the fix router made of a drop, so its picks can be labelled from this table
+        # ascii(): the pick is the API's text, and this file is written outside any attempt's error handling.
+        pick = ascii(fr.get("pick") or "no answer")[1:-1]
+        routed = f" (fix router: {pick} {fr.get('confidence') or ''}{' quoted' if fr.get('quoted') else ''})"
+        why = (a.reason + (routed if fr else "")).replace("|", "/")
         step = (a.route or "").replace("|", "/")
         lines.append(f"| {a.n} | {'yes' if a.kept else 'no'} | {score} | {step} | {a.houdini} | {a.device} | {why} |")
     path.parent.mkdir(parents=True, exist_ok=True)

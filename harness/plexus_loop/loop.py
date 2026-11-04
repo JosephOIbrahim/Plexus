@@ -28,6 +28,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import gitops
+from .fix_router import failure_output, route_failure
 from .metrics import GATE_HEAD_CHARS, GATE_TAIL_CHARS, MetricResult, measure, run_gate
 from .mission import Mission, Step
 from .profile import Profile, choose_profile, with_env
@@ -86,8 +87,22 @@ def syntax_errors(root: Path, paths: list[str]) -> list[str]:
 
 
 KNOWN_FIX_CHARS = 700  # one quoted brief line
+# A line the fix router chose is shown whole. A known fix can clip because it cuts from the sentence
+# holding its anchor; the router has no anchor. The longest line run 19's brief offers is 996 characters,
+# and on the real build_prompt a 1,324-character quote pushes a context file out of S4's first prompt,
+# so only a line past this is ever cut.
+ROUTED_LINE_CHARS = 1000
 # The reason _evaluate gives a failing gate. Known fixes match that gate's output too.
 GATE_FAILED = re.compile(r"gate '[^']+' failed\Z")
+
+
+def quote_line(line: str, at: int = 0, limit: int = KNOWN_FIX_CHARS) -> str:
+    """A brief line as a prompt quotes it, from the start of the sentence holding position ``at``:
+    a brief line can hold several facts, and a long line must never cut the fix itself off."""
+    cut = line.rfind(". ", 0, at)
+    start = cut + 2 if cut >= 0 else 0
+    body = line[start:].strip()
+    return ("…" if start else "") + body[:limit]
 
 
 def known_fix_quotes(mission: Mission, repo: Path, failures: list[str]) -> list[str]:
@@ -110,16 +125,44 @@ def known_fix_quotes(mission: Mission, repo: Path, failures: list[str]) -> list[
         line = next((ln for ln in lines if k.anchor in ln), None)
         if line is None:
             continue
-        # Quote from the start of the sentence holding the anchor: a brief line can hold several
-        # facts, and a long line must never cut the fix itself off.
-        at = line.find(k.anchor)
-        cut = line.rfind(". ", 0, at)
-        start = cut + 2 if cut >= 0 else 0
-        body = line[start:].strip()
-        quote = ("…" if start else "") + body[:KNOWN_FIX_CHARS]
+        quote = quote_line(line, line.find(k.anchor))
         if quote not in out:
             out.append(quote)
     return out
+
+
+def drop_known_fixes(mission: Mission, repo: Path, a: Attempt) -> list[str]:
+    """The known fixes a prompt quotes for this dropped attempt: one rule, so the next prompt and the
+    fix router can never disagree on whether a known fix matched.
+
+    It matches the attempt's own target failures, or a failing gate's output when it has none. Other
+    drops show the end of the metric run; matching that would quote fixes for tests of later steps,
+    which are expected to fail.
+    """
+    if a.target_failures:
+        return known_fix_quotes(mission, repo, a.target_failures)
+    if a.detail and GATE_FAILED.match(a.reason):
+        return known_fix_quotes(mission, repo, [a.detail[-FEEDBACK_CHARS:]])
+    return []
+
+
+def fix_lines(mission: Mission, repo: Path, a: Attempt) -> list[str]:
+    """What a prompt says under this attempt's failure: its known fixes, or else the line the fix
+    router chose, worded as the guess it is. Only reads what the attempt holds; it never calls Jev."""
+    where = "failure" if a.target_failures else "output"
+    quotes = drop_known_fixes(mission, repo, a)
+    if quotes:
+        return [f"{'This' if a.target_failures else 'It'} is a known error. The worker brief already gives "
+                f"its fix; apply it to the line the {where} points at:", *[f"> {q}" for q in quotes]]
+    if a.fix_route.get("quoted"):
+        quote = f"> {quote_line(a.fix_route['line'], limit=ROUTED_LINE_CHARS)}"
+        if a.fix_route.get("shown_before"):
+            return [f"The worker brief has a line that may fix this, but attempt {a.n} was already shown it and "
+                    f"still failed, so it did not clear the failure. Apply it to the line the {where} points at "
+                    "only if it clearly fits, and otherwise look for the cause elsewhere:", quote]
+        return [f"The worker brief has a line that may fix this; apply it to the line the {where} points at "
+                "if it fits, and ignore it if it does not:", quote]
+    return []
 
 
 CARRY_CHARS = 40_000  # the most of a dropped attempt's files the next prompt carries
@@ -260,7 +303,8 @@ class Attempt:
     # measured: that step never ran, or the row predates timing. Never read a missing value as 0.
     # wall_s minus the parts is the harness's own work: worktree setup and teardown, building
     # the prompt (git ls-files and reading the context files), saving the reply, the changed-
-    # and ignored-file scans, the syntax check, and on a keep the commit and branch advance.
+    # and ignored-file scans, the syntax check, the fix router's call (fix_route["seconds"]),
+    # and on a keep the commit and branch advance.
     wall_s: float | None = None  # the whole attempt, worktree in to worktree out
     route_s: float | None = None  # choosing the step (one Jev call when the router is jev)
     worker_s: float | None = None  # the worker: the model call plus writing its files
@@ -274,6 +318,10 @@ class Attempt:
     failing: list[str] = field(default_factory=list)
     # The model server's own timing for the worker call (workers.ollama_stats), or {}.
     ollama: dict = field(default_factory=dict)
+    # The fix router's answer for this failure (fix_router.FixRoute plus "seconds" and "shown_before",
+    # true when this attempt's own prompt already quoted the line), or {} when it was not asked:
+    # no [fix_router], a known fix matched, a keep, or a drop that ran nothing.
+    fix_route: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -403,11 +451,7 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             tfence = "`" * max(3, _longest_backtick_run(block) + 1)
             lines += ["Its step's own target tests failed like this. Start here; tests for later steps "
                       "are expected to fail until those steps land:", tfence, block, tfence]
-            quotes = known_fix_quotes(mission, repo, dropped.target_failures)
-            if quotes:
-                lines.append("This is a known error. The worker brief already gives its fix; apply it to the "
-                             "line the failure points at:")
-                lines += [f"> {q}" for q in quotes]
+            lines += fix_lines(mission, repo, dropped)
         if absent:
             # A left-out drop never had every file, so "its files are gone" would misdescribe it.
             lead = "Every" if left_out_of(dropped.reason) else "Its files are gone: every"
@@ -431,11 +475,7 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                 lines.append("Fix the cause first. It is usually one rule or one error near the top of that output.")
                 # A failing gate (a build, a guard) has no target tests to match, so its known
                 # fixes match the gate output the worker was just shown.
-                quotes = known_fix_quotes(mission, repo, [detail]) if GATE_FAILED.match(dropped.reason) else []
-                if quotes:
-                    lines.append("It is a known error. The worker brief already gives its fix; apply it to the "
-                                 "line the output points at:")
-                    lines += [f"> {q}" for q in quotes]
+                lines += fix_lines(mission, repo, dropped)
         elif dropped.syntax:
             lines.append("Fix those files first.")
     if dropped is not None and left_out_of(dropped.reason):
@@ -457,20 +497,12 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                 tfence = "`" * max(3, _longest_backtick_run(block) + 1)
                 lines += ["Its step's own target tests failed like this. This is still the thing to fix:",
                           tfence, block, tfence]
-                quotes = known_fix_quotes(mission, repo, prior.target_failures)
-                if quotes:
-                    lines.append("This is a known error. The worker brief already gives its fix; apply it to the "
-                                 "line the failure points at:")
-                    lines += [f"> {q}" for q in quotes]
+                lines += fix_lines(mission, repo, prior)
             elif prior.detail:
                 detail = prior.detail[-FEEDBACK_CHARS:]
                 fence = "`" * max(3, _longest_backtick_run(detail) + 1)
                 lines += ["This is what it printed:", fence, detail.rstrip("\n"), fence]
-                quotes = known_fix_quotes(mission, repo, [detail]) if GATE_FAILED.match(prior.reason) else []
-                if quotes:
-                    lines.append("It is a known error. The worker brief already gives its fix; apply it to the "
-                                 "line the output points at:")
-                    lines += [f"> {q}" for q in quotes]
+                lines += fix_lines(mission, repo, prior)
     handed: dict[str, str] = {}
     if dropped is not None and carried and carried[0] == dropped.n and carried[1]:
         handed = carried[1]
@@ -621,6 +653,26 @@ class MissionRun:
         f.write_text(reply, encoding="utf-8", errors="replace")
         return str(f.relative_to(self.repo)).replace("\\", "/")
 
+    def _route_failure(self, a: Attempt, wt: Path, step: Step | None, prompt: str) -> None:
+        """Ask the fix router about a dropped attempt's failure when no known fix matches it.
+
+        Called only for an attempt the gates or the metric ran on, while its worktree still exists:
+        any other drop ran nothing and has nothing to route. Known fixes win (Joe's rule): a match
+        makes no call. ``route_failure`` never raises, and the answer only shapes the next prompt.
+        ``prompt`` is what this attempt worked from: a line it already quoted has not cleared the failure.
+        """
+        mi = self.mission
+        if mi.fix_router.kind == "none" or not (a.target_failures or a.detail) or drop_known_fixes(mi, wt, a):
+            return
+        t0 = time.monotonic()
+        fr = route_failure(mi.fix_router, wt, failure_output(a.target_failures, a.detail), step)
+        shown = fr.quoted and f"> {quote_line(fr.line, limit=ROUTED_LINE_CHARS)}\n" in prompt
+        a.fix_route = {**asdict(fr), "seconds": _secs(t0), "shown_before": shown}
+        said = f"{fr.pick} {fr.confidence:.2f}, quoted" if fr.quoted else fr.note
+        # Plain ASCII: on a redirected stdout a note the console cannot encode would raise here, and
+        # the attempt's error handling would then replace its real drop reason.
+        self.log(f"[plexus-loop] attempt {a.n}: fix router: {said}".encode("ascii", "backslashreplace").decode())
+
     def run(self) -> RunReport:
         self.preflight()
         self.lock.acquire(self.mission.name)
@@ -754,6 +806,7 @@ class MissionRun:
                             # starts from tip without them.
                             carried = (n, carry_files(wt, a.changed, mi, route.step))
                             a.handed_on = list(carried[1])
+                        self._route_failure(a, wt, route.step, prompt)
                 if not a.kept and route.step is not None:
                     a.missing = missing_files(wt, route.step.files)
             except gitops.GitError as e:
