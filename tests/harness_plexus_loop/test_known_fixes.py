@@ -196,9 +196,15 @@ def test_the_real_null_layer_quote_carries_the_whole_fix():
     ("error: `<` is interpreted as a start of generic arguments for `i32`, not a comparison",
      "never cast with `as` to compare"),
     ("error[E0308]: mismatched types\n    |   expected `Value`, found `Option<_>`", "gives an `Option<&Value>`"),
-    # run 14 attempt 2 (d626436), as the predicate_smoke gate reports it
-    ("predicate_smoke: a predicate the frozen tests register does not compile: "
-     "'changed(/Exchange/LookState.temperature)' -> PredicateError: Invalid clause", "reads the keyword first"),
+    # run 14 attempt 2 (d626436), as the predicate_smoke gate's hint lines report the two patterns
+    ("predicate_smoke hint: the plain changed(...) predicate fails too, so the fault sits before the comparator: "
+     "parse_clause does not read the keyword before parse_path, or in_scope does not split the path at its first '.' "
+     "and rejects the attribute of the scope prim", "reads the keyword first"),
+    ("predicate_smoke hint: the plain changed(...) predicate fails too, so the fault sits before the comparator: "
+     "parse_clause does not read the keyword before parse_path, or in_scope does not split the path at its first '.' "
+     "and rejects the attribute of the scope prim", "splits the path at the first"),
+    ("predicate_smoke hint: changed(...) compiles but the predicates with a comparator fail: trim the rest before "
+     "parse_cmp and parse_number, and take the clause kind from the keyword", "Call `trim_start()`"),
     ("predicate_smoke: cannot import plexus.core.predicate: ImportError: cannot import name 'compile_predicate'",
      "In S7 only, `py.rs` gains three pieces"),
 ])

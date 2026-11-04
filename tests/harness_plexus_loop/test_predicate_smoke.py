@@ -79,6 +79,33 @@ def test_a_predicate_module_that_rejects_everything_fails_the_gate_and_names_the
     assert r.returncode == 1
     assert "a predicate the frozen tests register does not compile" in r.stdout
     assert "changed(/Exchange/LookState.temperature)" in r.stdout and "Invalid clause" in r.stdout
+    # the hint for this pattern names the keyword and scope rules, not the trim rule
+    assert "parse_clause does not read the keyword" in r.stdout and "trim the rest" not in r.stdout
+
+
+REJECTS_COMPARATORS = '''
+class PredicateError(ValueError):
+    pass
+
+
+class _Pred:
+    def paths(self):
+        return ["/Exchange/LookState.temperature"]
+
+
+def compile_predicate(source, scope):
+    if " OR " in source or "/Exchange/Elsewhere" in source or ">" in source:
+        raise PredicateError("bad")
+    return _Pred()
+'''
+
+
+def test_a_module_that_compiles_changed_but_not_the_comparators_gets_the_trim_hint(tmp_path):
+    _fake_package(tmp_path, REJECTS_COMPARATORS)
+    r = _run(tmp_path)
+    assert r.returncode == 1
+    assert "trim the rest before parse_cmp and parse_number" in r.stdout
+    assert "parse_clause does not read the keyword" not in r.stdout
 
 
 def test_a_predicate_module_that_accepts_everything_fails_the_gate(tmp_path):

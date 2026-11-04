@@ -41,12 +41,14 @@ def main(root: Path | None = None) -> int:
         print(f"predicate_smoke: cannot import plexus.core.predicate: {type(e).__name__}: {e}")
         return 1
     bad = 0
+    failed: list[str] = []
     for src in VALID:
         try:
             pred = compile_predicate(src, SCOPE)
         except Exception as e:  # noqa: BLE001 - the error type is part of the report
             print(f"predicate_smoke: {DOES_NOT_COMPILE}: {src!r} -> {type(e).__name__}: {e}")
             bad += 1
+            failed.append(src)
             continue
         try:
             paths = list(pred.paths())
@@ -57,6 +59,16 @@ def main(root: Path | None = None) -> int:
         if set(paths) != {TEMP}:
             print(f"predicate_smoke: paths() of {src!r} is {paths!r}; expected it to name {TEMP!r} and nothing else")
             bad += 1
+    # The failure pattern is diagnostic, and the worker's own error text is not: a fixed hint
+    # line names the brief rule, so a known fix can quote the right bullet, not always the first.
+    if failed:
+        if VALID[0] in failed:
+            print("predicate_smoke hint: the plain changed(...) predicate fails too, so the fault sits before "
+                  "the comparator: parse_clause does not read the keyword before parse_path, or in_scope "
+                  "does not split the path at its first '.' and rejects the attribute of the scope prim")
+        else:
+            print("predicate_smoke hint: changed(...) compiles but the predicates with a comparator fail: "
+                  "trim the rest before parse_cmp and parse_number, and take the clause kind from the keyword")
     for src in BAD:
         try:
             compile_predicate(src, SCOPE)

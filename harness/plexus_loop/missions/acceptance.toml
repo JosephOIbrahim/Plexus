@@ -284,11 +284,23 @@ match = '''expected `Value`, found `Option<[^`]*>`|expected `Option<[^`]*>`, fou
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "gives an `Option<&Value>`"
 
-# Run 14 attempt 2 (d626436): the predicate_smoke gate names a frozen predicate that does not compile.
+# Run 14 attempt 2 (d626436): the predicate_smoke gate prints one fixed hint line per failure
+# pattern, because the worker's own PredicateError text cannot be anticipated; each fragment
+# quotes the brief rule it names.
 [[known_fixes]]
-match = '''a predicate the frozen tests register does not compile'''
+match = '''parse_clause does not read the keyword'''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "`parse_clause` reads the keyword first"
+
+[[known_fixes]]
+match = '''in_scope does not split the path at its first'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "`in_scope` splits the path at the first"
+
+[[known_fixes]]
+match = '''trim the rest before parse_cmp and parse_number'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "Call `trim_start()` on the rest before `parse_cmp`"
 
 # An S7 py.rs rewrite that drops compile_predicate, PredicateError or an add_* line fails the gate here.
 [[known_fixes]]
