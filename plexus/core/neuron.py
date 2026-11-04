@@ -1,6 +1,7 @@
 """Neuron runtime and neuron prim management."""
 
 from dataclasses import dataclass
+from plexus._core import Budget
 from pathlib import Path
 import threading
 import time
@@ -33,6 +34,7 @@ class _Record:
     budget_window: float
     budget_tokens: int
     handle: NeuronHandle
+    budget: object = None
 
 
 def _set_attr(spec, name, value, type_name):
@@ -78,6 +80,8 @@ class NeuronRuntime:
         self._running = 0
         self._allowlist = [Sdf.Path(f"/Exchange/{participant_id}")]
         self._register_participant()
+        # Global budget for the session
+        self._global_budget = Budget(global_wakes_per_min, 60.0)
 
     def _register_participant(self):
         register_participant(self._exchange, self._participant_id)
@@ -124,6 +128,7 @@ class NeuronRuntime:
         record = _Record(compiled, scope, action, budget_wakes, budget_window, budget_tokens, handle)
         # S5 calls record.compiled.seed(self._values(record)) here.
         record.compiled.seed(self._values(record))
+        record.budget = Budget(budget_wakes, budget_window)
         self._neurons[name] = record
         return handle
 
@@ -177,6 +182,25 @@ class NeuronRuntime:
             # str items only: an Sdf.Path here raises TypeError: 'Path' object is not an instance of 'str'.
             changed = [p for p in record.compiled.paths()
                        if Sdf.Path(p) in event.paths or any(Sdf.Path(p).HasPrefix(r) for r in event.resynced)]
+            # Budget check
+            with self._lock:
+                now = self._clock()
+                # Check neuron budget first
+                if record.budget.peek(now) != "wake":
+                    # If the neuron's budget is not 'wake', admit it and check if it mutes
+                    if record.budget.admit(now) == "mute":
+                        record.handle.state = "muted"
+                        self._author_on_neuron(record, "plexus:state", "muted", Sdf.ValueTypeNames.Token)
+                        self._author_on_neuron(record, "plexus:flag:budget", "budget trip or mute", Sdf.ValueTypeNames.String)
+                    continue
+
+                # Check global budget
+                if self._global_budget.peek(now) != "wake":
+                    continue
+
+                # If we get here, both budgets allow the wake
+                record.budget.admit(now)
+                self._global_budget.admit(now)
             with self._lock:
                 values = self._values(record)
                 if not record.compiled.eval(changed, values):
