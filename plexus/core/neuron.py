@@ -182,10 +182,13 @@ class NeuronRuntime:
             # str items only: an Sdf.Path here raises TypeError: 'Path' object is not an instance of 'str'.
             changed = [p for p in record.compiled.paths()
                        if Sdf.Path(p) in event.paths or any(Sdf.Path(p).HasPrefix(r) for r in event.resynced)]
-            # Budget check
             with self._lock:
-                now = self._clock()
+                values = self._values(record)
+                if not record.compiled.eval(changed, values):
+                    continue
+                # S7's budget check goes here.
                 # Check neuron budget first
+                now = self._clock()
                 if record.budget.peek(now) != "wake":
                     # If the neuron's budget is not 'wake', admit it and check if it mutes
                     if record.budget.admit(now) == "mute":
@@ -201,11 +204,6 @@ class NeuronRuntime:
                 # If we get here, both budgets allow the wake
                 record.budget.admit(now)
                 self._global_budget.admit(now)
-            with self._lock:
-                values = self._values(record)
-                if not record.compiled.eval(changed, values):
-                    continue
-                # S7's budget check goes here.
                 # S5 calls record.compiled.commit_wake(values) here.
                 record.compiled.commit_wake(values)
                 self._running += 1
