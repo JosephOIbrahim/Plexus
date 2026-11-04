@@ -1,6 +1,7 @@
 """Neuron runtime and neuron prim management."""
 
 from dataclasses import dataclass
+from plexus._core import Budget
 from pathlib import Path
 import threading
 import time
@@ -33,6 +34,7 @@ class _Record:
     budget_window: float
     budget_tokens: int
     handle: NeuronHandle
+    budget: object = None
 
 
 def _set_attr(spec, name, value, type_name):
@@ -78,6 +80,8 @@ class NeuronRuntime:
         self._running = 0
         self._allowlist = [Sdf.Path(f"/Exchange/{participant_id}")]
         self._register_participant()
+        # Global budget for the session
+        self._global_budget = Budget(global_wakes_per_min, 60.0)
 
     def _register_participant(self):
         register_participant(self._exchange, self._participant_id)
@@ -124,6 +128,7 @@ class NeuronRuntime:
         record = _Record(compiled, scope, action, budget_wakes, budget_window, budget_tokens, handle)
         # S5 calls record.compiled.seed(self._values(record)) here.
         record.compiled.seed(self._values(record))
+        record.budget = Budget(budget_wakes, budget_window)
         self._neurons[name] = record
         return handle
 
@@ -182,6 +187,30 @@ class NeuronRuntime:
                 if not record.compiled.eval(changed, values):
                     continue
                 # S7's budget check goes here.
+                # Check neuron budget first
+                now = self._clock()
+                if record.budget.peek(now) != "wake":
+                    # If the neuron's budget is not 'wake', admit it and check if it mutes
+                    if record.budget.admit(now) == "mute":
+                        record.handle.state = "muted"
+                        try:
+                            with Sdf.ChangeBlock():
+                                spec = self.edit_layer.GetPrimAtPath(record.handle.prim_path)
+                                _set_attr(spec, 'plexus:state', 'muted', Sdf.ValueTypeNames.Token)
+                                _set_attr(spec, 'plexus:flag:budget', 'budget trip or mute', Sdf.ValueTypeNames.String)
+                            self.edit_layer.Save()
+                        except Exception:
+                            # If saving fails, we still want to proceed with the next neuron
+                            traceback.print_exc()
+                    continue
+
+                # Check global budget
+                if self._global_budget.peek(now) != "wake":
+                    continue
+
+                # If we get here, both budgets allow the wake
+                record.budget.admit(now)
+                self._global_budget.admit(now)
                 # S5 calls record.compiled.commit_wake(values) here.
                 record.compiled.commit_wake(values)
                 self._running += 1

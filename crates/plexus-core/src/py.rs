@@ -60,11 +60,31 @@ fn compile_predicate(source: &str, scope: &str) -> PyResult<PyPredicate> {
         .map_err(PredicateError::new_err)
 }
 
+#[pyclass(name = "Budget")]
+struct PyBudget {
+    inner: crate::budget::Budget,
+}
+
+#[pymethods]
+impl PyBudget {
+    #[new]
+    fn new(wakes: u32, window_s: f64) -> Self {
+        PyBudget { inner: crate::budget::Budget::new(wakes, window_s) }
+    }
+    fn peek(&self, now: f64) -> &'static str {
+        self.inner.peek(now)
+    }
+    fn admit(&mut self, now: f64) -> &'static str {
+        self.inner.admit(now)
+    }
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("PredicateError", m.py().get_type::<PredicateError>())?;
     m.add_class::<PyPredicate>()?;
+    m.add_class::<PyBudget>()?;
     m.add_function(wrap_pyfunction!(compile_predicate, m)?)?;
     Ok(())
 }
