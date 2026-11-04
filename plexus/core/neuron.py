@@ -193,8 +193,12 @@ class NeuronRuntime:
                     # If the neuron's budget is not 'wake', admit it and check if it mutes
                     if record.budget.admit(now) == "mute":
                         record.handle.state = "muted"
-                        self._author_on_neuron(record, "plexus:state", "muted", Sdf.ValueTypeNames.Token)
-                        self._author_on_neuron(record, "plexus:flag:budget", "budget trip or mute", Sdf.ValueTypeNames.String)
+                        try:
+                            self._author_on_neuron(record, "plexus:state", "muted", Sdf.ValueTypeNames.Token)
+                            self._author_on_neuron(record, "plexus:flag:budget", "budget trip or mute", Sdf.ValueTypeNames.String)
+                        except Exception:
+                            # If saving fails, we still want to proceed with the next neuron
+                            traceback.print_exc()
                     continue
 
                 # Check global budget
