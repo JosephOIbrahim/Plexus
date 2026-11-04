@@ -415,7 +415,10 @@ The draft is `scratchpad/frozen_order/test_budget_order.py`, two functions on th
 
 Parked from these reviews, not S7's to fix: a global refusal leaves no trace, and which neuron starves is decided by registration order; the default neuron budget of 100 per 10 s can never fill before the global 60 per minute, so a default neuron cannot reach a mute; an operator cannot see a neuron two trips from a mute; `Budget::new` validates nothing, so a window of 0 or NaN switches the budget off; spec line 138's session-layer un-mute composes as dormant while the handle stays muted, and Joe's release text says restart, which S8 makes true.
 
+**S7b, the order fix (Nov 4).** Joe placed `tests/acceptance/phase1/test_budget_order.py`, so the loop branch reads 2 failing and a corrected `neuron.py` can score. S7b moves the budget check to replace the S7 comment after eval, with no second lock, and wraps each record's body in a try, so a Save that raises on one mute leaves the neurons after it running. The text was proved on a scratch copy before the worker saw it. S7 stays unmerged until S7b keeps and passes review.
+
 **Counting Joe's next 20 decisions (Nov 4, on his word).** They start after his yes to the three plain rules. A decision is anything Claude brings him, or anything he answers that changes the work. The last column says whether a plain rule already covered it. Nothing else gets built for fewer approvals until this reads 20 of 20.
 
 | # | When | What he decided | Took Claude's recommendation | A plain rule covered it |
 |---|---|---|---|---|
+| 1 | Nov 4 | Placed the order test; merge the mission into the loop branch, add S7b, start the run | Yes | No: frozen tests are his |
