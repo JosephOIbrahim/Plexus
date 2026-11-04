@@ -408,3 +408,8 @@ That release text is not true as built, and S8's text has to carry the fix. The 
 **The failure router landed (Nov 4).** `50a6cbb` and `6be4a17` on the mission, the cherry-pick of `c2d6d37` and the wider form. Harness suite 370 passed, guards 9, ruff clean, `check` ready; both reviewers said land with notes. Rehearsals show first prompts byte-identical, so the prefix is safe.
 
 **The Jev decision gate, measured (Nov 4).** Plain rules beat it. On Joe's last 26 approvals it removes none, with 0 false acts because nothing acted; across all 66 the same repaired code gives the same verdict with or without Jev. It stays unmerged at `0cf9120` on `harness/jev-decisions`. 120 requests went to TypeSafe, more than Joe was first told: they carried the hard rules, the decided list and, on 70 of them, his own messages. Report: `scratchpad/jev_approvals/REPORT.md`.
+
+**Counting Joe's next 20 decisions (Nov 4, on his word).** They start after his yes to the three plain rules. A decision is anything Claude brings him, or anything he answers that changes the work. The last column says whether a plain rule already covered it. Nothing else gets built for fewer approvals until this reads 20 of 20.
+
+| # | When | What he decided | Took Claude's recommendation | A plain rule covered it |
+|---|---|---|---|---|
