@@ -113,6 +113,21 @@ class RouterSpec:
 
 
 @dataclass(frozen=True)
+class FixRouterSpec:
+    """How a dropped attempt's failure is matched to a line of the brief, whether or not a known fix
+    matches it (see fix_router.py)."""
+
+    kind: str = "none"  # "none" or "jev"
+    model: str = "jev-latest"
+    host: str = "https://api.typesafe.ai"
+    api_key_env: str = "TYPESAFE_API_KEY"
+    timeout_s: int = 60  # a deadline on the whole call, not only on each socket operation
+    # The floor judged on 39 replayed failures: at 0.7, on run 19's brief, 32 quoted and 30 of them right.
+    min_confidence: float = 0.7
+    brief: str = ""  # repo-relative; required for kind "jev"
+
+
+@dataclass(frozen=True)
 class Mission:
     name: str
     goal: str
@@ -128,6 +143,7 @@ class Mission:
     steps: list[Step] = field(default_factory=list)
     router: RouterSpec = field(default_factory=RouterSpec)
     known_fixes: list[KnownFix] = field(default_factory=list)
+    fix_router: FixRouterSpec = field(default_factory=FixRouterSpec)
 
     @property
     def branch(self) -> str:
@@ -163,6 +179,55 @@ def _req(d: dict[str, Any], key: str, where: str) -> Any:
     if key not in d:
         raise MissionError(f"{where}: missing '{key}'")
     return d[key]
+
+
+def _not_a_repo_file(path: str) -> bool:
+    return (not path or path.startswith("/") or path.endswith("/") or ":" in path
+            or any(part in ("", ".", "..") for part in path.split("/")))
+
+
+def _fix_router(fr: Any, focus: list[str], frozen: list[str], context: list[str],
+                known_fix_files: list[str]) -> FixRouterSpec:
+    """The [fix_router] section. Checks only the file itself: a mission loads before any repo is at hand."""
+    if not isinstance(fr, dict):
+        raise MissionError("[fix_router] must be a table")
+    if any(isinstance(fr.get(k), bool) for k in ("timeout_s", "min_confidence")):
+        raise MissionError("[fix_router] timeout_s and min_confidence must be numbers")
+    try:
+        spec = FixRouterSpec(
+            kind=str(fr.get("kind", "none")),
+            model=str(fr.get("model", "jev-latest")),
+            host=str(fr.get("host", "https://api.typesafe.ai")),
+            api_key_env=str(fr.get("api_key_env", "TYPESAFE_API_KEY")),
+            timeout_s=int(fr.get("timeout_s", 60)),
+            min_confidence=float(fr.get("min_confidence", 0.7)),
+            brief=_norm(str(fr.get("brief", ""))),
+        )
+    except (TypeError, ValueError, OverflowError) as e:
+        raise MissionError(f"[fix_router] timeout_s and min_confidence must be numbers: {e}") from e
+    if spec.kind not in ("none", "jev"):
+        raise MissionError("[fix_router] kind must be 'none' or 'jev'")
+    if not 0 <= spec.min_confidence <= 1:  # also refuses nan
+        raise MissionError("[fix_router] min_confidence must be between 0 and 1")
+    if spec.timeout_s <= 0:
+        raise MissionError("[fix_router] timeout_s must be above zero")
+    if spec.brief and _not_a_repo_file(spec.brief):
+        raise MissionError(f"[fix_router] brief {spec.brief!r} must be a repo-relative file path")
+    if spec.kind == "jev":
+        if not spec.brief:
+            raise MissionError("[fix_router] kind 'jev' needs brief, the file its lines come from")
+        if not (spec.model and spec.host and spec.api_key_env):
+            raise MissionError("[fix_router] model, host and api_key_env must not be empty")
+        # A quote must be a line the prompt carries, and the copy the router reads in the attempt's
+        # worktree must be the copy the next prompt shows: no attempt that reaches the router may
+        # have changed it. The same holds for the files known fixes quote, so that the loop and the
+        # next prompt cannot disagree on whether a known fix matched.
+        if spec.brief not in [_norm(c) for c in context]:
+            raise MissionError(f"[fix_router] brief {spec.brief} must be in [mission] context, so the prompt carries it")
+        for f in (spec.brief, *known_fix_files):
+            if _matches(f, focus) and not _matches(f, frozen):
+                raise MissionError(f"[fix_router] {f} must not be a file the worker may change")
+    return spec
 
 
 def load_mission(path: str | Path) -> Mission:
@@ -239,8 +304,7 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
         if not isinstance(raw_files, list):
             raise MissionError(f"[[steps]] {sid}: files must be a list of paths")
         files = [_norm(str(x)) for x in raw_files]
-        if any(not f or f.startswith("/") or f.endswith("/") or ":" in f
-               or any(part in ("", ".", "..") for part in f.split("/")) for f in files):
+        if any(_not_a_repo_file(f) for f in files):
             raise MissionError(f"[[steps]] {sid}: files must be repo-relative file paths")
         if len(set(files)) != len(files):
             raise MissionError(f"[[steps]] {sid}: files must not repeat")
@@ -305,6 +369,7 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
         for f in s.files:
             if not _matches(f, focus) or _matches(f, frozen):
                 raise MissionError(f"[[steps]] {s.id}: {f} is outside focus or frozen, so the worker could never write it")
+    context = [str(x) for x in m.get("context", [])]
     return Mission(
         name=name,
         goal=str(_req(m, "goal", "[mission]")),
@@ -316,8 +381,9 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
         budget=budget,
         houdini=houdini,
         requires=[str(x) for x in m.get("requires", [])],
-        context=[str(x) for x in m.get("context", [])],
+        context=context,
         steps=steps,
         router=router,
         known_fixes=known_fixes,
+        fix_router=_fix_router(raw.get("fix_router", {}), focus, frozen, context, [k.file for k in known_fixes]),
     )

@@ -25,7 +25,7 @@ The mission file also freezes `pyproject.toml` and `harness/**` for the worker. 
 ## Run (after Joe's go)
 
 1. Make the scaffolding commits on `mission/<name>`. Push the branch so the harness can start from it.
-2. `python -m harness.plexus_loop run <mission.toml>`. Do not babysit; the harness has its own budget and stop conditions.
+2. `python -m harness.plexus_loop run <mission.toml>`. Do not steer a run in flight; read each attempt as it lands and send Joe one line. The harness has its own budget and stop conditions.
 3. When it stops, read `.plexus_loop/<name>/REVIEW.md` and `.plexus_loop/<name>/attempts.jsonl`. Hand every kept commit on `plexus-loop/<name>` to the `reviewer` agent. A reviewer HARD failure on a kept commit is reported to Joe; Claude does not revert it alone.
 4. If the stop reason is `max_consecutive_failures` on the same target test, that is a planning problem: revise the plan or the mission file, show Joe, and only then `run` again.
 
@@ -36,6 +36,16 @@ CPU-mode speed is unmeasured. The ledger records wall time per attempt; `/report
 ## Report (when the run stops)
 
 Plain sentences, in this order: which frozen tests pass now versus baseline; what changed, by file; what failed and why; average attempt time by mode; the full comfy-cozy suite result if the `unit` gate was narrowed; the one decision Joe needs. Then rewrite `harness/CAPSULE.md`: Mile x of ~y, next action, blockers, energy required, ideas parked.
+
+## What Claude does without asking
+
+Joe's word, Nov 4 2026.
+
+1. During a run, watch the attempts ledger and report each attempt when it lands: which step, which tests flipped, prompt_eval_s. Joe does not need to ask.
+2. Pushing `mission/acceptance` or `plexus-loop/acceptance` by name is Claude's, each push its own command. Before it, `git diff --name-only origin/<branch>...<branch>` must list nothing under `tests/acceptance/`. Fast-forwarding the loop branch after a run that kept nothing is Claude's too: `git update-ref refs/heads/plexus-loop/acceptance <new> <old>`, only after the run has exited, only when old is an ancestor of new and `tests/acceptance/` is the same at both. Report each one with its old and new commit. Never main, never force, never a tag.
+3. After a run that kept nothing, when no harness file and no mission file changed since Joe's last go, start the next run with the same budget, and report it. A keep, a harness change, a mission-file change, a budget change or a stop for `max_consecutive_failures` stops for Joe. So do three such runs in a row.
+
+Everything under Hard rules and Stop and ask Joe in CLAUDE.md still stops. A hook block is still a stop. No hook enforces this section.
 
 ## Rules that are also hooks
 

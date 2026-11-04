@@ -16,4 +16,6 @@ allowed-tools: Bash(git *), Bash(python -c *), Bash(python -m pytest *), Read, W
 
 Read the ledger lines (one JSON object per attempt; field names are whatever the harness wrote — inspect before averaging) and compute attempt count, kept count, and mean wall time per device mode. Then write the report in the order `program.md` specifies: frozen tests passing now versus baseline; what changed, by file; what failed and why; average attempt time by mode; the full comfy-cozy suite result if the `unit` gate was narrowed (run it now: `python -m pytest -q tests --ignore=tests/acceptance -m "not integration"`); the one decision Joe needs. Plain sentences, one idea per paragraph.
 
+Before the one decision, list what Claude did without asking since the last report: each push, fast-forward and run start, with the branch and its old and new commit from `git reflog show <branch>`, and how to reverse it.
+
 Then rewrite `harness/CAPSULE.md`: Mile x of ~y, next action, blockers, energy required, ideas parked. Do not push.

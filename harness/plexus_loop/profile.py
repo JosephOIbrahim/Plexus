@@ -79,6 +79,7 @@ class Profile:
         e = dict(os.environ)
         e.update(self.env)
         e["PLEXUS_LOOP_DEVICE"] = self.device
+        e.pop("TYPESAFE_API_KEY", None)  # only the harness calls Jev; gates run code the worker wrote
         return e
 
 

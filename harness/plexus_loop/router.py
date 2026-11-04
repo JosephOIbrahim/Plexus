@@ -98,11 +98,33 @@ def _attempts_on(step_id: str, recent: list[str]) -> list[str]:
     return out
 
 
+MAX_REPLY_BYTES = 1 << 20  # far above any real answer; a longer reply fails to parse, which means no answer
+
+
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """A redirect is a failed call: urllib would follow it and send the Authorization header wherever it points."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirects)
+
+
 def _http_post(url: str, body: dict, headers: dict, timeout: int) -> dict:
     req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
                                  headers={**headers, "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    with _OPENER.open(req, timeout=timeout) as resp:
+        return json.loads(resp.read(MAX_REPLY_BYTES).decode("utf-8"))
+
+
+def unavailable_note(e: Exception, key: str) -> str:
+    """A failed Jev call as a note, which reaches the ledger and the log. http.client's ValueError for a bad
+    header value repeats the whole header, in a bytes repr a plain replace of the key can miss, so a message
+    that names the header is left out."""
+    text = str(e)
+    note = f"jev unavailable: {type(e).__name__}" + ("" if "Bearer" in text else f": {text}")
+    return note.replace(key, "<key>")
 
 
 READY_INSTRUCTIONS = (
@@ -177,7 +199,7 @@ def choose(spec: RouterSpec, steps: list[Step], failing: list[str], tail: str = 
     if spec.kind == "first" or len(rdy) == 1:
         return Route(rdy[0], "first")
 
-    key = api_key if api_key is not None else os.environ.get(spec.api_key_env, "")
+    key = (api_key if api_key is not None else os.environ.get(spec.api_key_env, "")).strip()
     if not key:
         return Route(rdy[0], "fallback", note=f"{spec.api_key_env} is not set")
     try:
@@ -190,7 +212,7 @@ def choose(spec: RouterSpec, steps: list[Step], failing: list[str], tail: str = 
         ans = out["answers"]["next_step"]
         pick, conf = str(ans["choice"]), float(ans["confidence"])
     except Exception as e:  # noqa: BLE001 - network, auth, schema: all mean "route in code"
-        return Route(rdy[0], "fallback", note=f"jev unavailable: {type(e).__name__}: {e}")
+        return Route(rdy[0], "fallback", note=unavailable_note(e, key))
     by_id = {s.id: s for s in rdy}
     if pick not in by_id:
         return Route(rdy[0], "fallback", note=f"jev picked unknown step {pick!r}")

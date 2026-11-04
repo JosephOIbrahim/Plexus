@@ -24,6 +24,14 @@
 # brief, proved on a scratch export (7 -> 5); Jev's floor 0.1; context_chars 135000. The worker reads the
 # brief from the loop branch, so the loop branch moves with this commit (plan section 10).
 # Nov 4, after S5 kept: the block is cut, because its copy of neuron.py no longer matches the tip.
+# Nov 4, both reviews of S7's keep: S7b moves the budget check below the predicate, aimed at Joe's order test, and isolates each record. The test goes last in context, so the cached prefix survives up to it.
+# Nov 4, rows 80 and 83 failed only on the worker's own Rust test: S7 writes none, as S3 did.
+# Nov 4, rows 81 and 82 came back byte-identical without the mute branch: S7's text says it must be there, and pins row 80's wrong test assert.
+# Nov 4, rows 78 and 79 repeated E0596 with the compile error in the prompt: S7's text says how peek counts.
+# Nov 4, S5's review and row 77: S7's text spells out peek, admit and the budget check, names the handle state, the
+# saving helper and the suffixed mute flag, and drops the false axon sentence. Proved on a throwaway tree with a real
+# Rust budget (0 of 11, 3 of 3). The step text follows the context files in the prompt, so the cached prefix
+# survives; the brief is unchanged and the loop branch does not move for this.
 # Nov 4, 00:05, after run 17 attempt 1 (the dispatcher landed; it passed Sdf.Path objects as `changed`, so
 # eval raised TypeError on the axon thread and the action never ran): `changed` is a list of str; wait_idle
 # waits for the running action; the handle object itself is mutated.
@@ -47,6 +55,7 @@ context = [
   "tests/acceptance/phase1/test_t5_gate.py",
   "tests/acceptance/phase1/test_t6_truth.py",
   "PLEXUS_SPEC.md",
+  "tests/acceptance/phase1/test_budget_order.py",
 ]
 
 [metric]
@@ -133,7 +142,7 @@ id = "S3"
 after = ["S2"]
 targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_bad_predicates_fail_at_registration"]
 files = ["crates/plexus-core/src/predicate.rs", "crates/plexus-core/src/lib.rs", "crates/plexus-core/src/py.rs", "plexus/core/predicate.py", "plexus/core/neuron.py"]
-text = "Rust grammar-v0 predicate, all whole files. crates/plexus-core/src/predicate.rs in plain Rust with the Value enum, compile() and Predicate signatures the brief lists: clauses changed, delta, attr, exists joined by AND only; OR or any other text is an Err; every path is absolute and inside the scope, meaning the part before the first '.' equals the scope or starts with scope + '/' (a plain starts_with would accept /Exchange/LookStateX). paths() gives each path once, in order. eval handles all four clause kinds, with delta compared against a cache that only seed and commit_wake write. Start predicate.rs from the brief's skeleton with every type and signature unchanged and every todo!() replaced; no unit tests in S3 (S5 adds them). lib.rs adds mod predicate;. py.rs is the brief's py.rs block, copied exactly; it has no Budget parts. plexus/core/predicate.py: from plexus._core import PredicateError, compile_predicate. plexus/core/neuron.py: NeuronRuntime.__init__ (register_participant first, then open the composed exchange as its stage, so the sublayer append never reaches its axon; edit_layer is Sdf.Layer.FindOrOpen of its own from_<id>.usda, the same object the stage composes) and register(), which calls compile_predicate(predicate, scope) before anything else, so PredicateError propagates."
+text = "Rust grammar-v0 predicate, all whole files. crates/plexus-core/src/predicate.rs in plain Rust with the Value enum, compile() and Predicate signatures the brief lists: clauses changed, delta, attr, exists joined by AND only; OR or any other text is an Err; every path is absolute and inside the scope, meaning the part before the first '.' equals the scope or starts with scope + '/' (a plain starts_with would accept /Exchange/LookStateX). paths() gives each path once, in order. eval handles all four clause kinds, with delta compared against a cache that only seed and commit_wake write. Start predicate.rs from the brief's skeleton with every type and signature unchanged and every todo!() replaced; no unit tests in S3. lib.rs adds mod predicate;. py.rs is the brief's py.rs block, copied exactly; it has no Budget parts. plexus/core/predicate.py: from plexus._core import PredicateError, compile_predicate. plexus/core/neuron.py: NeuronRuntime.__init__ (register_participant first, then open the composed exchange as its stage, so the sublayer append never reaches its axon; edit_layer is Sdf.Layer.FindOrOpen of its own from_<id>.usda, the same object the stage composes) and register(), which calls compile_predicate(predicate, scope) before anything else, so PredicateError propagates."
 
 [[steps]]
 id = "S4"
@@ -161,7 +170,14 @@ id = "S7"
 after = ["S5"]
 targets = ["tests/acceptance/phase1/test_t3_budget.py"]
 files = ["crates/plexus-core/src/budget.rs", "crates/plexus-core/src/lib.rs", "crates/plexus-core/src/py.rs", "plexus/core/neuron.py"]
-text = "Rust Budget in crates/plexus-core/src/budget.rs, plain Rust: Budget::new(wakes: u32, window_s: f64), peek(&self, now: f64) -> &'static str (pure) and admit(&mut self, now: f64) -> &'static str, each wake, trip or mute. A wake at t counts while now < t + window_s; a wake resets the trip count; the third consecutive trip mutes; once muted, always mute. Add #[cfg(test)] tests where Budget::new(1, 10.0) admitted at t = 0, 2, 4, 6 gives wake, trip, trip, mute. lib.rs adds mod budget;. py.rs, whole file, gains the brief's PyBudget block and its add_class line. Start from plexus/core/neuron.py under Files, whole: its comment naming S7 is where the budget check goes, and the dispatcher and the S5 lines stay. The runtime follows Budget order in the brief with the injected clock; on mute it writes plexus:state = muted plus a plexus:flag attribute on the neuron prim in the edit layer, saved. If T3 fails with 'runtime did not go idle', the kept axon subtracts once per window: also resend plexus/core/axon.py whole, with pending falling by every notice drained."
+text = "Rust Budget in crates/plexus-core/src/budget.rs, plain Rust: Budget::new(wakes: u32, window_s: f64), peek(&self, now: f64) -> &'static str and admit(&mut self, now: f64) -> &'static str, each returning wake, trip or mute. It stores the timestamps of admitted wakes, a trip count and a muted flag. A stored wake at t counts while now < t + window_s. peek takes &self and only counts, so it never removes anything: count with self.timestamps.iter().filter(|t| now < **t + self.window_s).count(), and no pop_front, retain or field assignment in peek; rustc's E0596 in budget.rs means peek is changing a field, and the fix is to take that line out, never to make peek &mut self, because py.rs calls it through &self. peek returns mute when muted, wake when that count is below wakes, otherwise trip; it does not always say wake. Only admit removes timestamps. admit returns mute when muted; it drops timestamps that no longer count; below the limit it stores now, clears the trip count and returns wake; at the limit it stores nothing and adds a trip, and the third consecutive trip sets muted and returns mute, otherwise trip. Write no #[cfg(test)] tests in this step, because frozen T3 checks the sequence: Budget::new(1, 10.0) admitted at t = 0, 2, 4, 6 gives wake, trip, trip, mute, and peek at t = 6 still says trip. lib.rs adds mod budget;. py.rs, whole file, gains the brief's PyBudget block and its add_class line. Start from plexus/core/neuron.py under Files, whole, and change only what this step names; the dispatcher and the S5 lines stay. Import Budget from plexus._core. __init__ adds self._global_budget = Budget(global_wakes_per_min, 60.0). _Record gains a last field budget: object = None, the _Record(...) call stays as it is, and register sets record.budget = Budget(budget_wakes, budget_window) right after that call. The budgets live on the runtime and the record: record.compiled is the predicate, and it has no peek or admit. In _on_event, the comment naming S7 becomes the budget check, inside the lock and above record.compiled.commit_wake(values): set now = self._clock(). If record.budget.peek(now) != 'wake', call record.budget.admit(now); if that returns 'mute', set record.handle.state = 'muted', then write plexus:state = muted as a Token and plexus:flag:budget as a non-empty String with self._author_on_neuron, which saves; then continue. If self._global_budget.peek(now) != 'wake', continue. Otherwise call admit(now) on both budgets and fall through to the kept lines, unchanged: commit_wake, the counters and the thread. A trip or a mute continues before commit_wake, so neither moves the delta cache and no action starts. The mute branch must be there: T3 reads record.handle.state and plexus:state, and fails with 'dormant' == 'muted' without it. The mute flag is plexus:flag:budget; the bare plexus:flag holds the deny record. plexus/core/axon.py does not change in this step: send exactly these four files, whole, and no diff."
+
+[[steps]]
+id = "S7b"
+after = ["S7"]
+targets = ["tests/acceptance/phase1/test_budget_order.py"]
+files = ["plexus/core/neuron.py"]
+text = "Budget order, plexus/core/neuron.py only, no Rust change. Send the file whole, not as a diff: start from the copy under Files and change only what this step names. In _on_event the budget check sits in its own with self._lock block above the predicate, so changes the predicate rejects spend the budget. Move it: delete that whole block, its lock line included, and put the same lines where the comment naming S7 is, replacing that comment, after if not record.compiled.eval(changed, values): continue and before record.compiled.commit_wake(values), inside the lock that already holds values, with no second with self._lock. The lines themselves do not change: now = self._clock(), the peek, the admit, the mute branch with record.handle.state and both self._author_on_neuron calls, the continue, the global budget check, and the admit on both budgets. A change the predicate rejects then spends nothing. Then isolate each record: wrap the whole body of for record in list(self._neurons.values()) in try: ... except Exception: traceback.print_exc(), so one neuron's failure, such as a Save that raises on its mute, leaves the neurons registered after it running. The continue lines stay inside the try. Keep the S5 lines, the thread start and everything else as they are."
 
 [[steps]]
 id = "S8"
@@ -181,6 +197,28 @@ max_consecutive_failures = 30
 [houdini]
 cpu_threads = 8
 cargo_jobs = 4
+
+# The failure router (Joe, Nov 4, during run 19; wider, Nov 4). On every dropped attempt the gates or the metric
+# ran on that printed something, ask TypeSafe's Jev which line of the brief fixes its failure, whether or not a
+# known fix below matches, because a regex can fire on a symptom and name the wrong cause (rows 67 to 69). When
+# Jev's confidence clears the floor, the next prompt quotes that line as a guess: on its own when no known fix
+# matched, under the known fix as a second candidate when it is another line, and not at all when the known fix
+# already quotes that line. It only shapes the prompt: gates and the metric still decide, so a wrong quote can
+# cost an attempt each time its failure comes back, and can never make a keep.
+# What leaves the machine: each call sends TypeSafe the failure output (the target failures and up to 4500
+# characters of test or gate output), the step's id and text, and the brief's prose lines. Nothing else, and
+# nothing when the attempt ran nothing or printed nothing. The floor was judged on jev-1.14.0, so
+# the model is pinned: on run 19's brief, 32 of 39 replayed failures quoted, 30 right. The sample is small and
+# in-sample, so every pick, confidence and model goes in the ledger as fix_route, and the pick in REVIEW.md.
+# Lowering the floor has a known cost: at 0.6 an S2 failure (row 19) picks an S4 instruction, at 0.69. timeout_s
+# is a deadline on the whole call; the slowest of 1,131 replayed calls took 1.32 s. Needs TYPESAFE_API_KEY, as
+# [router] does; without it nothing is quoted and the run goes on.
+[fix_router]
+kind = "jev"
+model = "jev-1.14.0"
+brief = "harness/plexus_loop/missions/acceptance.worker.md"
+min_confidence = 0.7
+timeout_s = 10
 
 # Recognised failures and the brief line that fixes each (harness quotes it under the
 # target-test failure). Each anchor appears once in the brief; a test checks they resolve.
