@@ -24,6 +24,7 @@
 # brief, proved on a scratch export (7 -> 5); Jev's floor 0.1; context_chars 135000. The worker reads the
 # brief from the loop branch, so the loop branch moves with this commit (plan section 10).
 # Nov 4, after S5 kept: the block is cut, because its copy of neuron.py no longer matches the tip.
+# Nov 4, both reviews of S7b's keep: S7c isolates each record and writes the mute's two attributes as one, aimed at Joe's isolation test, because the clause in S7b's text did not land.
 # Nov 4, both reviews of S7's keep: S7b moves the budget check below the predicate, aimed at Joe's order test, and isolates each record. The test goes last in context, so the cached prefix survives up to it.
 # Nov 4, rows 80 and 83 failed only on the worker's own Rust test: S7 writes none, as S3 did.
 # Nov 4, rows 81 and 82 came back byte-identical without the mute branch: S7's text says it must be there, and pins row 80's wrong test assert.
@@ -56,6 +57,7 @@ context = [
   "tests/acceptance/phase1/test_t6_truth.py",
   "PLEXUS_SPEC.md",
   "tests/acceptance/phase1/test_budget_order.py",
+  "tests/acceptance/phase1/test_mute_isolation.py",
 ]
 
 [metric]
@@ -178,6 +180,13 @@ after = ["S7"]
 targets = ["tests/acceptance/phase1/test_budget_order.py"]
 files = ["plexus/core/neuron.py"]
 text = "Budget order, plexus/core/neuron.py only, no Rust change. Send the file whole, not as a diff: start from the copy under Files and change only what this step names. In _on_event the budget check sits in its own with self._lock block above the predicate, so changes the predicate rejects spend the budget. Move it: delete that whole block, its lock line included, and put the same lines where the comment naming S7 is, replacing that comment, after if not record.compiled.eval(changed, values): continue and before record.compiled.commit_wake(values), inside the lock that already holds values, with no second with self._lock. The lines themselves do not change: now = self._clock(), the peek, the admit, the mute branch with record.handle.state and both self._author_on_neuron calls, the continue, the global budget check, and the admit on both budgets. A change the predicate rejects then spends nothing. Then isolate each record: wrap the whole body of for record in list(self._neurons.values()) in try: ... except Exception: traceback.print_exc(), so one neuron's failure, such as a Save that raises on its mute, leaves the neurons registered after it running. The continue lines stay inside the try. Keep the S5 lines, the thread start and everything else as they are."
+
+[[steps]]
+id = "S7c"
+after = ["S7b"]
+targets = ["tests/acceptance/phase1/test_mute_isolation.py"]
+files = ["plexus/core/neuron.py"]
+text = "A mute that cannot be saved, plexus/core/neuron.py only, no Rust change. Send the file whole, not as a diff: start from the copy under Files and change only what this step names. Two changes in _on_event, and frozen test_mute_isolation.py checks both. First, wrap the whole body of for record in list(self._neurons.values()) in try: ... except Exception: traceback.print_exc(), with every line of the body indented one more level and the continue lines and the thread start inside the try, so a Save that raises for one neuron leaves the neurons registered after it running. Second, on mute replace the two self._author_on_neuron calls with one block, after record.handle.state = 'muted': with Sdf.ChangeBlock(): spec = self.edit_layer.GetPrimAtPath(record.handle.prim_path), _set_attr(spec, 'plexus:state', 'muted', Sdf.ValueTypeNames.Token) and _set_attr(spec, 'plexus:flag:budget', 'budget trip or mute', Sdf.ValueTypeNames.String), then one self.edit_layer.Save() after the block, so the state and the flag reach the stage together even when the Save raises. Delete the comment naming S7. Keep the budget check below the predicate, the S5 lines and everything else as they are."
 
 [[steps]]
 id = "S8"
