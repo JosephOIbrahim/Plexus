@@ -56,10 +56,12 @@ timeout_s = 1800
 
 # Positive check (Nov 3, after the false keep d626436): the predicates the frozen tests register
 # must compile once plexus/core/predicate.py exists, and the two bad ones must raise. Before S3
-# lands it has nothing to check. It asserts nothing the frozen tests do not already assume.
+# lands it has nothing to check. The compile and raise checks are the frozen tests' own; the
+# paths() check is the brief's Option A contract that S5's seed reads. -I keeps the harness
+# directory from shadowing stdlib modules, as the gate's own test runs it.
 [[gates]]
 name = "predicate_smoke"
-cmd = ["python", "harness/plexus_loop/predicate_smoke.py"]
+cmd = ["python", "-I", "harness/plexus_loop/predicate_smoke.py"]
 timeout_s = 120
 
 [[gates]]
@@ -287,3 +289,9 @@ anchor = "gives an `Option<&Value>`"
 match = '''a predicate the frozen tests register does not compile'''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "`parse_clause` reads the keyword first"
+
+# An S7 py.rs rewrite that drops compile_predicate, PredicateError or an add_* line fails the gate here.
+[[known_fixes]]
+match = '''cannot import plexus\.core\.predicate'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "In S7 only, `py.rs` gains three pieces"

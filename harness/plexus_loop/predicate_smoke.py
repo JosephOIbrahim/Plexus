@@ -6,9 +6,12 @@ parse_clause never read the keyword, so every clause fell to a catch-all Err. A 
 target cannot see that, and no error text exists for a known fix to match. This gate runs after
 `core` has built plexus._core, in the attempt's worktree: once plexus/core/predicate.py exists,
 the three predicates the frozen tests register under scope /Exchange/LookState must compile and
-name the attribute once in paths(), and the two bad ones must raise PredicateError. Before S3
-lands there is nothing to check and the gate passes. It asserts nothing the frozen tests do not
-already assume; it only asserts it before the metric instead of two steps later.
+name the attribute in paths(), and the two bad ones must raise PredicateError. Before S3 lands
+there is nothing to check and the gate passes. The compile and raise checks are the frozen tests'
+own, asserted before the metric instead of two steps later (the frozen test sees the raise through
+NeuronRuntime.register, which the brief says calls compile_predicate first); the paths() check is
+the brief's Option A contract that S5's seed reads, asked as a set so once-in-order stays the
+skeleton's rule, not this gate's.
 """
 
 from __future__ import annotations
@@ -16,6 +19,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Copies of frozen constants: _support.py LOOK and TEMP; T5 (changed), T2 (delta), T3 and T4
+# (changed AND delta); the two bad ones are T2's. If Joe edits those tests, these follow.
 SCOPE = "/Exchange/LookState"
 TEMP = SCOPE + ".temperature"
 VALID = [f"changed({TEMP})", f"delta({TEMP}) > 0.2", f"changed({TEMP}) AND delta({TEMP}) > 0.2"]
@@ -49,8 +54,8 @@ def main(root: Path | None = None) -> int:
             print(f"predicate_smoke: paths() of {src!r} raised {type(e).__name__}: {e}")
             bad += 1
             continue
-        if paths != [TEMP]:
-            print(f"predicate_smoke: paths() of {src!r} is {paths!r}; expected [{TEMP!r}], once, in order")
+        if set(paths) != {TEMP}:
+            print(f"predicate_smoke: paths() of {src!r} is {paths!r}; expected it to name {TEMP!r} and nothing else")
             bad += 1
     for src in BAD:
         try:
