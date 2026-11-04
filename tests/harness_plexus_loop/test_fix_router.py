@@ -1,9 +1,11 @@
-"""A failure no known fix matches gets the brief line Jev chooses, when Jev is sure enough.
+"""A dropped attempt's failure gets the brief line Jev chooses, when Jev is sure enough, whether or not a known fix matches.
 
-Regular expressions only know the failures already seen. Replayed on run 19's brief and known fixes,
-the 58 full attempts in the ledger make 21 calls, a matching known fix meaning no call, and at a floor
-of 0.7 the 5 quotes a run would really show are all right. The quote only shapes the next prompt: the
-gates and the metric still decide what is kept.
+Regular expressions only know the failures already seen, and one can fire on a symptom and name the wrong
+cause. Replayed from stored picks on run 19's brief and known fixes, the 58 full attempts in the ledger make
+one call for each of the 56 with failure output, 35 of them on a known fix. At a floor of 0.7, 30 of those 35
+pick the line the known fix already quotes, so nothing is added, and rows 38, 67, 68 and 69 gain a line, all
+labelled right, with no wrong line. The quote only shapes the next prompt: the gates and the metric still
+decide what is kept.
 No outside network: Jev is faked, as in test_router.py, and the real POST talks to a server on loopback.
 """
 
@@ -503,7 +505,7 @@ def test_check_says_nothing_of_the_router_without_the_section(tmp_path, monkeypa
 
 # -- whole runs -------------------------------------------------------------------------
 
-def _repo(tmp_path: Path) -> Path:
+def _repo(tmp_path: Path, brief: str = BRIEF_TEXT) -> Path:
     r = tmp_path / "repo"
     (r / "docs").mkdir(parents=True)
     (r / "plexus").mkdir()
@@ -512,7 +514,7 @@ def _repo(tmp_path: Path) -> Path:
     (r / "plexus" / "score.txt").write_text("5\n")
     (r / "plexus" / "b.py").write_text("B = 0\n")
     (r / ".gitignore").write_text("*.tmp\n")
-    (r / BRIEF).write_text(BRIEF_TEXT, encoding="utf-8")
+    (r / BRIEF).write_text(brief, encoding="utf-8")
     for args in (["init", "-q", "-b", "master"], ["add", "-A"], ["commit", "-q", "-m", "s"]):
         subprocess.run([*GIT, *args], cwd=r, check=True, capture_output=True)
     return r
@@ -586,35 +588,216 @@ def test_a_no_gain_drop_with_no_known_fix_asks_once_and_the_next_prompt_quotes_t
     seconds = row["fix_route"].pop("seconds")
     assert isinstance(seconds, float) and seconds >= 0
     assert row["fix_route"] == {"pick": "b00", "confidence": 0.82, "line": CHANGED, "quoted": True, "note": "",
-                                "model": "", "shown_before": False}
+                                "model": "", "shown_before": False, "known_fix": ""}
     assert kept["fix_route"] == {}
     # REVIEW.md shows the pick, so its picks can be labelled without reading the ledger.
     review = (r / ".plexus_loop" / "demo" / "REVIEW.md").read_text(encoding="utf-8")
     assert "no strict gain (5 vs best 5) (fix router: b00 0.82 quoted) |" in review
 
 
-def test_a_matching_known_fix_makes_no_call(tmp_path, monkeypatch):
-    seen = []
+# A second candidate goes to the worker's own code, not to the line the failure points at: 19 of the 33 recorded
+# target failures end at a frozen test, and a right line about the code does not fit that test's line.
+SECOND_LEAD = ("The worker brief also has a line that may fix this; apply it to your own code "
+               "if it fits, and ignore it if it does not:")
+SHOWN_SECOND_LEAD = ("The worker brief also has a line that may fix this, but attempt {n} was already shown it and "
+                     "still failed, so it did not clear the failure. Apply it to your own code "
+                     "only if it clearly fits, and otherwise look for the cause elsewhere:")
+# Past both clips, with its anchor in a later sentence: the known fix's quote starts there and stops at
+# KNOWN_FIX_CHARS, and the routed line starts at the top and stops at ROUTED_LINE_CHARS.
+LONG = ("An earlier fact. " * 30 + "`FindOrOpen` returns `None` for a missing file, " + "so keep reading it. " * 60).strip()
+# Past both clips, with its anchor in the first sentence: the two quotes share a start, and only a whole-line compare sees that.
+LONG_FIRST = ("`FindOrOpen` returns `None` for a missing file, " + "so keep reading it. " * 70).strip()
+
+
+def _two_drops():
+    """The metric's results for two attempts dropped on the known error, and the worker that wrote them."""
+    results = [_failing(5.0), _failing(5.0, NULL_LAYER), _failing(5.0, NULL_LAYER)]
+    return results, Steps(_write({"plexus/a.py": "A = 1\n"}), _write({"plexus/a.py": "A = 2\n"}))
+
+
+def _with_second_fix(**kw):
+    """The demo mission with one more known fix, whose line is the one the first known fix does not quote."""
+    raw = _raw({"kind": "jev", "brief": BRIEF}, **kw)
+    raw["known_fixes"].append({"match": "is not an instance of 'str'", "file": BRIEF, "anchor": "`changed` is a list of `str`"})
+    return mission_from_dict(raw)
+
+
+def test_a_known_fix_still_asks_and_a_different_line_goes_under_it_as_a_second_candidate(tmp_path, monkeypatch):
+    seen, logs = [], []
     _ask_jev(monkeypatch, fake_jev("b00", 0.99, seen))
-    _metrics(monkeypatch, _failing(5.0), _failing(5.0, NULL_LAYER), _failing(5.0, NULL_LAYER))
+    results, w = _two_drops()
+    _metrics(monkeypatch, *results)
+    r = _repo(tmp_path)
+    a, _ = _run(_mission(), r, w, log=logs.append).attempts
+    assert len(seen) == 2 and NULL_LAYER in seen[0][1]["state"]["failure_output"]
+    assert a.fix_route["quoted"] and a.fix_route["known_fix"] == "other" and not a.fix_route["shown_before"]
+    fb = w.prompts[1].split("## Why the last attempt was dropped", 1)[1]
+    assert (fb.index("[failure] Cannot create prim") < fb.index("This is a known error") < fb.index(f"> - {FINDOR}\n")
+            < fb.index(SECOND_LEAD) < fb.index(f"> {CHANGED}\n") < fb.index("the end of the run"))
+    assert fb.count(ROUTE_LEAD) == 1 and fb.count(f"> {CHANGED}") == 1
+    assert any("attempt 1: fix router: b00 0.99, quoted under a known fix" in s for s in logs)
+    review = (r / ".plexus_loop" / "demo" / "REVIEW.md").read_text(encoding="utf-8")
+    assert "no strict gain (5 vs best 5) (fix router: b00 0.99 quoted under a known fix) |" in review
+
+
+def test_a_known_fix_and_the_same_routed_line_show_it_once(tmp_path, monkeypatch):
+    seen, logs = [], []
+    _ask_jev(monkeypatch, fake_jev("b01", 0.99, seen))
+    _metrics(monkeypatch, _failing(5.0), *[_failing(5.0, NULL_LAYER)] * 3)
+    w = Steps(*[_write({"plexus/a.py": f"A = {i}\n"}) for i in range(3)])
+    r = _repo(tmp_path)
+    a, b, _ = _run(_mission(attempts=3), r, w, log=logs.append).attempts
+    assert len(seen) == 3 and a.fix_route["quoted"] and a.fix_route["line"] == FINDOR and a.fix_route["known_fix"] == "same"
+    # Shown before or not, the known fix's lines stay as they were and nothing goes under them.
+    assert not a.fix_route["shown_before"] and b.fix_route["shown_before"]
+    for prompt in w.prompts[1:]:
+        fb = prompt.split("## Why the last attempt was dropped", 1)[1]
+        assert fb.count(f"> - {FINDOR}\n") == 1 and f"> {FINDOR}" not in fb
+        assert ROUTE_LEAD not in fb and "already shown" not in fb
+    assert any("attempt 1: fix router: b01 0.99, same line as its known fix" in s for s in logs)
+    review = (r / ".plexus_loop" / "demo" / "REVIEW.md").read_text(encoding="utf-8")
+    assert "no strict gain (5 vs best 5) (fix router: b01 0.99 same line as its known fix) |" in review
+
+
+@pytest.mark.parametrize("line, brief, pick", [
+    (LONG, f"- {LONG}\n", "b00"),
+    (LONG_FIRST, f"- {LONG_FIRST}\n", "b00"),
+    (LONG_FIRST, f"{LONG_FIRST}\n", "l001"),
+], ids=["list item, anchor in a later sentence", "list item, anchor in the first sentence", "prose, anchor in the first sentence"])
+def test_a_known_fix_and_the_same_routed_line_show_it_once_when_the_line_is_long_enough_to_clip(tmp_path, monkeypatch, line, brief, pick):
+    assert len(line) > ROUTED_LINE_CHARS > KNOWN_FIX_CHARS
+    seen = []
+    _ask_jev(monkeypatch, fake_jev(pick, 0.9, seen))
+    results, w = _two_drops()
+    _metrics(monkeypatch, *results)
+    a, b = _run(_mission(), _repo(tmp_path, brief), w).attempts
+    assert len(seen) == 2 and a.fix_route["quoted"] and a.fix_route["line"] == line and a.fix_route["known_fix"] == "same"
+    fb = w.prompts[1].split("## Why the last attempt was dropped", 1)[1]
+    assert fb.count("is a known error") == 1 and ROUTE_LEAD not in fb
+    assert sum(ln.startswith("> ") for ln in fb.splitlines()) == 1
+    assert f"> {line[:ROUTED_LINE_CHARS]}" not in fb
+    # And the second attempt's own prompt quoted it, clipped, as that known fix: it counts as shown.
+    assert not a.fix_route["shown_before"] and b.fix_route["shown_before"]
+
+
+def test_two_known_fixes_match_and_the_pick_is_the_second_ones_line_so_it_shows_once(tmp_path, monkeypatch):
+    # Rows 46 to 48, 52, 54 and 56 matched two or three known fixes. A pick of a later one's line must not print twice.
+    _ask_jev(monkeypatch, fake_jev("b00", 0.9))
+    both = f"{NULL_LAYER}\n{TYPE_ERROR}"
+    _metrics(monkeypatch, _failing(5.0), _failing(5.0, both), _failing(5.0, both))
     w = Steps(_write({"plexus/a.py": "A = 1\n"}), _write({"plexus/a.py": "A = 2\n"}))
-    a, _ = _run(_mission(), _repo(tmp_path), w).attempts
-    assert seen == [] and a.fix_route == {}
-    assert "This is a known error" in w.prompts[1] and ROUTE_LEAD not in w.prompts[1]
+    a, _ = _run(_with_second_fix(), _repo(tmp_path), w).attempts
+    assert a.fix_route["known_fix"] == "same"
+    fb = w.prompts[1].split("## Why the last attempt was dropped", 1)[1]
+    assert fb.count(f"> - {CHANGED}\n") == 1 and fb.count(f"> - {FINDOR}\n") == 1
+    assert f"> {CHANGED}\n" not in fb and ROUTE_LEAD not in fb
 
 
-def test_whether_a_known_fix_matched_is_read_from_the_attempts_worktree(tmp_path, monkeypatch):
-    # The next prompt reads a fresh worktree at tip, never the main checkout (the Nov 3 mistake). Read
-    # from here, this anchor would be gone: Jev would be asked while the prompt still quotes the known fix.
+@pytest.mark.parametrize("post, says", [
+    (fake_jev("none", 0.95), "jev chose none"),
+    (fake_jev("b00", 0.69), "below 0.7"),
+    (fake_jev("b99", 0.95), "unknown line"),
+    (raising(OSError("down")), "jev unavailable: OSError"),
+    (raising(TimeoutError("timed out")), "jev unavailable: TimeoutError"),
+], ids=["abstains", "below the floor", "an unknown line", "fails", "times out"])
+def test_under_a_known_fix_no_usable_answer_leaves_the_prompt_as_it_was_byte_for_byte(tmp_path, monkeypatch, post, says):
+    calls = []
+
+    def counted(*args):
+        calls.append(args)
+        return post(*args)
+    _ask_jev(monkeypatch, counted)
+    results, w = _two_drops()
+    _metrics(monkeypatch, *results)
+    a, _ = _run(_mission(), _repo(tmp_path / "on"), w).attempts
+    assert len(calls) == 2 and says in a.fix_route["note"] and not a.fix_route["quoted"] and a.fix_route["known_fix"]
+    results, without = _two_drops()
+    _metrics(monkeypatch, *results)
+    _run(mission_from_dict(_raw()), _repo(tmp_path / "off"), without)
+    assert w.prompts[1] == without.prompts[1] and "This is a known error" in w.prompts[1] and ROUTE_LEAD not in w.prompts[1]
+
+
+def test_both_quotes_and_the_compare_are_read_from_the_attempts_worktree(tmp_path, monkeypatch):
+    # The next prompt reads a fresh worktree at tip, never the main checkout (the Nov 3 mistake). Read from
+    # here, this anchor would be gone: the row would say no known fix matched and the line was never shown,
+    # while the prompts quote the known fix.
     seen = []
-    _ask_jev(monkeypatch, fake_jev("b00", 0.99, seen))
-    _metrics(monkeypatch, _failing(5.0), _failing(5.0, NULL_LAYER), _failing(5.0, NULL_LAYER))
+    _ask_jev(monkeypatch, fake_jev("b01", 0.99, seen))
+    results, w = _two_drops()
+    _metrics(monkeypatch, *results)
     r = _repo(tmp_path)
     (r / BRIEF).write_text("- a line only the main checkout has\n", encoding="utf-8")
-    w = Steps(_write({"plexus/a.py": "A = 1\n"}), _write({"plexus/a.py": "A = 2\n"}))
-    a, _ = _run(_mission(), r, w).attempts
-    assert seen == [] and a.fix_route == {}
+    a, b = _run(_mission(), r, w).attempts
+    assert len(seen) == 2 and a.fix_route["known_fix"] == b.fix_route["known_fix"] == "same"
+    assert [a.fix_route["shown_before"], b.fix_route["shown_before"]] == [False, True]
     assert "This is a known error" in w.prompts[1] and ROUTE_LEAD not in w.prompts[1]
+
+
+@pytest.mark.parametrize("line", [FINDOR, LONG], ids=["whole", "clipped, from a later sentence"])
+def test_a_line_shown_as_a_known_fix_quote_counts_as_shown_when_no_known_fix_matches_the_next_failure(tmp_path, monkeypatch, line):
+    # The known fix quoted it on attempt 2's prompt, attempt 2 failed another way, and Jev now picks that line.
+    brief = BRIEF_TEXT if line == FINDOR else f"- {CHANGED}\n- {line}\n"
+    _ask_jev(monkeypatch, fake_jev("b01", 0.9))
+    _metrics(monkeypatch, _failing(5.0), _failing(5.0, NULL_LAYER), _failing(5.0, TYPE_ERROR), _failing(5.0, TYPE_ERROR))
+    w = Steps(*[_write({"plexus/a.py": f"A = {i}\n"}) for i in range(3)])
+    first, second, _ = _run(_mission(attempts=3), _repo(tmp_path, brief), w).attempts
+    assert not first.fix_route["shown_before"] and second.fix_route["shown_before"] and second.fix_route["known_fix"] == ""
+    fb = w.prompts[2].split("## Why the last attempt was dropped", 1)[1]
+    assert "The worker brief has a line that may fix this, but attempt 2 was already shown it and still failed" in fb
+    assert "the line the failure points at only if it clearly fits" in fb and "is a known error" not in fb
+    assert fb.count(f"> {line[:ROUTED_LINE_CHARS]}") == 1
+
+
+def test_a_line_shown_as_one_known_fix_counts_as_shown_under_another(tmp_path, monkeypatch):
+    # Attempt 2's prompt quotes the first known fix, its failure matches the second, and Jev picks the first's line.
+    _ask_jev(monkeypatch, fake_jev("b01", 0.9))
+    _metrics(monkeypatch, _failing(5.0), _failing(5.0, NULL_LAYER), _failing(5.0, TYPE_ERROR), _failing(5.0, TYPE_ERROR))
+    w = Steps(*[_write({"plexus/a.py": f"A = {i}\n"}) for i in range(3)])
+    _, second, _ = _run(_with_second_fix(attempts=3), _repo(tmp_path), w).attempts
+    assert second.fix_route["shown_before"] and second.fix_route["known_fix"] == "other"
+    fb = w.prompts[2].split("## Why the last attempt was dropped", 1)[1]
+    assert (fb.index("This is a known error") < fb.index(f"> - {CHANGED}\n") < fb.index(SHOWN_SECOND_LEAD.format(n=2))
+            < fb.index(f"> {FINDOR}\n"))
+    assert fb.count(ROUTE_LEAD) == 1
+
+
+def test_a_second_candidate_that_did_not_clear_the_failure_is_said_to_have_been_shown(tmp_path, monkeypatch):
+    _ask_jev(monkeypatch, fake_jev("b00", 0.9))
+    _metrics(monkeypatch, _failing(5.0), *[_failing(5.0, NULL_LAYER)] * 3)
+    w = Steps(*[_write({"plexus/a.py": f"A = {i}\n"}) for i in range(3)])
+    atts = _run(_mission(attempts=3), _repo(tmp_path), w).attempts
+    assert [a.fix_route["shown_before"] for a in atts] == [False, True, True]
+    assert SECOND_LEAD in w.prompts[1] and "already shown" not in w.prompts[1]
+    fb = w.prompts[2].split("## Why the last attempt was dropped", 1)[1]
+    assert (fb.index("This is a known error") < fb.index(f"> - {FINDOR}\n") < fb.index(SHOWN_SECOND_LEAD.format(n=2))
+            < fb.index(f"> {CHANGED}\n"))
+
+
+def test_a_line_the_prompt_did_not_quote_is_not_said_to_have_been_shown_because_a_known_fix_was(tmp_path, monkeypatch):
+    # Attempt 2's prompt quotes the known fix and nothing else, because Jev fell below the floor, and Jev now picks another line.
+    answers = [("b00", 0.5), ("b00", 0.9)]
+
+    def post(url, body, headers, timeout):
+        choice, confidence = answers.pop(0)
+        return {"answers": {"fix_line": {"choice": choice, "confidence": confidence}}}
+    _ask_jev(monkeypatch, post)
+    results, w = _two_drops()
+    _metrics(monkeypatch, *results)
+    a, b = _run(_mission(), _repo(tmp_path), w).attempts
+    assert not a.fix_route["quoted"] and b.fix_route["quoted"] and b.fix_route["known_fix"] == "other"
+    assert f"> - {FINDOR}\n" in w.prompts[1] and not b.fix_route["shown_before"]
+
+
+def test_a_known_fix_whose_file_is_gone_counts_for_nothing_and_stops_nothing(tmp_path, monkeypatch):
+    raw = _raw({"kind": "jev", "brief": BRIEF})
+    raw["known_fixes"].insert(0, {"match": "null or expired layer", "file": "docs/gone.md", "anchor": "not there"})
+    raw["known_fixes"][1]["anchor"] = "an anchor no line holds"
+    _ask_jev(monkeypatch, fake_jev("b00", 0.9))
+    results, w = _two_drops()
+    _metrics(monkeypatch, *results)
+    a, b = _run(mission_from_dict(raw), _repo(tmp_path), w).attempts
+    assert a.fix_route["known_fix"] == "" and a.reason == "no strict gain (5 vs best 5)" and b.fix_route["shown_before"]
+    assert "is a known error" not in w.prompts[1] and ROUTE_LEAD in w.prompts[1]
 
 
 def test_a_line_the_attempt_was_already_shown_is_quoted_again_with_that_said(tmp_path, monkeypatch):
@@ -650,6 +833,31 @@ def test_a_different_line_or_one_below_the_floor_is_not_said_to_have_been_shown(
     assert [a.fix_route["shown_before"] for a in atts] == [False, False, False, False]
 
 
+def test_a_routed_line_past_the_known_fix_clip_counts_as_shown(tmp_path, monkeypatch):
+    line = "An earlier fact. " * 50 + "The fix is at the end of the line."
+    assert KNOWN_FIX_CHARS < len(line) < ROUTED_LINE_CHARS
+    _ask_jev(monkeypatch, fake_jev("b00", 0.9))
+    _metrics(monkeypatch, _failing(5.0), _failing(5.0, TYPE_ERROR), _failing(5.0, TYPE_ERROR))
+    w = Steps(_write({"plexus/a.py": "A = 1\n"}), _write({"plexus/a.py": "A = 2\n"}))
+    a, b = _run(_mission(), _repo(tmp_path, f"- {line}\n"), w).attempts
+    assert [a.fix_route["shown_before"], b.fix_route["shown_before"]] == [False, True]
+
+
+def test_a_longer_line_quoted_does_not_count_for_the_line_it_starts_with(tmp_path, monkeypatch):
+    short = "A rule that is the start of a longer one, long enough."
+    long = short + " And more that the longer one goes on to say."
+    answers = [("b01", 0.9), ("b00", 0.9)]
+
+    def post(url, body, headers, timeout):
+        choice, confidence = answers.pop(0)
+        return {"answers": {"fix_line": {"choice": choice, "confidence": confidence}}}
+    _ask_jev(monkeypatch, post)
+    _metrics(monkeypatch, _failing(5.0), _failing(5.0, TYPE_ERROR), _failing(5.0, TYPE_ERROR))
+    w = Steps(_write({"plexus/a.py": "A = 1\n"}), _write({"plexus/a.py": "A = 2\n"}))
+    _, b = _run(_mission(), _repo(tmp_path, f"- {short}\n- {long}\n"), w).attempts
+    assert b.fix_route["line"] == short and not b.fix_route["shown_before"]
+
+
 def test_a_note_the_console_cannot_encode_leaves_the_drop_reason_alone(tmp_path, monkeypatch):
     # A redirected stdout here is cp1252. A raise from the log would reach the attempt's error
     # handling, which replaces the reason on the row and in the next prompt.
@@ -676,20 +884,63 @@ def test_a_pick_no_file_can_hold_cannot_stop_the_run(tmp_path, monkeypatch):
     assert "(fix router: \\ud800\\nb/00 0.9)" in (r / ".plexus_loop" / "demo" / "REVIEW.md").read_text(encoding="utf-8")
 
 
-def test_a_failing_gate_asks_only_when_no_known_fix_matches_and_a_keep_never_asks(tmp_path, monkeypatch):
-    seen = []
-    _ask_jev(monkeypatch, fake_jev("b01", 0.9, seen))
+def test_a_failing_gate_asks_whether_or_not_a_known_fix_matches_and_a_keep_never_asks(tmp_path, monkeypatch):
+    seen, picks = [], ["b01", "b00"]
+
+    def post(url, body, headers, timeout):
+        seen.append(body)
+        return {"answers": {"fix_line": {"choice": picks.pop(0), "confidence": 0.9}}}
+    _ask_jev(monkeypatch, post)
     w = Steps(_write({"plexus/gate.txt": "error: null or expired layer"}),
               _write({"plexus/gate.txt": "error[E0999]: a new one"}),
               _write({"plexus/score.txt": "4\n"}))
     known, new, kept = _run(_mission(attempts=3), _repo(tmp_path), w).attempts
-    assert known.reason == new.reason == "gate 'build' failed" and kept.kept
-    assert known.fix_route == {} and kept.fix_route == {} and new.fix_route["pick"] == "b01"
-    assert len(seen) == 1 and "E0999" in seen[0][1]["state"]["failure_output"]
+    assert known.reason == new.reason == "gate 'build' failed" and kept.kept and kept.fix_route == {}
+    assert len(seen) == 2 and "null or expired layer" in seen[0]["state"]["failure_output"]
+    assert "E0999" in seen[1]["state"]["failure_output"]
+    # The known fix quotes the line Jev chose, so it shows once. The new failure has no known fix: today's wording stands.
+    assert known.fix_route["known_fix"] == "same" and new.fix_route["known_fix"] == ""
     assert "It is a known error" in w.prompts[1] and ROUTE_LEAD not in w.prompts[1]
     fb = w.prompts[2].split("## Why the last attempt was dropped", 1)[1]
-    assert fb.index("E0999") < fb.index("Fix the cause first") < fb.index(ROUTE_LEAD) < fb.index(f"> {FINDOR}")
+    assert fb.index("E0999") < fb.index("Fix the cause first") < fb.index(ROUTE_LEAD) < fb.index(f"> {CHANGED}")
     assert "the line the output points at if it fits" in fb and "known error" not in w.prompts[2]
+
+
+def test_a_failing_gates_known_fix_takes_a_different_line_under_it(tmp_path, monkeypatch):
+    _ask_jev(monkeypatch, fake_jev("b00", 0.9))
+    w = Steps(_write({"plexus/gate.txt": "error: null or expired layer"}), _write({"plexus/gate.txt": "x"}))
+    _run(_mission(), _repo(tmp_path), w)
+    fb = w.prompts[1].split("## Why the last attempt was dropped", 1)[1]
+    assert (fb.index("It is a known error") < fb.index("the line the output points at:\n> - `FindOrOpen`")
+            < fb.index(SECOND_LEAD) < fb.index(f"> {CHANGED}\n"))
+
+
+def test_a_keep_never_asks_even_with_a_known_error_in_its_targets(tmp_path, monkeypatch):
+    seen = []
+    _ask_jev(monkeypatch, fake_jev("b00", 0.9, seen))
+    _metrics(monkeypatch, _failing(5.0), _failing(5.0, NULL_LAYER), _failing(4.0, NULL_LAYER))
+    w = Steps(_write({"plexus/a.py": "A = 1\n"}), _write({"plexus/a.py": "A = 2\n"}))
+    dropped, kept = _run(_mission(), _repo(tmp_path), w).attempts
+    assert kept.kept and kept.fix_route == {} and dropped.fix_route["pick"] == "b00" and len(seen) == 1
+
+
+def test_a_drop_that_ran_nothing_makes_no_call_even_right_after_a_known_fix_asked(tmp_path, monkeypatch):
+    asks = []
+
+    def ask(*args):
+        asks.append(args)
+        return FixRoute(note="faked")
+    monkeypatch.setattr(loop, "route_failure", ask)
+    _metrics(monkeypatch, _failing(5.0), _failing(5.0, NULL_LAYER))
+    w = Steps(_write({"plexus/a.py": "A = 1\n"}),
+              lambda wt: WorkerResult(False, "model returned nothing usable"),
+              lambda wt: WorkerResult(True, "ok"),
+              _write({"tests/acceptance/x.txt": "x"}),
+              _write({"docs/other.md": "x"}),
+              _write({"plexus/x.tmp": "x"}))
+    full, *rest = _run(_mission(attempts=6), _repo(tmp_path), w).attempts
+    assert full.fix_route["known_fix"] and len(asks) == 1 and all(a.fix_route == {} for a in rest)
+    assert [a.reason.split(":")[0].split(" ")[0] for a in rest] == ["worker", "no", "touched", "touched", "wrote"]
 
 
 def test_a_drop_that_ran_nothing_makes_no_call(tmp_path, monkeypatch):
@@ -723,6 +974,18 @@ def test_a_left_out_drop_makes_no_call_and_still_shows_the_last_full_attempts_li
     assert "the line the failure points at" in section
 
 
+def test_a_left_out_drop_makes_no_call_and_still_shows_both_lines_of_the_last_full_attempt(tmp_path, monkeypatch):
+    seen = []
+    _ask_jev(monkeypatch, fake_jev("b00", 0.9, seen))
+    _metrics(monkeypatch, _failing(5.0), _failing(5.0, NULL_LAYER))
+    w = Steps(_write(BOTH), _write(ONLY_A), _write(ONLY_A))
+    full, lo1, lo2 = _run(_mission(files=FILES, attempts=3), _repo(tmp_path), w).attempts
+    assert full.fix_route["known_fix"] == "other" and len(seen) == 1 and lo1.fix_route == lo2.fix_route == {}
+    section = w.prompts[2].split("## Your last full attempt (1) was dropped", 1)[1].split("## Your last attempt's files", 1)[0]
+    assert (section.index("This is a known error") < section.index(f"> - {FINDOR}\n") < section.index(SECOND_LEAD)
+            < section.index(f"> {CHANGED}\n"))
+
+
 def test_a_left_out_drop_shows_the_line_for_a_last_full_attempt_with_only_a_metric_tail(tmp_path, monkeypatch):
     seen = []
     _ask_jev(monkeypatch, fake_jev("b01", 0.9, seen))
@@ -732,6 +995,23 @@ def test_a_left_out_drop_shows_the_line_for_a_last_full_attempt_with_only_a_metr
     section = w.prompts[2].split("## Your last full attempt (1) was dropped", 1)[1].split("## Your last attempt's files", 1)[0]
     assert section.index("This is what it printed:") < section.index(ROUTE_LEAD) < section.index(f"> {FINDOR}")
     assert "the line the output points at" in section
+
+
+def test_a_line_quoted_in_the_last_full_attempts_section_counts_as_shown(tmp_path, monkeypatch):
+    _ask_jev(monkeypatch, fake_jev("b00", 0.9))
+    _metrics(monkeypatch, _failing(5.0), _failing(5.0, TYPE_ERROR), _failing(5.0, TYPE_ERROR))
+    w = Steps(_write(BOTH), _write(ONLY_A), _write({"plexus/a.py": "A = 3\n", "plexus/b.py": "B = 3\n"}))
+    full, _, again = _run(_mission(files=FILES, attempts=3), _repo(tmp_path), w).attempts
+    assert not full.fix_route["shown_before"] and again.fix_route["shown_before"]
+
+
+def test_a_left_out_drop_on_another_step_does_not_bring_back_the_other_steps_router_line(tmp_path):
+    m, r = _mission(), _repo(tmp_path)
+    full = _drop(detail="the end of the run", target_failures=[f"{TEST_ID}\n{TYPE_ERROR}"], fix_route=QUOTED)
+    left = _drop(n=2, reason=f"{LEFT_OUT}: plexus/b.py", changed=["plexus/a.py"])
+    left.route = "S2 via first"
+    p = build_prompt(m, r, 5, None, [full, left], 100000, step=Step("S2", ["t/test_two.py"], "Do step two."))
+    assert "## Your last full attempt" not in p and f"> {CHANGED}" not in p
 
 
 def test_a_drop_asks_when_it_ran_and_printed_something_whatever_its_reason(tmp_path, monkeypatch):
@@ -749,8 +1029,8 @@ def test_a_drop_asks_when_it_ran_and_printed_something_whatever_its_reason(tmp_p
     assert missing.reason.startswith("tests went missing") and unavailable.reason.startswith("metric unavailable")
     assert len(seen) == 3 and silent.fix_route == {}
     # A tail is only ever matched by a known fix for a failing gate, so the regex in the first tail
-    # quotes nothing in the prompt, and "no known fix matched" means the same to the router.
-    assert tail.fix_route["quoted"] and "known error" not in w.prompts[1]
+    # quotes nothing in the prompt, and the row says no known fix matched.
+    assert tail.fix_route["quoted"] and tail.fix_route["known_fix"] == "" and "known error" not in w.prompts[1]
     for p in w.prompts[1:]:
         fb = p.split("## Why the last attempt was dropped", 1)[1]
         assert fb.index("Fix the cause first") < fb.index(ROUTE_LEAD) < fb.index(f"> {CHANGED}")
@@ -941,11 +1221,36 @@ def test_a_route_that_is_not_quoted_changes_nothing_in_the_prompt(tmp_path, rout
     assert build_prompt(m, r, 5, None, [_drop(detail="the end of the run", fix_route=route)], 100000, step=m.steps[0]) == plain
 
 
-def test_a_known_fix_outranks_a_stored_route_in_the_prompt(tmp_path):
+def test_a_stored_route_goes_under_a_known_fix_and_adds_exactly_its_two_lines(tmp_path):
     m, r = _mission(), _repo(tmp_path)
-    a = _drop(detail="the end of the run", target_failures=[f"{TEST_ID}\n{NULL_LAYER}"], fix_route=QUOTED)
-    p = build_prompt(m, r, 5, None, [a], 100000, step=m.steps[0])
-    assert "This is a known error" in p and ROUTE_LEAD not in p and f"> {CHANGED}" not in p
+    failure = {"detail": "the end of the run", "target_failures": [f"{TEST_ID}\n{NULL_LAYER}"]}
+    plain = build_prompt(m, r, 5, None, [_drop(**failure)], 100000, step=m.steps[0])
+    p = build_prompt(m, r, 5, None, [_drop(**failure, fix_route=QUOTED)], 100000, step=m.steps[0])
+    added = f"{SECOND_LEAD}\n> {CHANGED}\n"
+    assert p.index(f"> - {FINDOR}\n") < p.index(added) and p.replace(added, "") == plain
+
+
+def test_the_compare_is_on_whole_lines_of_the_brief_not_on_their_quotes(tmp_path):
+    # The known fix below points at the first line holding its anchor. The same line shows once; another line is
+    # added, even when its text is a sentence of the known fix's line or the known fix's line is a sentence of it.
+    tail = "`FindOrOpen` returns `None` for a missing file."
+    prose = f"A prose rule long enough to be offered. {tail}"
+    indented = f"- A rule in an indented item, long enough to be offered. {tail}"
+    m = _mission()
+
+    def quotes(brief, routed):
+        a = _drop(detail="x", target_failures=[f"{TEST_ID}\n{NULL_LAYER}"], fix_route={**QUOTED, "line": routed})
+        return [ln for ln in fix_lines(m, _tree(tmp_path, brief), a) if ln.startswith("> ")]
+    # The same line: a prose line, an indented item brief_lines offers with its marker, and a list item.
+    for brief, routed in ((f"{prose}\n", prose), (f"  {indented}\n", indented), (f"- {prose}\n", prose)):
+        assert list(brief_lines(brief).values()) == [routed]
+        assert len(quotes(brief, routed)) == 1
+    # Another line: the routed line is the known fix's anchored sentence, or holds the known fix's whole line.
+    assert quotes(f"- {prose}\n- {tail}\n", tail) == [f"> …{tail}", f"> {tail}"]
+    assert quotes(f"- {tail}\n- {prose}\n", prose) == [f"> - {tail}", f"> {prose}"]
+    # Another line, though the two agree on all that either quote shows.
+    one, two = f"{LONG_FIRST} The end of one.", f"{LONG_FIRST} The end of two."
+    assert quotes(f"- {one}\n- {two}\n", two) == [f"> - {one}"[:KNOWN_FIX_CHARS + 2], f"> {two[:ROUTED_LINE_CHARS]}"]
 
 
 def test_a_routed_line_is_shown_whole_where_a_known_fix_would_clip(tmp_path):
@@ -972,6 +1277,21 @@ def test_one_rule_says_whether_a_known_fix_matched(tmp_path):
     for reason in ("no strict gain (5 vs best 5)", "metric unavailable: boom", "tests went missing (3 collected, was 5)"):
         assert drop_known_fixes(m, r, _drop(reason=reason, detail=NULL_LAYER)) == []
     assert drop_known_fixes(m, r, _drop(reason="gate 'build' failed")) == []
+
+
+def test_two_known_fixes_with_one_quote_print_it_once(tmp_path):
+    raw = _raw({"kind": "jev", "brief": BRIEF})
+    raw["known_fixes"].append(dict(raw["known_fixes"][0]))
+    out = fix_lines(mission_from_dict(raw), _tree(tmp_path), _drop(detail="x", target_failures=[f"{TEST_ID}\n{NULL_LAYER}"]))
+    assert [ln for ln in out if ln.startswith("> ")] == [f"> - {FINDOR}"]
+
+
+def test_known_fixes_print_in_mission_order(tmp_path):
+    raw = _raw({"kind": "jev", "brief": BRIEF})
+    raw["known_fixes"].insert(0, {"match": "is not an instance of 'str'", "file": BRIEF, "anchor": "`changed` is a list of `str`"})
+    a = _drop(detail="x", target_failures=[f"{TEST_ID}\n{NULL_LAYER}\n{TYPE_ERROR}"])
+    out = fix_lines(mission_from_dict(raw), _tree(tmp_path), a)
+    assert [ln for ln in out if ln.startswith("> ")] == [f"> - {CHANGED}", f"> - {FINDOR}"]
 
 
 # -- the real mission -------------------------------------------------------------------

@@ -189,13 +189,16 @@ max_consecutive_failures = 30
 cpu_threads = 8
 cargo_jobs = 4
 
-# The failure router (Joe, Nov 4, during run 19). When a dropped attempt's failure matches no known fix below,
-# ask TypeSafe's Jev which line of the brief fixes it, and quote that line in the next prompt when its confidence
-# clears the floor. A matching known fix means no call. It only shapes the prompt: gates and the metric still
-# decide, so a wrong quote can cost an attempt each time its failure comes back, and can never make a keep.
-# What leaves the machine, once Joe gives his go: each call sends TypeSafe the failure output (the target failures
-# and up to 4500 characters of test or gate output), the step's id and text, and the brief's prose lines. Nothing
-# else, and nothing when a known fix matches or the attempt ran nothing. The floor was judged on jev-1.14.0, so
+# The failure router (Joe, Nov 4, during run 19; wider, Nov 4). On every dropped attempt the gates or the metric
+# ran on that printed something, ask TypeSafe's Jev which line of the brief fixes its failure, whether or not a
+# known fix below matches, because a regex can fire on a symptom and name the wrong cause (rows 67 to 69). When
+# Jev's confidence clears the floor, the next prompt quotes that line as a guess: on its own when no known fix
+# matched, under the known fix as a second candidate when it is another line, and not at all when the known fix
+# already quotes that line. It only shapes the prompt: gates and the metric still decide, so a wrong quote can
+# cost an attempt each time its failure comes back, and can never make a keep.
+# What leaves the machine: each call sends TypeSafe the failure output (the target failures and up to 4500
+# characters of test or gate output), the step's id and text, and the brief's prose lines. Nothing else, and
+# nothing when the attempt ran nothing or printed nothing. The floor was judged on jev-1.14.0, so
 # the model is pinned: on run 19's brief, 32 of 39 replayed failures quoted, 30 right. The sample is small and
 # in-sample, so every pick, confidence and model goes in the ledger as fix_route, and the pick in REVIEW.md.
 # Lowering the floor has a known cost: at 0.6 an S2 failure (row 19) picks an S4 instruction, at 0.69. timeout_s

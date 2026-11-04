@@ -1,9 +1,12 @@
 """Failure routing: ask Jev which line of the brief fixes what a dropped attempt printed.
 
-A ``[[known_fixes]]`` regular expression quotes its brief line when it recognises a failure. When
-none does, the next prompt shows the failure with nothing under it, though the fix may be written
-down in the brief. ``route_failure`` offers Jev every prose line of the brief as one Choice, plus
-"none", and the next prompt quotes the pick only when its confidence clears the mission's floor.
+A ``[[known_fixes]]`` regular expression quotes its brief line when it recognises a failure. It only
+knows the failures already seen, and it can fire on a symptom and name the wrong cause, so the loop
+asks here on every dropped attempt the gates or the metric ran on that printed something, whether or
+not a known fix matches. ``route_failure`` offers Jev every prose line of the brief as one Choice, plus
+"none", and the next prompt quotes the pick only when its confidence clears the mission's floor: on
+its own when no known fix matched, under the known fixes as a second candidate when it is another
+line, and not at all when a known fix already quotes that line (``loop.fix_lines`` decides).
 
 The route only shapes the prompt. Whether an attempt is kept is still decided by the gates and the
 metric, so a wrong quote can cost an attempt each time its failure comes back, and can never make a
@@ -37,6 +40,8 @@ PROSE_MIN_CHARS = 40  # a shorter line outside a list is a label, not a rule
 NOTE_CHARS = 300
 NONE = "none"
 NONE_TEXT = "None of these lines addresses this failure."
+# What became of a pick that cleared the floor, by its row's "known_fix", for the log and REVIEW.md.
+QUOTED_SAID = {"": "quoted", "other": "quoted under a known fix", "same": "same line as its known fix"}
 FIX_LINE_INSTRUCTIONS = (
     "`failure_output` is what a coding model's failed attempt printed. Find the first error it shows in the "
     "attempt's own code, not in a test for later work. The options are lines of the brief the model works from. "
@@ -53,9 +58,16 @@ class FixRoute:
     pick: str = ""  # the option Jev chose ("b71", "l050", "none"), or "" when it never answered
     confidence: float | None = None
     line: str = ""  # the chosen line, whole; "" for "none", an unknown pick or no answer
-    quoted: bool = False  # the next prompt shows `line`
+    quoted: bool = False  # it cleared the floor, so the next prompt shows `line`, routed or as a known fix's own quote
     note: str = ""  # why it is not quoted
     model: str = ""  # the model that answered, as the response names it: the floor belongs to one model
+
+
+def option_text(line: str) -> str:
+    """A raw line of the brief as ``brief_lines`` offers it: a list item without its marker, any other
+    line stripped. A known fix's line goes through this too, so the two compare as whole lines."""
+    s = line.strip()
+    return s[2:].strip() if line.startswith("- ") else s
 
 
 def brief_lines(text: str) -> dict[str, str]:
@@ -79,8 +91,8 @@ def brief_lines(text: str) -> dict[str, str]:
         if not s or s.startswith("#"):
             continue
         if ln.startswith("- "):
-            if s[2:].strip():
-                items.append(s[2:].strip())
+            if text_of_item := option_text(ln):
+                items.append(text_of_item)
         elif len(s) > PROSE_MIN_CHARS:
             prose.append((no, s))
     items = list(dict.fromkeys(items))

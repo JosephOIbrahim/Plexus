@@ -114,7 +114,8 @@ class RouterSpec:
 
 @dataclass(frozen=True)
 class FixRouterSpec:
-    """How a failure no known fix matches is matched to a line of the brief (see fix_router.py)."""
+    """How a dropped attempt's failure is matched to a line of the brief, whether or not a known fix
+    matches it (see fix_router.py)."""
 
     kind: str = "none"  # "none" or "jev"
     model: str = "jev-latest"
