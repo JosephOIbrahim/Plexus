@@ -17,6 +17,9 @@
 # brief lines on the parser, S5's unseeded-delta rule, and the night budget (Joe, decision 2).
 # Nov 3, 20:20, after run 15 attempt 1 kept S3 honestly (9d7bb5f, reviewer: merge-ready): the brief
 # gains 'What the kept S3 code still owes S4' and S5's delta pins; S5 may fix in_scope's descendant rule.
+# Nov 3, 22:10, after run 16 attempts 1-2 left _on_event as pass (the S4 text named the S2 list, not the S3
+# one, and the worker applied only what was named): the S4 text names it, the dispatcher, the allowlist
+# (Sdf.Path prim paths, no '/**' glob) and ctx.author are spelled out, and a known fix quotes the dispatcher.
 
 [mission]
 name = "acceptance"
@@ -125,7 +128,7 @@ id = "S4"
 after = ["S3"]
 targets = ["tests/acceptance/phase1/test_t5_gate.py::test_write_inside_allowlist_lands"]
 files = ["plexus/core/neuron.py", "plexus/membrane/gate.py", "plexus/core/axon.py", "plexus/membrane/exchange.py", "plexus/core/stagekit.py"]
-text = "Runtime start/stop/wait_idle. First resend plexus/core/axon.py, plexus/membrane/exchange.py and plexus/core/stagekit.py whole with the fixes the brief lists under 'What the kept S2 code still owes S4' (queue.Queue with a real 50 ms window, a pending counter and idle(), no lock in the callback, the def <id> child in the participant layer); wait_idle polls axon.idle() and the running actions. Then: on each coalesced StageEvent, filter by the neuron's scope, evaluate it with Predicate.eval(changed, values) from S3 (changed: list of str paths from the event; values: dict of the composed values of Predicate.paths(); no Rust change in this step), run the action on a worker thread with a ctx whose author() checks the path allowlist (plexus/membrane/gate.py: /Exchange/<participant>/** plus granted paths), defines missing ancestors as def, authors the value and plexus:sourceLayer into the edit layer, and saves the layer. Define /Plexus/Neurons/<name> with PlexusNeuronAPI in the edit layer at register()."
+text = "Runtime start/stop/wait_idle. First resend plexus/core/axon.py, plexus/membrane/exchange.py and plexus/core/stagekit.py whole with the fixes the brief lists under 'What the kept S2 code still owes S4' (queue.Queue with a real 50 ms window, a pending counter and idle(), no lock in the callback, the def <id> child in the participant layer); Resend plexus/core/neuron.py whole too, with the fixes the brief lists under 'What the kept S3 code still owes S4': _on_event's pass replaced by the dispatcher, register() storing the per-neuron record, a NeuronHandle that is not frozen, /Plexus and /Plexus/Neurons as def, the allowlist held as Sdf.Path prim paths and never as a '/**' glob. wait_idle polls axon.idle() and the running actions. Then: on each coalesced StageEvent, filter by the neuron's scope, evaluate it with Predicate.eval(changed, values) from S3 (changed: list of str paths from the event; values: dict of the composed values of Predicate.paths(); no Rust change in this step), run the action on a worker thread with a ctx whose author() checks the path allowlist (plexus/membrane/gate.py: the prim path /Exchange/<participant> and everything under it, plus granted paths, each an Sdf.Path checked with HasPrefix; '/**' is wording, not a path), defines missing ancestors as def, authors the value and plexus:sourceLayer into the edit layer, and saves the layer. Define /Plexus/Neurons/<name> with PlexusNeuronAPI in the edit layer at register()."
 
 [[steps]]
 id = "S5"
@@ -303,6 +306,12 @@ anchor = "`in_scope` splits the path at the first"
 match = '''trim the rest before parse_cmp and parse_number'''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "Call `trim_start()` on the rest before `parse_cmp`"
+
+# Run 16 attempts 1-2: T5's Hints prim never existed because _on_event stayed `pass`.
+[[known_fixes]]
+match = '''invalid null prim[\s\S]*lookNeuron/Hints'''
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "The dispatcher lives in `_on_event`"
 
 # An S7 py.rs rewrite that drops compile_predicate, PredicateError or an add_* line fails the gate here.
 [[known_fixes]]

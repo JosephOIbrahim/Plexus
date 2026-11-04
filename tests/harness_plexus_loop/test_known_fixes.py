@@ -205,6 +205,9 @@ def test_the_real_null_layer_quote_carries_the_whole_fix():
      "and rejects the attribute of the scope prim", "splits the path at the first"),
     ("predicate_smoke hint: changed(...) compiles but the predicates with a comparator fail: trim the rest before "
      "parse_cmp and parse_number, and take the clause kind from the keyword", "Call `trim_start()`"),
+    # run 16 attempts 1 and 2: T5 target failure, as the junit report carries it
+    ("AssertionError: assert invalid null prim\n +  where invalid null prim = GetPrimAtPath('/Exchange/lookNeuron/Hints')",
+     "The dispatcher lives in `_on_event`"),
     ("predicate_smoke: cannot import plexus.core.predicate: ImportError: cannot import name 'compile_predicate'",
      "In S7 only, `py.rs` gains three pieces"),
 ])
