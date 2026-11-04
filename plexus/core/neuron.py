@@ -194,8 +194,11 @@ class NeuronRuntime:
                     if record.budget.admit(now) == "mute":
                         record.handle.state = "muted"
                         try:
-                            self._author_on_neuron(record, "plexus:state", "muted", Sdf.ValueTypeNames.Token)
-                            self._author_on_neuron(record, "plexus:flag:budget", "budget trip or mute", Sdf.ValueTypeNames.String)
+                            with Sdf.ChangeBlock():
+                                spec = self.edit_layer.GetPrimAtPath(record.handle.prim_path)
+                                _set_attr(spec, 'plexus:state', 'muted', Sdf.ValueTypeNames.Token)
+                                _set_attr(spec, 'plexus:flag:budget', 'budget trip or mute', Sdf.ValueTypeNames.String)
+                            self.edit_layer.Save()
                         except Exception:
                             # If saving fails, we still want to proceed with the next neuron
                             traceback.print_exc()
