@@ -44,6 +44,7 @@
 
 **Run 18 so far (the night run, S4 with the str-changed line):**
 - Attempt 1 (14.2 min, row 70): a one-file reply (`axon.py`, 904 tokens) after the handed-on drop; caught before the gates (`reply left out step files: neuron.py, gate.py, exchange.py, stagekit.py`), `axon.py` handed on. Prompt 559 s.
+- Attempt 2 (7.0 min, row 71): another one-file reply (`gate.py`, 120 tokens in 39 s), caught before the gates, `gate.py` handed on. Pattern: after a left-out drop the prompt carries only the one file the reply sent, and the worker edits that one again. A harness change for Joe's morning: on a left-out drop, carry the union of the previous handed-on set and the new file, so the prompt keeps showing the whole last full attempt.
 
 **Watch in run 13:** (1) `prompt_eval_s` per attempt after the first: the cache either shows up as a drop from ~780 s to well under 100 s, or it does not (then the prefix is not byte-identical or the model was evicted between attempts). (2) Whether any reply is dropped as `reply left out step files`: expected for one-file replies like run 12's attempts 1 and 3. (3) The compile errors that remain once E0106 is gone. (4) Focus/frozen drops, now that the rules sit behind ~85k of files.
 
