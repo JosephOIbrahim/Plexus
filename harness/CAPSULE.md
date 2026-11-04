@@ -25,6 +25,8 @@
 
 **Run 15 so far (the night run, S3 again with the gate):**
 - **Attempt 1 (45.9 min, row 62): KEPT, strict gain 9 -> 7, `9d7bb5f`.** All five files; skeleton 13 of 13; gates layers 3.5 s, core 1.5 s, **predicate_smoke 0.8 s passed**, cargo 0.8 s, unit 137 s; `test_bad_predicates_fail_at_registration` and `one-0.1-never-wakes` pass (the second passes for any runtime that never wakes; the wake plumbing is S4/S5). Prompt 26,976 tokens in 846.8 s (attempt 1 pays the full prompt; the brief changed), reply 4,777 tokens in 1,750.8 s. Attempt 2 routed to S4 via `first`.
+- Attempt 2 (32.9 min, row 63, S4 on the old brief): all five S4 files, every gate passed, no strict gain (7 vs 7): the handle stayed frozen, as the review predicted. Prompt 31,552 tokens in 553 s (S4's prompt shares less prefix), reply 3,343 tokens in 1,266 s.
+- **Run 15 stopped 20:29 after attempt 2 (1 keep, `9d7bb5f`, honest).** `prep/run16` landed as `c65c169` (the S3-owes-S4 section, S5's delta pins, S5 may fix `in_scope`); the loop branch stays at `9d7bb5f`, ahead of the mission by the keep and behind it by the capsule and brief commits until Joe merges. The night run restarts 20:31 from `9d7bb5f` on the same budget (120 / 11 h / 30), as run 16.
 
 **Watch in run 13:** (1) `prompt_eval_s` per attempt after the first: the cache either shows up as a drop from ~780 s to well under 100 s, or it does not (then the prefix is not byte-identical or the model was evicted between attempts). (2) Whether any reply is dropped as `reply left out step files`: expected for one-file replies like run 12's attempts 1 and 3. (3) The compile errors that remain once E0106 is gone. (4) Focus/frozen drops, now that the rules sit behind ~85k of files.
 
