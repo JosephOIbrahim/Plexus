@@ -123,6 +123,7 @@ class NeuronRuntime:
         handle = NeuronHandle(name=name, prim_path=neuron_path, wakes=0, state="dormant")
         record = _Record(compiled, scope, action, budget_wakes, budget_window, budget_tokens, handle)
         # S5 calls record.compiled.seed(self._values(record)) here.
+        record.compiled.seed(self._values(record))
         self._neurons[name] = record
         return handle
 
@@ -182,6 +183,7 @@ class NeuronRuntime:
                     continue
                 # S7's budget check goes here.
                 # S5 calls record.compiled.commit_wake(values) here.
+                record.compiled.commit_wake(values)
                 self._running += 1
                 record.handle.wakes += 1
                 record.handle.state = "awake"
