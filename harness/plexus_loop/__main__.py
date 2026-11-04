@@ -1,4 +1,4 @@
-"""Command line: python -m harness.plexus_loop {run,check,stop} ..."""
+"""Command line: python -m harness.plexus_loop {run,check,stop,decide} ..."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import gitops
+from . import decision_gate, gitops
 from .loop import STATE_DIR, MissionRun, RefuseToStart
 from .mission import MissionError, load_mission
 from .profile import choose_profile, houdini_state
@@ -23,7 +23,13 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--repo", type=Path, default=Path.cwd())
     s = sub.add_parser("stop", help="ask a running mission to stop after its current attempt")
     s.add_argument("--repo", type=Path, default=Path.cwd())
+    d = sub.add_parser("decide", help="sort a proposal into act or ask; exits 0 on act and 4 on ask")
+    d.add_argument("proposal", type=Path)
+    d.add_argument("--repo", type=Path, default=Path.cwd())
     args = ap.parse_args(argv)
+
+    if args.cmd == "decide":
+        return decision_gate.cli(args.proposal, args.repo)
 
     if args.cmd == "stop":
         state = gitops.repo_root(args.repo) / STATE_DIR
