@@ -178,13 +178,15 @@ def merge_carried(prev: dict[str, str], new: dict[str, str], step: Step | None) 
     order = own + sorted(f for f in merged if f not in own)
     out: dict[str, str] = {}
     used = 0
-    for rel in order:
+    # The reply's own files are admitted first, so near the limit a stale carried file gives way
+    # to what was just sent, never the other way round; the result is shown in step order.
+    for rel in [f for f in order if f in new] + [f for f in order if f not in new]:
         text = merged[rel]
         if used + len(text) > CARRY_CHARS:
             continue
         out[rel] = text
         used += len(text)
-    return out
+    return {rel: out[rel] for rel in order if rel in out}
 
 
 TARGET_FAILURES_MAX = 3  # at most this many target tests lead the feedback
@@ -247,8 +249,8 @@ class Attempt:
     # The dropped attempt's own step's target tests that failed, each "junit id\nits failure",
     # from the metric's junit report. The next prompt leads with them.
     target_failures: list[str] = field(default_factory=list)
-    # Files this dropped attempt sent, handed to the next prompt in full: it passed every gate
-    # with them, or it left out a step file and they were never built.
+    # Files the next prompt hands back in full after this drop: what it sent when it passed every
+    # gate, or, after a left-out drop, what it sent laid over the last full attempt's files.
     handed_on: list[str] = field(default_factory=list)
     # Ledger diagnostic: the step's files the dropped reply left out. The next prompt does not
     # use it; it lists what is absent from its own fresh worktree, which also lacks what was sent.
@@ -340,9 +342,9 @@ class Lock:
 def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult | None,
                  recent: list[Attempt], budget_chars: int, step: Step | None = None,
                  carried: tuple[int, dict[str, str]] | None = None) -> str:
-    """The worker's prompt. ``carried`` is (attempt number, {path: text}) of the files a dropped
-    attempt sent, when it passed every gate or left out a step file; it is shown only when that
-    attempt is the last one."""
+    """The worker's prompt. ``carried`` is (attempt number, {path: text}) of the files the next
+    prompt hands back after a drop: what a gate-passing attempt sent, or what a left-out reply sent
+    laid over the last full attempt's files; it is shown only when that attempt is the last one."""
     lines = [
         f"# Mission: {mission.name}",
         "",
@@ -437,7 +439,15 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
     if dropped is not None and left_out_of(dropped.reason):
         # A left-out drop ran nothing, so it has no failure of its own; the one the worker is
         # still meant to fix belongs to its last full attempt, which this section keeps in view.
-        prior = next((x for x in reversed(recent[:-1]) if not x.kept and (x.target_failures or x.detail)), None)
+        prior = None
+        for x in reversed(recent[:-1]):
+            if x.kept:
+                break  # a keep draws the line: nothing dropped before it is still the thing to fix
+            if step is not None and x.route.split()[:1] != [step.id]:
+                continue  # another step's failure is not this step's
+            if x.target_failures or x.detail:
+                prior = x
+                break
         if prior is not None:
             lines += ["", f"## Your last full attempt ({prior.n}) was dropped: {prior.reason}"]
             if prior.target_failures:
@@ -454,6 +464,11 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                 detail = prior.detail[-FEEDBACK_CHARS:]
                 fence = "`" * max(3, _longest_backtick_run(detail) + 1)
                 lines += ["This is what it printed:", fence, detail.rstrip("\n"), fence]
+                quotes = known_fix_quotes(mission, repo, [detail]) if GATE_FAILED.match(prior.reason) else []
+                if quotes:
+                    lines.append("It is a known error. The worker brief already gives its fix; apply it to the "
+                                 "line the output points at:")
+                    lines += [f"> {q}" for q in quotes]
     handed: dict[str, str] = {}
     if dropped is not None and carried and carried[0] == dropped.n and carried[1]:
         handed = carried[1]
@@ -473,7 +488,8 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
             f"{why} Its versions of these files are below. The repo no "
             "longer has them: every attempt starts from the last kept commit, so each is gone or back to "
             "its last kept version. Resend every one of them in full, as whole-file blocks, "
-            + (f"together with every file it left out: {', '.join(left)}." if left
+            + ((f"together with every file still missing: {', '.join(still)}." if (still := [f for f in left if f not in handed])
+                else "with the fix.") if left
                else "with the fix, plus any other file the step needs."),
         ]
         for rel, text in handed.items():

@@ -102,7 +102,7 @@ def test_the_next_prompt_names_what_was_left_out_and_never_says_it_passed(tmp_pa
     assert "## Why the last attempt was dropped" in second and f"{LEFT_OUT}: plexus/b.py" in second
     assert "## Your last attempt's files" in second and "A = 1" in second
     assert "left out plexus/b.py, so nothing it sent was built or tested" in second
-    assert "together with every file it left out: plexus/b.py." in second
+    assert "together with every file still missing: plexus/b.py." in second
     assert "passed every gate" not in second
 
 
@@ -139,13 +139,18 @@ def test_consecutive_left_out_drops_keep_the_last_full_attempt_in_view(tmp_path)
     assert "## Your last full attempt (1) was dropped" in fourth  # still attempt 1: 2 and 3 ran nothing
 
 
-def test_a_left_out_drop_after_a_kept_attempt_carries_only_what_it_sent(tmp_path):
-    # Nothing was carried for a keep, so a following left-out drop hands on its own files only.
+def test_a_keep_draws_the_line_for_what_a_left_out_drop_carries_and_shows(tmp_path):
+    # Full drop, then a keep, then a one-file reply: nothing was carried for the keep, so the
+    # left-out drop hands on its own file only, and the pre-keep failure is not "still the
+    # thing to fix" (reviewer, 28f1d16).
     r = _repo(tmp_path)
-    w = Steps(_write({**BOTH, "plexus/score.txt": "4\n"}), _write({"plexus/a.py": "A = 5\n"}))
-    a1, a2 = _run(_mission(FILES, attempts=2), r, w).attempts
-    assert a1.kept and a2.reason == f"{LEFT_OUT}: plexus/b.py" and a2.handed_on == ["plexus/a.py"]
-    assert "## Your last full attempt" not in w.prompts[1]  # a keep is not a drop to show
+    w = Steps(_write(BOTH), _write({**BOTH, "plexus/score.txt": "4\n"}), _write({"plexus/a.py": "A = 5\n"}), _write(BOTH))
+    a1, a2, a3, _a4 = _run(_mission(FILES, attempts=4), r, w).attempts
+    assert a1.reason.startswith("no strict gain") and a2.kept
+    assert a3.reason == f"{LEFT_OUT}: plexus/b.py" and a3.handed_on == ["plexus/a.py"]
+    fourth = w.prompts[3]  # the prompt after the left-out drop
+    assert "A = 5" in fourth and "together with every file still missing: plexus/b.py." in fourth
+    assert "## Your last full attempt" not in fourth  # attempt 1's failure sits before the keep
 
 
 def test_left_out_helpers():
