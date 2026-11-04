@@ -1,6 +1,6 @@
 # Capsule — Plexus
 
-**Where we are:** Mile 3.9 of ~4.2. Mission `acceptance`: **phase1 reads 0 failing of 11** (baseline 11) on `plexus-loop/acceptance` at `81843dc`, and 1 failing on `mission/acceptance`, which holds S4 and S5 on Joe's word. **S7 kept on row 84, 1 -> 0, but do not read that as done: the keep charges the budget before the predicate, so changes the predicate rejects can mute a neuron for good, and no frozen test sees it.** Reviews are in flight. Joe's new tests are what give that fix, S8 and the 50 ms window a failing target. Ledger: 85 attempts over 25 runs, 8 kept, one of them false (`d626436`, discarded). No attempt has ever run on the GPU.
+**Where we are:** Mile 3.9 of ~4.2. Mission `acceptance`: **phase1 reads 0 failing of 11** (baseline 11) on `plexus-loop/acceptance` at `81843dc`, and 1 failing on `mission/acceptance`, which holds S4 and S5 on Joe's word. **S7 kept on row 84, 1 -> 0, but do not read that as done: the keep charges the budget before the predicate, so changes the predicate rejects can mute a neuron for good, and no frozen test sees it.** Reviews are in flight. Joe's new tests are what give that fix, S8 and the 50 ms window a failing target. Ledger: 86 attempts over 26 runs, 8 kept, one of them false (`d626436`, discarded). No attempt has ever run on the GPU.
 
 **Read this before touching the mission between runs: the worker reads the brief from the loop branch, not the mission branch.** `build_prompt` reads the brief, the other context files and the known-fix anchors from the attempt's worktree, which is cut from the tip of `plexus-loop/acceptance`. Only the toml (step text, known-fix regexes, budget) comes from the main tree. So a brief commit reaches the worker only once the loop branch contains it. From run 16 to run 18 the loop branch stayed at `9d7bb5f`, whose brief is `fb66215`'s: the S3-owes-S4 section, the dispatcher lines and the "`changed` is `str`" line (`c65c169`, `2e6151e`, `8569214`) never reached the worker, across 10 attempts (rows 64-73, about 4.7 hours). Earlier reports here and in the session said those runs "carried" the lines and that the worker "ignored" them; that was wrong. What did reach it was the S4 step text in the toml, which is why run 17 suddenly filled in the dispatcher. Rule until a guard exists: never restart a run with the mission branch ahead of the loop branch on anything the worktree reads.
 
@@ -44,6 +44,8 @@
 
 ## Record
 
+**Run 26** (Nov 4, 12:39 to 13:32, from `9320a67`, ended by Claude) kept 0 of 1, S7c, 2 failing. Row 86 (47.8 min, `prompt_eval_s` 1,435.0, the model had reloaded): 11 against 2: the `try` outside the `for`, `_run_action` deleted, no `ChangeBlock`. Attempt 2 was ended about 30 seconds in.
+
 **Run 25** (Nov 4, 10:59 to 11:47, from `61fdaea`, every target test passes) kept 1 of 1. **Row 85 (43.6 min, `prompt_eval_s` 1,481.8, the model had reloaded): S7b kept, 2 -> 0, `95e02cc`**: the budget after the predicate in one lock, 0 of 13 failing on 3 of 3 runs. The isolation per record was in the text and is not in the code.
 
 **Run 24** (Nov 4, 09:47 to 10:09, from `f26b39d`, every target test passes) kept 1 of 1. **Row 84 (19.3 min, `prompt_eval_s` 101.5): S7 kept, 1 -> 0, `81843dc`**: three whole files plus `neuron.py` as a diff. The three probes pass and 0 of 11 failing on 3 of 3 runs of an export, and the budget check sits above the predicate: four changes the predicate rejects mute a neuron at budget 1 with 0 wakes.
@@ -82,7 +84,7 @@
 
 **Build-speed review** (Nov 3, `scratchpad/build_speed_report_2026-11-03.md`): four analysts. A CPU attempt is 97% model call; the cache cuts the prompt read about 7x from attempt 2; the 4090 held this model fully at `num_ctx` 32768 with Houdini open (measured), and 49152 needs q8_0 KV to fully offload; a second parallel CPU attempt hurts.
 
-**Ledger:** 85 attempts over 25 runs, 8 kept (`4e494b3` S1, `b18ebd0` S2, `d626436` false, `9d7bb5f` S3, `0c54a10` S4, `3594ff7` S5, `81843dc` S7 and `95e02cc` S7b not merged). 69 timed, mean 26.1 min, median 25.6 min, all CPU. Full comfy-cozy suite on `92bd48c`, Nov 4: 5,372 passed, 2 skipped, 46 deselected, 11 min 50 s.
+**Ledger:** 86 attempts over 26 runs, 8 kept (`4e494b3` S1, `b18ebd0` S2, `d626436` false, `9d7bb5f` S3, `0c54a10` S4, `3594ff7` S5, `81843dc` S7 and `95e02cc` S7b not merged). 69 timed, mean 26.1 min, median 25.6 min, all CPU. Full comfy-cozy suite on `92bd48c`, Nov 4: 5,372 passed, 2 skipped, 46 deselected, 11 min 50 s.
 
 **Released:** `plexus-0.1.0-alpha.3` (pre-release, Nov 3). Release plan page: https://claude.ai/artifact/ACC2nyghWEKizTD6wfcfVB (private; update it when S4 lands).
 

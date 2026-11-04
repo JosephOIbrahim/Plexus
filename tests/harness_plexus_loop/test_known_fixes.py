@@ -163,13 +163,10 @@ def test_every_acceptance_known_fix_resolves_to_one_brief_line():
         re.compile(k.match)
 
 
-def test_the_idle_fix_fires_on_the_failure_and_not_on_source_text_a_traceback_prints():
-    # Row 67 raised AttributeError on _queue_lock, and the traceback printed the test's own
-    # assert line; the bare regex quoted the pending-counter line under it.
+def test_runtime_did_not_go_idle_quotes_no_known_fix():
+    # Retired Nov 4: the kept axon is right, and on row 86 the cause was a reply that dropped _run_action.
     m = load_mission(REPO / "harness" / "plexus_loop" / "missions" / "acceptance.toml")
-    assert any("pending counter" in q for q in known_fix_quotes(m, REPO, ["t\n[failure] AssertionError: runtime did not go idle"]))
-    source = "t\n[failure] AttributeError: no _queue_lock\n    assert rt.wait_idle(5.0), \"runtime did not go idle\""
-    assert not any("pending counter" in q for q in known_fix_quotes(m, REPO, [source]))
+    assert not known_fix_quotes(m, REPO, ["t\n[failure] AssertionError: runtime did not go idle"])
 
 
 def test_the_real_null_layer_quote_carries_the_whole_fix():
@@ -216,7 +213,6 @@ def test_the_real_null_layer_quote_carries_the_whole_fix():
      "parse_cmp and parse_number, and take the clause kind from the keyword", "Call `trim_start()`"),
     # the two the S4 block's reviewers asked for
     ("AttributeError: 'PlexusAxon' object has no attribute 'idle'", "Expose `idle() -> bool`"),
-    ("AssertionError: runtime did not go idle", "The axon's pending counter subtracts"),
     # run 16 attempts 1 and 2: T5 target failure, as the junit report carries it
     ("AssertionError: assert invalid null prim\n +  where invalid null prim = GetPrimAtPath('/Exchange/lookNeuron/Hints')",
      "The dispatcher lives in `_on_event`"),

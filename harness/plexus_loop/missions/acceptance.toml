@@ -24,6 +24,7 @@
 # brief, proved on a scratch export (7 -> 5); Jev's floor 0.1; context_chars 135000. The worker reads the
 # brief from the loop branch, so the loop branch moves with this commit (plan section 10).
 # Nov 4, after S5 kept: the block is cut, because its copy of neuron.py no longer matches the tip.
+# Nov 4, row 86: S7c's text says the try goes inside the for and _run_action stays; the idle known fix retires.
 # Nov 4, both reviews of S7b's keep: S7c isolates each record and writes the mute's two attributes as one, aimed at Joe's isolation test, because the clause in S7b's text did not land.
 # Nov 4, both reviews of S7's keep: S7b moves the budget check below the predicate, aimed at Joe's order test, and isolates each record. The test goes last in context, so the cached prefix survives up to it.
 # Nov 4, rows 80 and 83 failed only on the worker's own Rust test: S7 writes none, as S3 did.
@@ -186,7 +187,7 @@ id = "S7c"
 after = ["S7b"]
 targets = ["tests/acceptance/phase1/test_mute_isolation.py"]
 files = ["plexus/core/neuron.py"]
-text = "A mute that cannot be saved, plexus/core/neuron.py only, no Rust change. Send the file whole, not as a diff: start from the copy under Files and change only what this step names. Two changes in _on_event, and frozen test_mute_isolation.py checks both. First, wrap the whole body of for record in list(self._neurons.values()) in try: ... except Exception: traceback.print_exc(), with every line of the body indented one more level and the continue lines and the thread start inside the try, so a Save that raises for one neuron leaves the neurons registered after it running. Second, on mute replace the two self._author_on_neuron calls with one block, after record.handle.state = 'muted': with Sdf.ChangeBlock(): spec = self.edit_layer.GetPrimAtPath(record.handle.prim_path), _set_attr(spec, 'plexus:state', 'muted', Sdf.ValueTypeNames.Token) and _set_attr(spec, 'plexus:flag:budget', 'budget trip or mute', Sdf.ValueTypeNames.String), then one self.edit_layer.Save() after the block, so the state and the flag reach the stage together even when the Save raises. Delete the comment naming S7. Keep the budget check below the predicate, the S5 lines and everything else as they are."
+text = "A mute that cannot be saved, plexus/core/neuron.py only, no Rust change. Send the file whole, not as a diff: start from the copy under Files and change only what this step names. Every other method stays exactly as it is, _run_action above all: it stays a separate method right after _on_event, with its try, except and finally, because without it the runtime never goes idle. Two changes inside _on_event, and frozen test_mute_isolation.py checks both. First, the line for record in list(self._neurons.values()): stays where it is, and the very next line, inside the for, becomes try:, with every line of the loop body indented one more level, and except Exception: traceback.print_exc() closes it at the end of the loop body, still inside the for. The continue lines and the thread start stay inside the try. So a Save that raises for one neuron lets the loop go on to the next one; a try outside the for would stop the loop, which is the bug. Second, on mute replace the two self._author_on_neuron calls with one block, after record.handle.state = 'muted': with Sdf.ChangeBlock(): spec = self.edit_layer.GetPrimAtPath(record.handle.prim_path), _set_attr(spec, 'plexus:state', 'muted', Sdf.ValueTypeNames.Token) and _set_attr(spec, 'plexus:flag:budget', 'budget trip or mute', Sdf.ValueTypeNames.String), then one self.edit_layer.Save() after the block, so the state and the flag reach the stage together even when the Save raises. Delete the comment naming S7. Keep the budget check below the predicate, the S5 lines and everything else as they are."
 
 [[steps]]
 id = "S8"
@@ -384,9 +385,5 @@ match = "'PlexusAxon' object has no attribute 'idle'"
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "Expose `idle() -> bool`"
 
-# An axon that subtracts once per window keeps at S4 and S5, then blocks a correct S7 here.
-[[known_fixes]]
-# Anchored: bare, it fired on source text a traceback prints (row 67's `_queue_lock` failure).
-match = '''(AssertionError|\[failure\]).*runtime did not go idle'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "The axon's pending counter subtracts"
+# Retired Nov 4: the "runtime did not go idle" known fix quoted the axon's pending counter. The kept axon is right, so on row 86, whose
+# reply had dropped _run_action, it would have sent the worker to a file its step cannot send.
