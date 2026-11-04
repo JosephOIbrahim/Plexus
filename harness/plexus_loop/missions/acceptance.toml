@@ -15,6 +15,8 @@
 # Nov 3, 18:50, after run 14 attempt 2 (d626436, a false keep: compile() rejected every predicate,
 # the valid ones included, and the rejection-only target passed): the predicate_smoke gate, six
 # brief lines on the parser, S5's unseeded-delta rule, and the night budget (Joe, decision 2).
+# Nov 3, 20:20, after run 15 attempt 1 kept S3 honestly (9d7bb5f, reviewer: merge-ready): the brief
+# gains 'What the kept S3 code still owes S4' and S5's delta pins; S5 may fix in_scope's descendant rule.
 
 [mission]
 name = "acceptance"
@@ -130,7 +132,7 @@ id = "S5"
 after = ["S4"]
 targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_delta_threshold_and_cache", "tests/acceptance/phase1/test_t4_provenance.py"]
 files = ["plexus/core/neuron.py"]
-text = "Delta wiring in plexus/core/neuron.py. predicate.rs already evaluates delta since S3: touch it only to fix a bug T2 shows, and add no .rs file. register() calls Predicate.seed with the composed values of Predicate.paths(); right before the action runs, call commit_wake with the same values eval saw, so sub-threshold changes accumulate; plexus:sourceLayer on the authored prim names the edit layer; the neuron returns to state dormant after each wake and wakes counts on the handle."
+text = "Delta wiring in plexus/core/neuron.py. predicate.rs already evaluates delta since S3: touch it only to fix a bug T2 shows, or to give in_scope the descendant branch the brief states (a path under scope + '/' is inside; 9d7bb5f rejects it), and add no .rs file. register() calls Predicate.seed with the composed values of Predicate.paths(); right before the action runs, call commit_wake with the same values eval saw, so sub-threshold changes accumulate; plexus:sourceLayer on the authored prim names the edit layer; the neuron returns to state dormant after each wake and wakes counts on the handle."
 
 [[steps]]
 id = "S6"
