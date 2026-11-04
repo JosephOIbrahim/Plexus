@@ -165,6 +165,30 @@ def carry_files(root: Path, changed: list[str], mission: Mission, step: Step | N
     return out
 
 
+def merge_carried(prev: dict[str, str], new: dict[str, str], step: Step | None) -> dict[str, str]:
+    """What the next prompt hands back after a left-out drop: the reply's own files over the set
+    the last prompt carried, the step's files first, within CARRY_CHARS.
+
+    After a left-out drop the worker edits its last draft rather than resending the step (run 18
+    attempts 1 and 2 each sent one file and saw only that file handed back), so the last full
+    attempt's versions of the other files stay in view instead of vanishing one reply at a time.
+    """
+    merged = {**prev, **new}
+    own = [f for f in (step.files if step else []) if f in merged]
+    order = own + sorted(f for f in merged if f not in own)
+    out: dict[str, str] = {}
+    used = 0
+    # The reply's own files are admitted first, so near the limit a stale carried file gives way
+    # to what was just sent, never the other way round; the result is shown in step order.
+    for rel in [f for f in order if f in new] + [f for f in order if f not in new]:
+        text = merged[rel]
+        if used + len(text) > CARRY_CHARS:
+            continue
+        out[rel] = text
+        used += len(text)
+    return {rel: out[rel] for rel in order if rel in out}
+
+
 TARGET_FAILURES_MAX = 3  # at most this many target tests lead the feedback
 
 
@@ -225,8 +249,8 @@ class Attempt:
     # The dropped attempt's own step's target tests that failed, each "junit id\nits failure",
     # from the metric's junit report. The next prompt leads with them.
     target_failures: list[str] = field(default_factory=list)
-    # Files this dropped attempt sent, handed to the next prompt in full: it passed every gate
-    # with them, or it left out a step file and they were never built.
+    # Files the next prompt hands back in full after this drop: what it sent when it passed every
+    # gate, or, after a left-out drop, what it sent laid over the last full attempt's files.
     handed_on: list[str] = field(default_factory=list)
     # Ledger diagnostic: the step's files absent from the worktree after the attempt, whatever the reply
     # sent. A file at tip the reply did not send is not here (that is a LEFT_OUT drop). The next prompt
@@ -320,9 +344,9 @@ class Lock:
 def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult | None,
                  recent: list[Attempt], budget_chars: int, step: Step | None = None,
                  carried: tuple[int, dict[str, str]] | None = None) -> str:
-    """The worker's prompt. ``carried`` is (attempt number, {path: text}) of the files a dropped
-    attempt sent, when it passed every gate or left out a step file; it is shown only when that
-    attempt is the last one."""
+    """The worker's prompt. ``carried`` is (attempt number, {path: text}) of the files the next
+    prompt hands back after a drop: what a gate-passing attempt sent, or what a left-out reply sent
+    laid over the last full attempt's files; it is shown only when that attempt is the last one."""
     lines = [
         f"# Mission: {mission.name}",
         "",
@@ -414,19 +438,60 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                     lines += [f"> {q}" for q in quotes]
         elif dropped.syntax:
             lines.append("Fix those files first.")
+    if dropped is not None and left_out_of(dropped.reason):
+        # A left-out drop ran nothing, so it has no failure of its own; the one the worker is
+        # still meant to fix belongs to its last full attempt, which this section keeps in view.
+        prior = None
+        for x in reversed(recent[:-1]):
+            if x.kept:
+                break  # a keep draws the line: nothing dropped before it is still the thing to fix
+            if step is not None and x.route.split()[:1] != [step.id]:
+                continue  # another step's failure is not this step's
+            if x.target_failures or x.detail:
+                prior = x
+                break
+        if prior is not None:
+            lines += ["", f"## Your last full attempt ({prior.n}) was dropped: {prior.reason}"]
+            if prior.target_failures:
+                block = "\n\n".join(prior.target_failures)
+                tfence = "`" * max(3, _longest_backtick_run(block) + 1)
+                lines += ["Its step's own target tests failed like this. This is still the thing to fix:",
+                          tfence, block, tfence]
+                quotes = known_fix_quotes(mission, repo, prior.target_failures)
+                if quotes:
+                    lines.append("This is a known error. The worker brief already gives its fix; apply it to the "
+                                 "line the failure points at:")
+                    lines += [f"> {q}" for q in quotes]
+            elif prior.detail:
+                detail = prior.detail[-FEEDBACK_CHARS:]
+                fence = "`" * max(3, _longest_backtick_run(detail) + 1)
+                lines += ["This is what it printed:", fence, detail.rstrip("\n"), fence]
+                quotes = known_fix_quotes(mission, repo, [detail]) if GATE_FAILED.match(prior.reason) else []
+                if quotes:
+                    lines.append("It is a known error. The worker brief already gives its fix; apply it to the "
+                                 "line the output points at:")
+                    lines += [f"> {q}" for q in quotes]
     handed: dict[str, str] = {}
     if dropped is not None and carried and carried[0] == dropped.n and carried[1]:
         handed = carried[1]
         left = left_out_of(dropped.reason)
-        why = (f"Attempt {dropped.n} left out {', '.join(left)}, so nothing it sent was built or tested."
-               if left else f"Attempt {dropped.n} passed every gate.")
+        if left:
+            sent = [f for f in handed if f in dropped.changed]
+            older = [f for f in handed if f not in dropped.changed]
+            why = (f"Attempt {dropped.n} sent only {', '.join(sent) or 'no step file'} and left out "
+                   f"{', '.join(left)}, so nothing it sent was built or tested."
+                   + (f" The other files below ({', '.join(older)}) are your last full attempt's versions."
+                      if older else ""))
+        else:
+            why = f"Attempt {dropped.n} passed every gate."
         lines += [
             "",
             "## Your last attempt's files",
             f"{why} Its versions of these files are below. The repo no "
             "longer has them: every attempt starts from the last kept commit, so each is gone or back to "
             "its last kept version. Resend every one of them in full, as whole-file blocks, "
-            + (f"together with every file it left out: {', '.join(left)}." if left
+            + ((f"together with every file still missing: {', '.join(still)}." if (still := [f for f in left if f not in handed])
+                else "with the fix.") if left
                else "with the fix, plus any other file the step needs."),
         ]
         for rel, text in handed.items():
@@ -653,7 +718,10 @@ class MissionRun:
                     # compile() is not a build: a .py that cannot compile is named now rather
                     # than handed back verbatim and caught by a gate one attempt later.
                     a.syntax = syntax_errors(wt, a.changed)
-                    carried = (n, carry_files(wt, a.changed, mi, route.step))
+                    # The reply's files over whatever the last prompt carried, so a one-file
+                    # reply does not shrink the next prompt to that one file.
+                    prev = carried[1] if carried and carried[0] == n - 1 else {}
+                    carried = (n, merge_carried(prev, carry_files(wt, a.changed, mi, route.step), route.step))
                     a.handed_on = list(carried[1])
                 else:
                     why, m, detail = self._evaluate(wt, profile, timing=a)
