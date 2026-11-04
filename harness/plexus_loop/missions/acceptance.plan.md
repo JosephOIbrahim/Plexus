@@ -428,3 +428,4 @@ Joe's word was to merge once both cleared, so nothing merged. As with the order,
 | 1 | Nov 4 | Placed the order test; merge the mission into the loop branch, add S7b, start the run | Yes | No: frozen tests are his |
 | 2 | Nov 4 | Merge S7 and S7b and push both branches once the reviewer and adversary clear them; they did not | Came before the recommendation | No: merges are his |
 | 3 | Nov 4 | Placed the isolation test, which starts S7c | Yes | No: frozen tests are his |
+| 4 | Nov 4 | Once the reviewer and adversary clear S7c, merge S7, S7b and S7c without waiting for the burst finding, and push both branches | Yes | No: merges are his |
