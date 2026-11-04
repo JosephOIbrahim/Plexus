@@ -189,6 +189,25 @@ max_consecutive_failures = 30
 cpu_threads = 8
 cargo_jobs = 4
 
+# The failure router (Joe, Nov 4, during run 19). When a dropped attempt's failure matches no known fix below,
+# ask TypeSafe's Jev which line of the brief fixes it, and quote that line in the next prompt when its confidence
+# clears the floor. A matching known fix means no call. It only shapes the prompt: gates and the metric still
+# decide, so a wrong quote can cost an attempt each time its failure comes back, and can never make a keep.
+# What leaves the machine, once Joe gives his go: each call sends TypeSafe the failure output (the target failures
+# and up to 4500 characters of test or gate output), the step's id and text, and the brief's prose lines. Nothing
+# else, and nothing when a known fix matches or the attempt ran nothing. The floor was judged on jev-1.14.0, so
+# the model is pinned: on run 19's brief, 32 of 39 replayed failures quoted, 30 right. The sample is small and
+# in-sample, so every pick, confidence and model goes in the ledger as fix_route, and the pick in REVIEW.md.
+# Lowering the floor has a known cost: at 0.6 an S2 failure (row 19) picks an S4 instruction, at 0.69. timeout_s
+# is a deadline on the whole call; the slowest of 1,131 replayed calls took 1.32 s. Needs TYPESAFE_API_KEY, as
+# [router] does; without it nothing is quoted and the run goes on.
+[fix_router]
+kind = "jev"
+model = "jev-1.14.0"
+brief = "harness/plexus_loop/missions/acceptance.worker.md"
+min_confidence = 0.7
+timeout_s = 10
+
 # Recognised failures and the brief line that fixes each (harness quotes it under the
 # target-test failure). Each anchor appears once in the brief; a test checks they resolve.
 [[known_fixes]]

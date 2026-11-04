@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -46,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"mission {mission.name}: worker {mission.worker.kind} ({mission.worker.model}), "
               f"{len(mission.gates)} gate(s), metric {mission.metric.kind}")
         print(f"Houdini: {state}; next attempt runs on the {p.device}")
+        fr = mission.fix_router
+        if fr.kind != "none":
+            key = "is set" if os.environ.get(fr.api_key_env, "").strip() else "is NOT set, so nothing will be quoted"
+            print(f"fix router: {fr.kind} ({fr.model}), floor {fr.min_confidence:g}; {fr.api_key_env} {key}")
         print("ready" if not missing else f"not ready: missing {', '.join(missing)}")
         return 0 if not missing else 2
 
