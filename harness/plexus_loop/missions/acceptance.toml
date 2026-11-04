@@ -20,6 +20,9 @@
 # Nov 3, 22:10, after run 16 attempts 1-2 left _on_event as pass (the S4 text named the S2 list, not the S3
 # one, and the worker applied only what was named): the S4 text names it, the dispatcher, the allowlist
 # (Sdf.Path prim paths, no '/**' glob) and ctx.author are spelled out, and a known fix quotes the dispatcher.
+# Nov 4 (Joe: 'yes to all four', 'keep the block'): S4 copies neuron.py and gate.py from a block in the
+# brief, proved on a scratch export (7 -> 5); Jev's floor 0.1; context_chars 135000. The worker reads the
+# brief from the loop branch, so the loop branch moves with this commit (plan section 10).
 # Nov 4, 00:05, after run 17 attempt 1 (the dispatcher landed; it passed Sdf.Path objects as `changed`, so
 # eval raised TypeError on the axon thread and the action never ran): `changed` is a list of str; wait_idle
 # waits for the running action; the handle object itself is mutated.
@@ -95,16 +98,21 @@ timeout_s = 3600
 # Run 12 attempt 4's prompt at 100000 chars cut plexus/membrane/exchange.py and the schema
 # files (checked against the rebuilt prompt). 120000 holds every run 12 prompt whole; at the
 # measured ~3.7 chars per token that is ~32k tokens, and 49152 leaves room for a 6k-token reply.
-context_chars = 120000
+# Nov 4: 135000. With the S4 block in the brief, 120000 cuts stagekit.py and exchange.py from S4's first
+# prompt and neuron.py after a gate failure. Measured on the real build_prompt: the first prompt is
+# 127,474 chars, 33,956 tokens; the worst of ten states leaves 6,646 tokens after a 6,500-token reply.
+context_chars = 135000
 num_ctx = 49152
 
 [router]
 # Joe (Nov 3): Jev for routing. Steps name their prerequisites (`after`), so Jev only ever
-# chooses among steps that are ready; with one ready step it is not called at all. 0.5 is the
-# docs' floor below which a pick falls back to the earliest ready step.
+# chooses among steps that are ready; with one ready step it is not called at all. Code now keeps
+# unready steps out, so any pick is safe and a wrong one costs one attempt: the floor only sends a
+# near coin flip to the earliest ready step. At 0.5 Jev lost its first real choice (S7 at 0.36, Nov 4;
+# with two options 0.5 needs p >= 0.75).
 kind = "jev"
 model = "jev-latest"
-min_confidence = 0.5
+min_confidence = 0.1
 
 [[steps]]
 id = "S1"
@@ -131,14 +139,14 @@ id = "S4"
 after = ["S3"]
 targets = ["tests/acceptance/phase1/test_t5_gate.py::test_write_inside_allowlist_lands"]
 files = ["plexus/core/neuron.py", "plexus/membrane/gate.py", "plexus/core/axon.py", "plexus/membrane/exchange.py", "plexus/core/stagekit.py"]
-text = "Runtime start/stop/wait_idle. First resend plexus/core/axon.py, plexus/membrane/exchange.py and plexus/core/stagekit.py whole with the fixes the brief lists under 'What the kept S2 code still owes S4' (queue.Queue with a real 50 ms window, a pending counter and idle(), no lock in the callback, the def <id> child in the participant layer); Resend plexus/core/neuron.py whole too, with the fixes the brief lists under 'What the kept S3 code still owes S4': _on_event's pass replaced by the dispatcher, register() storing the per-neuron record, a NeuronHandle that is not frozen, /Plexus and /Plexus/Neurons as def, the allowlist held as Sdf.Path prim paths and never as a '/**' glob. wait_idle polls axon.idle() and the running actions. Then: on each coalesced StageEvent, filter by the neuron's scope, evaluate it with Predicate.eval(changed, values) from S3 (changed: list of str paths from the event; values: dict of the composed values of Predicate.paths(); no Rust change in this step), run the action on a worker thread with a ctx whose author() checks the path allowlist (plexus/membrane/gate.py: the prim path /Exchange/<participant> and everything under it, plus granted paths, each an Sdf.Path checked with HasPrefix; '/**' is wording, not a path), defines missing ancestors as def, authors the value and plexus:sourceLayer into the edit layer, and saves the layer. Define /Plexus/Neurons/<name> with PlexusNeuronAPI in the edit layer at register()."
+text = "Runtime dispatcher, five whole files. plexus/core/neuron.py and plexus/membrane/gate.py are the brief's two S4 blocks under 'What the kept S3 code still owes S4', copied exactly: the kept neuron.py's _on_event is pass, and that block replaces it. No Rust change. That neuron.py's wait_idle calls axon.idle(), which the kept axon does not have, so also resend plexus/core/axon.py, plexus/membrane/exchange.py and plexus/core/stagekit.py whole with the fixes the brief lists under 'What the kept S2 code still owes S4' (queue.Queue with a real 50 ms window, a pending counter that falls by every notice drained, idle(), no lock in the callback, the def <id> child in the participant layer)."
 
 [[steps]]
 id = "S5"
 after = ["S4"]
 targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_delta_threshold_and_cache", "tests/acceptance/phase1/test_t4_provenance.py"]
 files = ["plexus/core/neuron.py"]
-text = "Delta wiring in plexus/core/neuron.py. predicate.rs already evaluates delta since S3: touch it only to fix a bug T2 shows, or to give in_scope the descendant branch the brief states (a path under scope + '/' is inside; 9d7bb5f rejects it), and add no .rs file. register() calls Predicate.seed with the composed values of Predicate.paths(); right before the action runs, call commit_wake with the same values eval saw, so sub-threshold changes accumulate; plexus:sourceLayer on the authored prim names the edit layer; the neuron returns to state dormant after each wake and wakes counts on the handle."
+text = "Delta wiring in plexus/core/neuron.py. predicate.rs already evaluates delta since S3: touch it only to fix a bug T2 shows, or to give in_scope the descendant branch the brief states (a path under scope + '/' is inside; 9d7bb5f rejects it), and add no .rs file. Fill the two comments that name S5: register() calls record.compiled.seed(self._values(record)), and _on_event, under the lock, calls record.compiled.commit_wake(values) with the same values eval saw, so sub-threshold changes accumulate. S7's comment stays above that call."
 
 [[steps]]
 id = "S6"
@@ -152,7 +160,7 @@ id = "S7"
 after = ["S5"]
 targets = ["tests/acceptance/phase1/test_t3_budget.py"]
 files = ["crates/plexus-core/src/budget.rs", "crates/plexus-core/src/lib.rs", "crates/plexus-core/src/py.rs", "plexus/core/neuron.py"]
-text = "Rust Budget in crates/plexus-core/src/budget.rs, plain Rust: Budget::new(wakes: u32, window_s: f64), peek(&self, now: f64) -> &'static str (pure) and admit(&mut self, now: f64) -> &'static str, each wake, trip or mute. A wake at t counts while now < t + window_s; a wake resets the trip count; the third consecutive trip mutes; once muted, always mute. Add #[cfg(test)] tests where Budget::new(1, 10.0) admitted at t = 0, 2, 4, 6 gives wake, trip, trip, mute. lib.rs adds mod budget;. py.rs, whole file, gains the brief's PyBudget block and its add_class line. The runtime follows Budget order in the brief with the injected clock; on mute it writes plexus:state = muted plus a plexus:flag attribute on the neuron prim in the edit layer, saved."
+text = "Rust Budget in crates/plexus-core/src/budget.rs, plain Rust: Budget::new(wakes: u32, window_s: f64), peek(&self, now: f64) -> &'static str (pure) and admit(&mut self, now: f64) -> &'static str, each wake, trip or mute. A wake at t counts while now < t + window_s; a wake resets the trip count; the third consecutive trip mutes; once muted, always mute. Add #[cfg(test)] tests where Budget::new(1, 10.0) admitted at t = 0, 2, 4, 6 gives wake, trip, trip, mute. lib.rs adds mod budget;. py.rs, whole file, gains the brief's PyBudget block and its add_class line. The runtime follows Budget order in the brief with the injected clock; on mute it writes plexus:state = muted plus a plexus:flag attribute on the neuron prim in the edit layer, saved. If T3 fails with 'runtime did not go idle', the kept axon subtracts once per window: also resend plexus/core/axon.py whole, with pending falling by every notice drained."
 
 [[steps]]
 id = "S8"
@@ -321,3 +329,15 @@ anchor = "The dispatcher lives in `_on_event`"
 match = '''cannot import plexus\.core\.predicate'''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "In S7 only, `py.rs` gains three pieces"
+
+# S4 with the kept axon: the block's wait_idle calls axon.idle(), which the S2 axon does not have.
+[[known_fixes]]
+match = "'PlexusAxon' object has no attribute 'idle'"
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "Expose `idle() -> bool`"
+
+# An axon that subtracts once per window keeps at S4 and S5, then blocks a correct S7 here.
+[[known_fixes]]
+match = "runtime did not go idle"
+file = "harness/plexus_loop/missions/acceptance.worker.md"
+anchor = "The axon's pending counter subtracts"

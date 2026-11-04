@@ -164,7 +164,6 @@ What this fixes for the other files:
 - Propagate `parse_path`'s `Err` with `?`, never replace it with a catch-all message: the scope error must reach Python as the `PredicateError` text.
 - Empty source, a trailing `AND`, and `AND` not followed by whitespace are each an `Err`; a predicate with no clauses never compiles.
 - A path with no cache entry makes a `delta` clause false; never compare against 0.0. `seed` fills the cache from the composed values of `paths()` at registration: after `seed`, every path with a numeric composed value has an entry; a path without one (missing attribute, non-numeric value, `None`) stays absent and its `delta` clause is false until a wake commits a value.
-- In `neuron.py`, `register()` keeps the compiled predicate, the scope, the action and the budget numbers on a per-neuron record the runtime reads later (S4 adds the dispatcher that reads it). `prim_path` on the handle is `Sdf.Path(f"/Plexus/Neurons/{name}")`, never a `str`. `/Plexus`, `/Plexus/Neurons` and the neuron prim are all `def`: `Sdf.CreatePrimInLayer` leaves the ancestors as `over`, so set `specifier = Sdf.SpecifierDef` on each. The default clock is `time.monotonic`. `compile_predicate` is imported at the top of the file (`predicate.py` is `pxr`-free, so there is no cycle). `__init__` creates the axon; `start()` starts it and attaches the dispatcher (S4), idempotently; `wait_idle` may return `True` until S4.
 
 **In S3, `predicate.rs` starts from this skeleton** (checked: `cargo check` passes on it as written, with unused warnings only). Keep every type, derive and signature exactly as written, lifetimes included; replace each `todo!()` with its body; add no `use` beyond `std`, no `crate::`, no `#[cfg(test)]` and no error type. Nothing in it does anything yet: `compile`'s grammar, the scope rule, `paths()` order, the delta cache rule and every comparison are yours to write inside these signatures.
 
@@ -361,20 +360,231 @@ Write every schema and attribute T0 lists, with its exact type and token order.
 - Threads, events, locks and queues come from Python's `threading` and `queue` modules (`threading.Event()`, `threading.RLock()`, `queue.Queue()`), never from `pxr`: `Tf` has no `Event` and no `Token`. A stop flag is `self._stop_event = threading.Event()`. `Tf.Event()` and `Tf.Token()` fail with `AttributeError: module 'pxr.Tf' has no attribute ...` (checked on 26.5; run 8 attempts 2 and 3).
 - The dispatcher blocks on `queue.get(timeout=...)` and closes the window 50 ms after the first event. That design measured T1 p95 = 52 ms against the 250 ms budget. Don't poll with long sleeps.
 
-**What the kept S3 code still owes S4** (review of run 15 attempt 1, `9d7bb5f`, Nov 3). S3's target passes on it and the `predicate_smoke` gate holds; S4 sends `plexus/core/neuron.py` again, whole, with these fixed. Run 16 attempts 1 and 2 applied the S2 list above and nothing from this one: both left `_on_event` as `pass`, so no action ever ran, and T5's `Hints` prim never existed. Each item here is as binding as the S2 list:
-- `NeuronHandle` is a plain `@dataclass` (not frozen) that the runtime mutates in place under its lock (`record.handle.wakes += 1`, `record.handle.state = ...`), or a class whose `wakes` and `state` are properties over the per-neuron record. The tests hold the object `register()` returned and read `h.wakes` and `h.state` from it later. `9d7bb5f` has `@dataclass(frozen=True)` with `wakes=0` baked in at `register()`, so `handle.wakes += 1` raises `FrozenInstanceError` and no wake can ever show.
-- `register()` stores `self._neurons[name] = record` holding `compiled`, `scope`, `action`, the three budget numbers and `handle`, where `NeuronHandle` is a plain `@dataclass` (no `frozen=True`), so `handle.wakes += 1` works; the dispatcher reads that record. `_run_action(record, values)` builds `ctx = _Ctx(self, record)`, calls `record.action(ctx)` inside `try` / `except Exception: traceback.print_exc()`, and in `finally`, under the lock, sets `record.handle.state = "dormant"` and `self._running -= 1`. `wait_idle(timeout)` polls every 5 ms until `time.monotonic()` passes its deadline and returns `True` the first time `(self._axon is None or self._axon.idle()) and self._running == 0`, else `False`. `stop()` joins the live action threads, then calls `axon.cool()`. `9d7bb5f` computes `compiled` and drops it, never writes `self._neurons`, and keeps `action` and `scope` nowhere.
-- `/Plexus` and `/Plexus/Neurons` are `def` too: after `Sdf.CreatePrimInLayer`, set `specifier = Sdf.SpecifierDef` on `edit_layer.GetPrimAtPath("/Plexus")` and on `.../Neurons`, as on the neuron prim. `Usd.PrimRange("/Plexus")` prunes an `over` subtree, so T6's record would be empty.
-- `Predicate.eval`'s `changed` is an exact string match against `paths()`, so Python expands the event first: `changed = [p for p in pred.paths() if Sdf.Path(p) in ev.paths or any(Sdf.Path(p).HasPrefix(r) for r in ev.resynced)]` (the rule two paragraphs below). A resync at an ancestor never reaches Rust by itself.
+**What the kept S3 code still owes S4** (review of run 15 attempt 1, `9d7bb5f`, Nov 3). S3's target passes on it and the `predicate_smoke` gate holds, but its `_on_event` is `pass`, so no action ever runs and T5's `Hints` prim never exists.
+
+**In S4, write `plexus/core/neuron.py` and `plexus/membrane/gate.py` whole, exactly as these two blocks,** keeping every name. They replace the kept `neuron.py`, whose `_on_event` is `pass`. Leave the comments naming S5 and S7 as comments: those steps fill them. Your reply still holds all five step files: also `axon.py`, `exchange.py` and `stagekit.py`, whole, with the fixes under 'What the kept S2 code still owes S4'. This `wait_idle` needs two of them: `axon.idle()`, and a pending count that falls by every notice drained, after the subscribers return. From S5 on, start from the `neuron.py` under Files, not from these blocks.
+
+`plexus/core/neuron.py`, whole:
+
+```python
+"""Neuron runtime and neuron prim management."""
+
+from dataclasses import dataclass
+from pathlib import Path
+import threading
+import time
+import traceback
+from typing import Callable
+
+from pxr import Sdf, Usd
+
+from plexus.core.axon import PlexusAxon
+from plexus.core.predicate import compile_predicate
+from plexus.membrane.exchange import register_participant
+from plexus.membrane.gate import check_allowlist
+
+
+@dataclass
+class NeuronHandle:
+    """Never frozen: the runtime changes wakes and state on this object in place, and callers hold it."""
+    name: str
+    prim_path: Sdf.Path
+    wakes: int
+    state: str
+
+
+@dataclass
+class _Record:
+    compiled: object
+    scope: str
+    action: Callable
+    budget_wakes: int
+    budget_window: float
+    budget_tokens: int
+    handle: NeuronHandle
+
+
+def _set_attr(spec, name, value, type_name):
+    """A bare Sdf.AttributeSpec on a name that already exists raises Tf.ErrorException, so a second wake needs this."""
+    attr = spec.attributes.get(name) or Sdf.AttributeSpec(spec, name, type_name)
+    attr.default = value
+
+
+class _Ctx:
+    def __init__(self, runtime, record):
+        self._runtime = runtime
+        self._record = record
+
+    def author(self, prim_path, attr_name, value, type_name):
+        rt = self._runtime
+        path = Sdf.Path(prim_path)
+        if not check_allowlist(path, rt._allowlist):
+            rt._author_on_neuron(self._record, "plexus:flag", f"denied: {path}", Sdf.ValueTypeNames.String)
+            return
+        layer = rt.edit_layer
+        with rt._lock:
+            with Sdf.ChangeBlock():
+                spec = Sdf.CreatePrimInLayer(layer, path)
+                for prefix in path.GetPrefixes():
+                    layer.GetPrimAtPath(prefix).specifier = Sdf.SpecifierDef
+                _set_attr(spec, attr_name, value, type_name)
+                _set_attr(spec, "plexus:sourceLayer", layer.identifier, Sdf.ValueTypeNames.String)
+            layer.Save()
+
+
+class NeuronRuntime:
+    def __init__(self, exchange: Path, participant_id: str, *, clock=time.monotonic, global_wakes_per_min: int = 60):
+        self._exchange = exchange
+        self._participant_id = participant_id
+        self._clock = clock
+        self._global_wakes_per_min = global_wakes_per_min
+        self._stage = None
+        self._edit_layer = None
+        self._axon = None
+        self._stop_event = threading.Event()
+        self._neurons = {}  # name -> _Record
+        self._lock = threading.RLock()
+        self._running = 0
+        self._allowlist = [Sdf.Path(f"/Exchange/{participant_id}")]
+        self._register_participant()
+
+    def _register_participant(self):
+        register_participant(self._exchange, self._participant_id)
+
+    @property
+    def stage(self):
+        if self._stage is None:
+            self._stage = Usd.Stage.Open(str(self._exchange))
+        return self._stage
+
+    @property
+    def edit_layer(self):
+        if self._edit_layer is None:
+            from pathlib import Path
+            layer_path = Path(self._exchange).parent / f"from_{self._participant_id}.usda"
+            self._edit_layer = Sdf.Layer.FindOrOpen(str(layer_path))
+        return self._edit_layer
+
+    def register(self, name: str, *, scope: str, predicate: str, action: Callable, budget_wakes: int = 100,
+                 budget_window: float = 10.0, budget_tokens: int = 0, tools=()) -> NeuronHandle:
+        """Call it before start(): it authors without the lock. Nothing wakes until start()."""
+        compiled = compile_predicate(predicate, scope)
+        neuron_path = Sdf.Path(f"/Plexus/Neurons/{name}")
+        neuron_prim = self.edit_layer.GetPrimAtPath(str(neuron_path)) or Sdf.CreatePrimInLayer(self.edit_layer, str(neuron_path))
+        neuron_prim.specifier = Sdf.SpecifierDef
+        neuron_prim.SetInfo("apiSchemas", Sdf.TokenListOp.Create(prependedItems=["PlexusNeuronAPI"]))
+        attr = Sdf.AttributeSpec(neuron_prim, "plexus:scope", Sdf.ValueTypeNames.String)
+        attr.default = scope
+        attr = Sdf.AttributeSpec(neuron_prim, "plexus:predicate", Sdf.ValueTypeNames.String)
+        attr.default = predicate
+        attr = Sdf.AttributeSpec(neuron_prim, "plexus:budgetWakes", Sdf.ValueTypeNames.Int)
+        attr.default = budget_wakes
+        attr = Sdf.AttributeSpec(neuron_prim, "plexus:budgetWindow", Sdf.ValueTypeNames.Double)
+        attr.default = budget_window
+        attr = Sdf.AttributeSpec(neuron_prim, "plexus:budgetTokens", Sdf.ValueTypeNames.Int)
+        attr.default = budget_tokens
+        if tools:
+            attr = Sdf.AttributeSpec(neuron_prim, "plexus:tools", Sdf.ValueTypeNames.StringArray)
+            attr.default = list(tools)
+        for prefix in neuron_path.GetPrefixes():
+            self.edit_layer.GetPrimAtPath(prefix).specifier = Sdf.SpecifierDef
+        self.edit_layer.Save()
+        handle = NeuronHandle(name=name, prim_path=neuron_path, wakes=0, state="dormant")
+        record = _Record(compiled, scope, action, budget_wakes, budget_window, budget_tokens, handle)
+        # S5 calls record.compiled.seed(self._values(record)) here.
+        self._neurons[name] = record
+        return handle
+
+    def start(self) -> None:
+        if self._axon is not None:
+            return
+
+        self._stop_event.clear()
+        self._axon = PlexusAxon(self.stage)
+        self._axon.subscribe(self._on_event)
+        self._axon.start()
+
+    def stop(self) -> None:
+        self.wait_idle(5.0)
+        if self._axon is not None:
+            self._axon.cool()
+            self._axon = None
+
+    def wait_idle(self, timeout: float = 5.0) -> bool:
+        """True once no event is pending, no window is open and no action is running."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if (self._axon is None or self._axon.idle()) and self._running == 0:
+                return True
+            time.sleep(0.005)
+        return False
+
+    def _author_on_neuron(self, record, name, value, type_name):
+        """One saved opinion on the neuron prim: the deny flag now, S7's mute later."""
+        with self._lock:
+            with Sdf.ChangeBlock():
+                _set_attr(self.edit_layer.GetPrimAtPath(record.handle.prim_path), name, value, type_name)
+            self.edit_layer.Save()
+
+    def _values(self, record):
+        values = {}
+        for p in record.compiled.paths():
+            attr = self.stage.GetAttributeAtPath(p)
+            value = attr.Get() if attr else None
+            if value is not None:
+                values[p] = value
+        return values
+
+    def _on_event(self, event):
+        """Dispatcher: runs on the axon's thread, once per coalesced event."""
+        for record in list(self._neurons.values()):
+            scope = Sdf.Path(record.scope)
+            if not (any(p.HasPrefix(scope) for p in event.paths | event.resynced)
+                    or any(scope.HasPrefix(r) for r in event.resynced)):
+                continue
+            # str items only: an Sdf.Path here raises TypeError: 'Path' object is not an instance of 'str'.
+            changed = [p for p in record.compiled.paths()
+                       if Sdf.Path(p) in event.paths or any(Sdf.Path(p).HasPrefix(r) for r in event.resynced)]
+            with self._lock:
+                values = self._values(record)
+                if not record.compiled.eval(changed, values):
+                    continue
+                # S7's budget check goes here.
+                # S5 calls record.compiled.commit_wake(values) here.
+                self._running += 1
+                record.handle.wakes += 1
+                record.handle.state = "awake"
+            threading.Thread(target=self._run_action, args=(record,), daemon=True).start()
+
+    def _run_action(self, record):
+        try:
+            record.action(_Ctx(self, record))
+        except Exception:
+            traceback.print_exc()
+        finally:
+            with self._lock:
+                if record.handle.state == "awake":  # a mute outlives the action
+                    record.handle.state = "dormant"
+                self._running -= 1
+```
+
+`plexus/membrane/gate.py`, whole:
+
+```python
+"""Publication gate v0: the path allowlist check."""
+
+from pxr import Sdf
+
+
+def check_allowlist(prim_path: Sdf.Path, allowlist: list[Sdf.Path]) -> bool:
+    return any(prim_path.HasPrefix(allowed) for allowed in allowlist)
+```
+
+Also owed by S4 or left for later:
 - `seed` and `commit_wake` both take exactly the composed values of `Predicate.paths()`, read as `stage.GetAttributeAtPath(p).Get()` with `None` left out, and both get the same dict: `commit_wake` writes every numeric key it is given and a stale entry survives a commit whose values lack the key. Delta is measured from the last commit, not the last eval (commit at 1.3, then 1.45 is false, 1.0 is true, 1.55 is true); `eval` never writes the cache.
-- The dispatcher lives in `_on_event` (`9d7bb5f`: `pass`; a reply that keeps the `pass`, or never calls the stored `action`, fails T5 with `GetPrimAtPath('/Exchange/lookNeuron/Hints')` null, because nothing is ever authored). In order, for each `record` in `self._neurons.values()`: skip it unless some path in `event.paths` or `event.resynced` has `HasPrefix(Sdf.Path(record.scope))`, or some `r` in `event.resynced` has `Sdf.Path(record.scope).HasPrefix(r)`; `changed = [p for p in record.compiled.paths() if Sdf.Path(p) in event.paths or any(Sdf.Path(p).HasPrefix(r) for r in event.resynced)]`; under the runtime lock, `values` holds `a.Get()` for each `p` in `record.compiled.paths()` where `a = self.stage.GetAttributeAtPath(p)` is valid and `a.Get()` is not `None`; if `record.compiled.eval(changed, values)` is `False`, continue; otherwise, still under the lock, `self._running += 1`, `record.handle.wakes += 1`, `record.handle.state = "awake"`, then `threading.Thread(target=self._run_action, args=(record, values), daemon=True).start()`. One runtime-wide `threading.RLock` guards every pxr read and write; `Sdf.ChangeBlock` wraps each authoring burst; `ctx.author` goes through `gate.py`.
-- The allowlist is a list of `Sdf.Path` prim paths, never globs: `[Sdf.Path(f"/Exchange/{participant_id}")] + [Sdf.Path(g) for g in grants]`, and `ctx.author` allows `prim_path` when `Sdf.Path(prim_path).HasPrefix(allowed)` holds for one of them. The `/**` in CONTRACT.md and in this brief is wording for "and everything under it", which `HasPrefix` already means. Checked on 26.5: `Sdf.Path("/Exchange/lookNeuron/**")` is ill-formed, becomes `Sdf.Path.emptyPath` with a warning, `HasPrefix` of it is `False`, and every write is denied, T5's `Hints` write included (run 16's `gate.py` did exactly this).
-- `ctx.author(prim_path, attr_name, value, type_name)`, in order: the allowlist check above (on deny: a `plexus:flag...` `String` on the neuron prim in `edit_layer`, `Save()`, return); then under the runtime lock, inside one `with Sdf.ChangeBlock():`, `spec = Sdf.CreatePrimInLayer(edit_layer, prim_path)`; for each `a` in `Sdf.Path(prim_path).GetPrefixes()`, `edit_layer.GetPrimAtPath(a).specifier = Sdf.SpecifierDef`; `attr = spec.attributes.get(attr_name) or Sdf.AttributeSpec(spec, attr_name, type_name)` and `attr.default = value`; the same `.get(...) or` idiom for `plexus:sourceLayer` (`Sdf.ValueTypeNames.String`, value `edit_layer.identifier`); after the block, still under the lock, `edit_layer.Save()`. Checked on 26.5: `Sdf.AttributeSpec` on a name that already exists raises `Tf.ErrorException` ("Cannot create spec ... because it already exists"), so the `.get or` idiom, the one `_support.py` uses for `temperature`, is what lets a second wake author.
+- The dispatcher lives in `_on_event`, as the block shows (`9d7bb5f`: `pass`; a reply that keeps the `pass`, or never calls the stored `action`, fails T5 with `GetPrimAtPath('/Exchange/lookNeuron/Hints')` null, because nothing is ever authored).
+- `/**` in CONTRACT.md is wording for "and everything under it", which `HasPrefix` already means. `Sdf.Path("/Exchange/lookNeuron/**")` is ill-formed, becomes `Sdf.Path.emptyPath` with a warning, `HasPrefix` of it is `False`, and every write is denied (run 16's `gate.py`). Grants have no way into the runtime yet: the block's allowlist holds only the participant's own prim.
 - The axon's pending counter subtracts the number of notices drained into each window, not 1 per window: two notices in one window otherwise leave `idle()` false forever and `settle` asserts "runtime did not go idle". A `ctx.author` outside a `ChangeBlock` sends up to six notices in microseconds.
-- `changed` is a list of `str`, never of `Sdf.Path`: `predicate.eval(list(event.paths), values)` raises `TypeError: 'Path' object is not an instance of 'str' while processing 'changed'` on the axon's dispatcher thread, the action never runs, and T5 sees only the null prim (run 17 attempt 1). Build it with the comprehension above: its items come from `record.compiled.paths()`, which are already `str`. The keys of `values` are the same `str` paths.
-- `wait_idle` returns `True` only when the axon is idle **and** `self._running == 0`. With `axon.idle()` alone, `settle()` returns the instant the dispatcher hands the event to the action thread, the test reads stage B before `ctx.author` has run, and the prim is null even though the action is about to write it. `_running` goes up under the lock before the thread starts and down in `_run_action`'s `finally`.
-- The wake count and state change on the `NeuronHandle` object `register()` returned (`record.handle.wakes += 1`), not on a dict entry: the test holds that object and reads `h.wakes` from it. A `self._neurons[name]['wakes'] += 1` beside a separate handle leaves `h.wakes` at 0 for T2, T3, T4, T5-outside and T6.
-- The axon may be created in `__init__` or in `start()` (`9d7bb5f` creates it in `start()`); `start()` is idempotent either way, and `register()` before `start()` must not wake anything.
 - Known gaps left for later, not S4's: `in_scope` rejects descendants (`/Exchange/LookState/Child.x`; S5 may fix it); `changed(P)AND delta(P)` with no space compiles; bare tokens and `true`/`false` do not parse as `attr` literals; `!=` across kinds is false.
 
 **What a notice carries, measured on 26.5** (resynced | info-only):
