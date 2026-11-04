@@ -23,6 +23,7 @@
 # Nov 4 (Joe: 'yes to all four', 'keep the block'): S4 copies neuron.py and gate.py from a block in the
 # brief, proved on a scratch export (7 -> 5); Jev's floor 0.1; context_chars 135000. The worker reads the
 # brief from the loop branch, so the loop branch moves with this commit (plan section 10).
+# Nov 4, after S5 kept: the block is cut, because its copy of neuron.py no longer matches the tip.
 # Nov 4, 00:05, after run 17 attempt 1 (the dispatcher landed; it passed Sdf.Path objects as `changed`, so
 # eval raised TypeError on the axon thread and the action never ran): `changed` is a list of str; wait_idle
 # waits for the running action; the handle object itself is mutated.
@@ -139,7 +140,7 @@ id = "S4"
 after = ["S3"]
 targets = ["tests/acceptance/phase1/test_t5_gate.py::test_write_inside_allowlist_lands"]
 files = ["plexus/core/neuron.py", "plexus/membrane/gate.py", "plexus/core/axon.py", "plexus/membrane/exchange.py", "plexus/core/stagekit.py"]
-text = "Runtime dispatcher, five whole files. plexus/core/neuron.py and plexus/membrane/gate.py are the brief's two S4 blocks under 'What the kept S3 code still owes S4', copied exactly: the kept neuron.py's _on_event is pass, and that block replaces it. No Rust change. That neuron.py's wait_idle calls axon.idle(), which the kept axon does not have, so also resend plexus/core/axon.py, plexus/membrane/exchange.py and plexus/core/stagekit.py whole with the fixes the brief lists under 'What the kept S2 code still owes S4' (queue.Queue with a real 50 ms window, a pending counter that falls by every notice drained, idle(), no lock in the callback, the def <id> child in the participant layer)."
+text = "Runtime dispatcher, kept in run 19. If this step ever routes again, start from plexus/core/neuron.py and plexus/membrane/gate.py under Files, and resend plexus/core/axon.py, plexus/membrane/exchange.py and plexus/core/stagekit.py whole. No Rust change."
 
 [[steps]]
 id = "S5"
@@ -160,7 +161,7 @@ id = "S7"
 after = ["S5"]
 targets = ["tests/acceptance/phase1/test_t3_budget.py"]
 files = ["crates/plexus-core/src/budget.rs", "crates/plexus-core/src/lib.rs", "crates/plexus-core/src/py.rs", "plexus/core/neuron.py"]
-text = "Rust Budget in crates/plexus-core/src/budget.rs, plain Rust: Budget::new(wakes: u32, window_s: f64), peek(&self, now: f64) -> &'static str (pure) and admit(&mut self, now: f64) -> &'static str, each wake, trip or mute. A wake at t counts while now < t + window_s; a wake resets the trip count; the third consecutive trip mutes; once muted, always mute. Add #[cfg(test)] tests where Budget::new(1, 10.0) admitted at t = 0, 2, 4, 6 gives wake, trip, trip, mute. lib.rs adds mod budget;. py.rs, whole file, gains the brief's PyBudget block and its add_class line. The runtime follows Budget order in the brief with the injected clock; on mute it writes plexus:state = muted plus a plexus:flag attribute on the neuron prim in the edit layer, saved. If T3 fails with 'runtime did not go idle', the kept axon subtracts once per window: also resend plexus/core/axon.py whole, with pending falling by every notice drained."
+text = "Rust Budget in crates/plexus-core/src/budget.rs, plain Rust: Budget::new(wakes: u32, window_s: f64), peek(&self, now: f64) -> &'static str (pure) and admit(&mut self, now: f64) -> &'static str, each wake, trip or mute. A wake at t counts while now < t + window_s; a wake resets the trip count; the third consecutive trip mutes; once muted, always mute. Add #[cfg(test)] tests where Budget::new(1, 10.0) admitted at t = 0, 2, 4, 6 gives wake, trip, trip, mute. lib.rs adds mod budget;. py.rs, whole file, gains the brief's PyBudget block and its add_class line. Start from plexus/core/neuron.py under Files, whole: its comment naming S7 is where the budget check goes, and the dispatcher and the S5 lines stay. The runtime follows Budget order in the brief with the injected clock; on mute it writes plexus:state = muted plus a plexus:flag attribute on the neuron prim in the edit layer, saved. If T3 fails with 'runtime did not go idle', the kept axon subtracts once per window: also resend plexus/core/axon.py whole, with pending falling by every notice drained."
 
 [[steps]]
 id = "S8"
@@ -338,6 +339,7 @@ anchor = "Expose `idle() -> bool`"
 
 # An axon that subtracts once per window keeps at S4 and S5, then blocks a correct S7 here.
 [[known_fixes]]
-match = "runtime did not go idle"
+# Anchored: bare, it fired on source text a traceback prints (row 67's `_queue_lock` failure).
+match = '''(AssertionError|\[failure\]).*runtime did not go idle'''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "The axon's pending counter subtracts"
