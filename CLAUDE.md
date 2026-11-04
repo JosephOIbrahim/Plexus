@@ -16,6 +16,8 @@ Where v5.3 wins over the spec: the runtime is Rust, not the spec's Python repo s
 
 `harness/plexus_loop/` is Plexus's own, written fresh. Verbs: `python -m harness.plexus_loop check|run|stop <mission.toml>`. Mission files live in `harness/plexus_loop/missions/`. Claude writes and revises mission files; the worker (Ollama, `qwen3-coder:30b`) only makes attempts inside one. Kept attempts land on `plexus-loop/<mission>`; the ledger is `.plexus_loop/<mission>/attempts.jsonl`; the summary is `.plexus_loop/<mission>/REVIEW.md`. Nothing merges by itself.
 
+What Claude does without asking during a mission is in program.md, under "What Claude does without asking". It narrows nothing under Hard rules or Stop and ask Joe.
+
 ## Hard rules
 
 - Nothing from Synapse comes into Plexus. No code, imports, packages, shared contracts or dependencies. Synapse is one architectural reference among several (the v4.0 blueprint, comfy-cozy, the AOUSD spec, the Rust ecosystem). A borrowed idea is justified on Plexus's own terms in the plan or commit message.
