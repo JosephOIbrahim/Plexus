@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import threading
 import time
+from queue import Queue
 from typing import Callable, Optional
 
 from pxr import Sdf, Tf, Usd
@@ -23,11 +24,12 @@ class PlexusAxon:
         self._stage = stage
         self._debounce_s = debounce_s
         self._callbacks = []
-        self._queue = []
+        self._queue = Queue()
         self._dispatcher_thread = None
         self._stop_event = threading.Event()
         self._listener = None
-        self._queue_lock = threading.RLock()
+        self._pending = 0
+        self._window_open = False
 
     def subscribe(self, callback: Callable[[StageEvent], None]) -> None:
         """Subscribe a callback to receive coalesced StageEvents."""
@@ -69,35 +71,39 @@ class PlexusAxon:
             t=time.perf_counter()
         )
 
-        with self._queue_lock:
-            self._queue.append(event)
+        self._queue.put(event)
+        self._pending += 1
 
     def _dispatcher(self) -> None:
         """Dispatcher thread that coalesces events within the debounce window."""
         while not self._stop_event.is_set():
-            # Wait for first event or timeout
             try:
-                event = self._queue.pop(0)
-            except IndexError:
-                # Queue is empty, wait for next event with timeout
-                time.sleep(self._debounce_s)
+                # Wait for first event or timeout
+                event = self._queue.get(timeout=0.1)
+            except:
+                # Timeout, continue loop
                 continue
 
             # Collect all events in the debounce window
             collected_paths = set(event.paths)
             collected_resynced = set(event.resynced)
             t = event.t
+            notices_drained = 1
 
+            # Check if we are starting a new window
+            self._window_open = True
+            
             # Collect as many events as possible within the debounce window
             start_time = time.perf_counter()
             while (time.perf_counter() - start_time) < self._debounce_s:
                 try:
-                    next_event = self._queue.pop(0)
+                    next_event = self._queue.get(timeout=0.01)
                     collected_paths.update(next_event.paths)
                     collected_resynced.update(next_event.resynced)
                     t = max(t, next_event.t)
-                except IndexError:
-                    # No more events in queue
+                    notices_drained += 1
+                except:
+                    # Timeout, break loop
                     break
 
             # Dispatch to subscribers
@@ -112,4 +118,15 @@ class PlexusAxon:
                     callback(coalesced_event)
                 except Exception:
                     # Log the exception but don't stop dispatching
-                    pass
+                    import traceback
+                    traceback.print_exc()
+
+            # Decrement pending count by number of notices drained
+            self._pending -= notices_drained
+            
+            # Close window
+            self._window_open = False
+
+    def idle(self) -> bool:
+        """True when no event is pending, no window is open and no action is running."""
+        return self._pending == 0 and not self._window_open
