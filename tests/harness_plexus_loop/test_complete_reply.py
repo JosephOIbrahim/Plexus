@@ -120,6 +120,34 @@ def test_a_step_that_names_no_files_is_not_checked(tmp_path):
     assert a.kept and not a.reason.startswith(LEFT_OUT)
 
 
+def test_consecutive_left_out_drops_keep_the_last_full_attempt_in_view(tmp_path):
+    # Run 18 attempts 1 and 2: after a left-out drop the worker edits its last draft, so each
+    # reply sent one file and saw only that file handed back, and the T5 failure the full
+    # attempt had vanished from the prompt. Now the prompt carries the union and the failure.
+    r = _repo(tmp_path)
+    w = Steps(_write(BOTH), _write({"plexus/a.py": "A = 2\n"}), _write({"plexus/b.py": "B = 3\n"}), _write(BOTH))
+    a1, a2, a3, a4 = _run(_mission(FILES, attempts=4), r, w).attempts
+    assert a1.reason.startswith("no strict gain") and a1.handed_on == FILES
+    assert a2.reason == f"{LEFT_OUT}: plexus/b.py" and a2.handed_on == FILES  # b.py carried from attempt 1
+    assert a3.reason == f"{LEFT_OUT}: plexus/a.py" and a3.handed_on == FILES  # a.py carried from attempt 2
+    third, fourth = w.prompts[2], w.prompts[3]
+    assert "A = 2" in third and "B = 2" in third  # attempt 2's a.py over attempt 1's b.py
+    assert "sent only plexus/a.py and left out plexus/b.py" in third
+    assert "The other files below (plexus/b.py) are your last full attempt's versions." in third
+    assert "## Your last full attempt (1) was dropped: no strict gain (5 vs best 5)" in third
+    assert "A = 2" in fourth and "B = 3" in fourth  # the union keeps composing
+    assert "## Your last full attempt (1) was dropped" in fourth  # still attempt 1: 2 and 3 ran nothing
+
+
+def test_a_left_out_drop_after_a_kept_attempt_carries_only_what_it_sent(tmp_path):
+    # Nothing was carried for a keep, so a following left-out drop hands on its own files only.
+    r = _repo(tmp_path)
+    w = Steps(_write({**BOTH, "plexus/score.txt": "4\n"}), _write({"plexus/a.py": "A = 5\n"}))
+    a1, a2 = _run(_mission(FILES, attempts=2), r, w).attempts
+    assert a1.kept and a2.reason == f"{LEFT_OUT}: plexus/b.py" and a2.handed_on == ["plexus/a.py"]
+    assert "## Your last full attempt" not in w.prompts[1]  # a keep is not a drop to show
+
+
 def test_left_out_helpers():
     s = Step("S3", ["t.py"], "x", files=["crates/a.rs", "crates/lib.rs", "plexus/p.py"])
     assert left_out(s, ["crates/a.rs"]) == ["crates/lib.rs", "plexus/p.py"]

@@ -165,6 +165,28 @@ def carry_files(root: Path, changed: list[str], mission: Mission, step: Step | N
     return out
 
 
+def merge_carried(prev: dict[str, str], new: dict[str, str], step: Step | None) -> dict[str, str]:
+    """What the next prompt hands back after a left-out drop: the reply's own files over the set
+    the last prompt carried, the step's files first, within CARRY_CHARS.
+
+    After a left-out drop the worker edits its last draft rather than resending the step (run 18
+    attempts 1 and 2 each sent one file and saw only that file handed back), so the last full
+    attempt's versions of the other files stay in view instead of vanishing one reply at a time.
+    """
+    merged = {**prev, **new}
+    own = [f for f in (step.files if step else []) if f in merged]
+    order = own + sorted(f for f in merged if f not in own)
+    out: dict[str, str] = {}
+    used = 0
+    for rel in order:
+        text = merged[rel]
+        if used + len(text) > CARRY_CHARS:
+            continue
+        out[rel] = text
+        used += len(text)
+    return out
+
+
 TARGET_FAILURES_MAX = 3  # at most this many target tests lead the feedback
 
 
@@ -412,12 +434,39 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                     lines += [f"> {q}" for q in quotes]
         elif dropped.syntax:
             lines.append("Fix those files first.")
+    if dropped is not None and left_out_of(dropped.reason):
+        # A left-out drop ran nothing, so it has no failure of its own; the one the worker is
+        # still meant to fix belongs to its last full attempt, which this section keeps in view.
+        prior = next((x for x in reversed(recent[:-1]) if not x.kept and (x.target_failures or x.detail)), None)
+        if prior is not None:
+            lines += ["", f"## Your last full attempt ({prior.n}) was dropped: {prior.reason}"]
+            if prior.target_failures:
+                block = "\n\n".join(prior.target_failures)
+                tfence = "`" * max(3, _longest_backtick_run(block) + 1)
+                lines += ["Its step's own target tests failed like this. This is still the thing to fix:",
+                          tfence, block, tfence]
+                quotes = known_fix_quotes(mission, repo, prior.target_failures)
+                if quotes:
+                    lines.append("This is a known error. The worker brief already gives its fix; apply it to the "
+                                 "line the failure points at:")
+                    lines += [f"> {q}" for q in quotes]
+            elif prior.detail:
+                detail = prior.detail[-FEEDBACK_CHARS:]
+                fence = "`" * max(3, _longest_backtick_run(detail) + 1)
+                lines += ["This is what it printed:", fence, detail.rstrip("\n"), fence]
     handed: dict[str, str] = {}
     if dropped is not None and carried and carried[0] == dropped.n and carried[1]:
         handed = carried[1]
         left = left_out_of(dropped.reason)
-        why = (f"Attempt {dropped.n} left out {', '.join(left)}, so nothing it sent was built or tested."
-               if left else f"Attempt {dropped.n} passed every gate.")
+        if left:
+            sent = [f for f in handed if f in dropped.changed]
+            older = [f for f in handed if f not in dropped.changed]
+            why = (f"Attempt {dropped.n} sent only {', '.join(sent) or 'no step file'} and left out "
+                   f"{', '.join(left)}, so nothing it sent was built or tested."
+                   + (f" The other files below ({', '.join(older)}) are your last full attempt's versions."
+                      if older else ""))
+        else:
+            why = f"Attempt {dropped.n} passed every gate."
         lines += [
             "",
             "## Your last attempt's files",
@@ -649,7 +698,10 @@ class MissionRun:
                     # compile() is not a build: a .py that cannot compile is named now rather
                     # than handed back verbatim and caught by a gate one attempt later.
                     a.syntax = syntax_errors(wt, a.changed)
-                    carried = (n, carry_files(wt, a.changed, mi, route.step))
+                    # The reply's files over whatever the last prompt carried, so a one-file
+                    # reply does not shrink the next prompt to that one file.
+                    prev = carried[1] if carried and carried[0] == n - 1 else {}
+                    carried = (n, merge_carried(prev, carry_files(wt, a.changed, mi, route.step), route.step))
                     a.handed_on = list(carried[1])
                 else:
                     why, m, detail = self._evaluate(wt, profile, timing=a)
