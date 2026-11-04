@@ -36,6 +36,9 @@
 - Attempt 4 (35.8 min, row 67, still the old brief): the five S4 files, every gate passed, no strict gain (9 vs 7: T1 and `one-0.1-never-wakes` broke; T5 died on `'PlexusAxon' object has no attribute '_queue_lock'`, the S2-era lock the brief forbids). Prompt 503 s, reply 3,143 tokens in 1,488 s.
 - **Run 16 ended 22:38 on the stop file: 0 of 4 kept; phase1 stays 7 failing, S3 kept at `9d7bb5f`.** `prep/run17` landed as `2e6151e`; the night continues as run 17 from the loop branch at `9d7bb5f` on the same budget, with the S4 text naming the S3 list.
 
+**Run 17 so far (the night run, S4 with the S3 list named and the dispatcher spelled out):**
+- Attempt 1 (47.0 min, row 68): the five S4 files, every gate passed, no strict gain (7 vs 7) on the same T5 null prim. Prompt 31,661 tokens in **1,279.5 s** with a 34.6 s load: the model was reloaded (evicted or idle past keep_alive) and the read ran at 24.7 tok/s, the slowest of the day; reply 3,879 tokens in 1,359 s. First run-17 miss; the escalation rule needs two. Inspecting the reply for whether `_on_event` was filled.
+
 **Watch in run 13:** (1) `prompt_eval_s` per attempt after the first: the cache either shows up as a drop from ~780 s to well under 100 s, or it does not (then the prefix is not byte-identical or the model was evicted between attempts). (2) Whether any reply is dropped as `reply left out step files`: expected for one-file replies like run 12's attempts 1 and 3. (3) The compile errors that remain once E0106 is gone. (4) Focus/frozen drops, now that the rules sit behind ~85k of files.
 
 **Jev routing (Joe, Nov 3, "JEV for routing"):** landed as above. Parked: refuse to start when a step's targets match no collected test (a typo silently unlocks its dependants).
