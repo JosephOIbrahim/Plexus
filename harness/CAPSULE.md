@@ -42,6 +42,9 @@
 - Attempt 2 (30.8 min, row 69): the same TypeError at `neuron.py:189`, `predicate.eval(changed_paths, values)` with `Sdf.Path` objects, with attempt 1's traceback in its prompt; no strict gain (7 vs 7). Prompt 29,976 tokens in 442 s, reply 3,881 tokens in 1,259 s.
 - **Run 17 ended 00:00 on the stop file: 0 of 2 kept; phase1 7 failing; S3 kept at `9d7bb5f`.** `prep/run18` landed (`8569214`: `changed` is `str`, `wait_idle` waits for `_running`, mutate the handle object); the night continues as run 18 from `9d7bb5f` on the same budget. Two run-17 misses on T5 the same way: the escalation (the dispatcher as a copyable Python block) is drafted in plan §10 and waits for Joe's yes in the morning.
 
+**Run 18 so far (the night run, S4 with the str-changed line):**
+- Attempt 1 (14.2 min, row 70): a one-file reply (`axon.py`, 904 tokens) after the handed-on drop; caught before the gates (`reply left out step files: neuron.py, gate.py, exchange.py, stagekit.py`), `axon.py` handed on. Prompt 559 s.
+
 **Watch in run 13:** (1) `prompt_eval_s` per attempt after the first: the cache either shows up as a drop from ~780 s to well under 100 s, or it does not (then the prefix is not byte-identical or the model was evicted between attempts). (2) Whether any reply is dropped as `reply left out step files`: expected for one-file replies like run 12's attempts 1 and 3. (3) The compile errors that remain once E0106 is gone. (4) Focus/frozen drops, now that the rules sit behind ~85k of files.
 
 **Jev routing (Joe, Nov 3, "JEV for routing"):** landed as above. Parked: refuse to start when a step's targets match no collected test (a typo silently unlocks its dependants).
