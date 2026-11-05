@@ -433,6 +433,8 @@ Notes from those reviews, for later and not holding the merge. **A project joini
 
 Placement reads 6 of 25 failing, not the 5 of the first version, and the expected path is 6, then 2 after S8 or 4 after S9, then 0. Proposed on Joe's word: `context_chars` 150000, replacing the 145000 he was told earlier, and `timeout_s` 4800. Both step texts were re-read against the tip and every anchor is there. Notes for later: a real drain protects short bursts only, because at one wake per 10 s writes 40 ms apart mute 0 of 10 at 4 writes over 123 ms and 10 of 10 at 5 writes over 163 ms, so S9 narrows the permanent-mute finding and does not close it. `stop()` then `start()` on one object stays muted, so the release sentence means a new runtime. A fixed tick's verdict on the burst rests on phase and load, and the function that would reject it stayed out, proved and ready if he asks. The metric would keep an S8 that skips the Save guard, 6 to 3, so the S8 reviewer reads the whole phase for a newly failing test.
 
+**Placed, S8 re-aimed, S9 added (Nov 4).** Joe ran the placement script: `7ce9dd0`, both files byte for byte the drafts marked READY. Phase 1 now holds 25 functions and reads 6 failing on the tip's code. The mission file now carries both files at the end of context, S8 aimed at T6 and the whole disk file with his stage words and the guard on its Saves, S9 aimed at the window file, and `context_chars` 150000. `timeout_s` and the start of run 29 wait for his word, because a mission-file change stops for him under rule 3.
+
 **Counting Joe's next 20 decisions (Nov 4, on his word).** They start after his yes to the three plain rules. A decision is anything Claude brings him, or anything he answers that changes the work. The last column says whether a plain rule already covered it. Nothing else gets built for fewer approvals until this reads 20 of 20.
 
 | # | When | What he decided | Took Claude's recommendation | A plain rule covered it |
@@ -441,3 +443,4 @@ Placement reads 6 of 25 failing, not the 5 of the first version, and the expecte
 | 2 | Nov 4 | Merge S7 and S7b and push both branches once the reviewer and adversary clear them; they did not | Came before the recommendation | No: merges are his |
 | 3 | Nov 4 | Placed the isolation test, which starts S7c | Yes | No: frozen tests are his |
 | 4 | Nov 4 | Once the reviewer and adversary clear S7c, merge S7, S7b and S7c without waiting for the burst finding, and push both branches | Yes | No: merges are his |
+| 5 | Nov 4 | Placed the burst and disk tests | Yes | No: frozen tests are his |

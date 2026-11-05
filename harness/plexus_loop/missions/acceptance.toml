@@ -24,6 +24,7 @@
 # brief, proved on a scratch export (7 -> 5); Jev's floor 0.1; context_chars 135000. The worker reads the
 # brief from the loop branch, so the loop branch moves with this commit (plan section 10).
 # Nov 4, after S5 kept: the block is cut, because its copy of neuron.py no longer matches the tip.
+# Nov 4, Joe placed the burst and disk tests (7ce9dd0): S8 is re-aimed at the disk file with his stage words and a guard on its Saves, and S9 fixes the window.
 # Nov 4, rows 87 and 88: the try landed only around the mute's writes, and a repeat came back byte-identical. S7c's text narrows to the one test left.
 # Nov 4, row 86: S7c's text says the try goes inside the for and _run_action stays; the idle known fix retires.
 # Nov 4, both reviews of S7b's keep: S7c isolates each record and writes the mute's two attributes as one, aimed at Joe's isolation test, because the clause in S7b's text did not land.
@@ -60,6 +61,8 @@ context = [
   "PLEXUS_SPEC.md",
   "tests/acceptance/phase1/test_budget_order.py",
   "tests/acceptance/phase1/test_mute_isolation.py",
+  "tests/acceptance/phase1/test_truth_on_disk.py",
+  "tests/acceptance/phase1/test_window_burst.py",
 ]
 
 [metric]
@@ -115,7 +118,9 @@ timeout_s = 3600
 # Nov 4: 135000. With the S4 block in the brief, 120000 cuts stagekit.py and exchange.py from S4's first
 # prompt and neuron.py after a gate failure. Measured on the real build_prompt: the first prompt is
 # 127,474 chars, 33,956 tokens; the worst of ten states leaves 6,646 tokens after a 6,500-token reply.
-context_chars = 135000
+# Nov 4, with test_truth_on_disk.py and test_window_burst.py in context: 150000. At 145000 S8's prompt after a gate
+# failure loses neuron.py; 145,962 is the smallest budget that keeps it (the harness's own build_prompt on f276b96).
+context_chars = 150000
 num_ctx = 49152
 
 [router]
@@ -192,10 +197,17 @@ text = "A mute that cannot be saved, plexus/core/neuron.py only, no Rust change.
 
 [[steps]]
 id = "S8"
-after = ["S5", "S6", "S7"]
-targets = ["tests/acceptance/phase1/test_t6_truth.py"]
+after = ["S5", "S6", "S7c"]
+targets = ["tests/acceptance/phase1/test_t6_truth.py", "tests/acceptance/phase1/test_truth_on_disk.py"]
 files = ["plexus/core/neuron.py"]
-text = "Every opinion the runtime authors is saved as it lands, including plexus:state, plexus:lastWake and flags, so a runtime killed mid-session and reopened from disk reproduces all composed state."
+text = """The truth on disk, plexus/core/neuron.py only, no Rust change. Send the file whole, not as a diff: start from the copy under Files and change only what this step names. Add from datetime import datetime. Saving: in _author_on_neuron wrap self.edit_layer.Save() in try: ... except Exception: traceback.print_exc(), so a refused Save leaves the opinion on the stage and costs no wake; frozen test_mute_isolation.py makes the file read-only while another neuron wakes, and an unguarded Save there leaves self._running up and the runtime never idle. State: plexus:state is a Token. In _on_event, right after record.handle.state = 'awake', call self._author_on_neuron(record, 'plexus:state', 'awake', Sdf.ValueTypeNames.Token). In _run_action, inside the existing if record.handle.state == 'awake': guard, right after record.handle.state = 'dormant', call self._author_on_neuron(record, 'plexus:state', 'dormant', Sdf.ValueTypeNames.Token) and self._author_on_neuron(record, 'plexus:lastWake', datetime.now().astimezone().isoformat(timespec='seconds'), Sdf.ValueTypeNames.String). Both stay inside that guard, so a mute outlives the action, and both come before self._running -= 1. Register: register() may find these specs already in the layer after a restart, and a bare Sdf.AttributeSpec raises on a name that exists, so every attr = Sdf.AttributeSpec(...) with its attr.default = ... line in register() becomes one _set_attr(neuron_prim, name, value, type_name) call. After them, still before self.edit_layer.Save(), add _set_attr(neuron_prim, 'plexus:state', 'dormant', Sdf.ValueTypeNames.Token), so a restart releases a mute. The flags: the deny flag's name becomes plexus:flag:publicationGate and its value becomes f"Write dropped at the membrane: {path} is outside {rt._participant_id}'s allowlist, so nothing landed. {rt._participant_id} writes only under {allowed}." with allowed = ', '.join(str(p) for p in rt._allowlist) on the line above. In the mute block the flag's name becomes plexus:flag:budgetGate and its value becomes f"Neuron muted: 3 wakes in a row refused (budget {record.budget_wakes} per {record.budget_window:g} s). Restart the neuron runtime to unmute it." Those two sentences go in exactly as written. Keep the budget check, the mute's one ChangeBlock and one Save, the try around them, the S5 lines and everything else as they are."""
+
+[[steps]]
+id = "S9"
+after = ["S7c"]
+targets = ["tests/acceptance/phase1/test_window_burst.py"]
+files = ["plexus/core/axon.py"]
+text = """The debounce window, plexus/core/axon.py only, no Rust change. Send the file whole, not as a diff: start from the copy under Files and change only what this step names. The dispatcher blocks on get(timeout=0.1), then drains with get(timeout=remaining) until debounce_s after that first event. It is debounce_s and never a literal 50 ms, because frozen test_window_burst.py passes its own debounce_s. Today the drain waits get(timeout=0.01) and its except breaks out at the first 10 ms of quiet, so the window closes early and a burst becomes several events. Replace the line while (time.perf_counter() - start_time) < self._debounce_s: with while (remaining := self._debounce_s - (time.perf_counter() - start_time)) > 0: and get(timeout=0.01) with get(timeout=remaining). Keep the except and its break, which now mean the window has run out. Keep the pending count, the window flag, the callback discipline and everything else as they are."""
 
 # Night run (Joe, Nov 3, decision 2): sized from a 19:15 start to about 07:30. A running attempt is
 # never cut, so hours = window - 1.1; attempts covers a GPU night at ~6 min each; the failure cap
