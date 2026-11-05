@@ -39,7 +39,7 @@
 - After the mission: Joe freezes the guard in `tests/acceptance/guards/`; Claude repoints the gate and deletes the harness copy and the draft.
 - Spec Patch 02 needs its document and frozen test before M4. `release.yml` must be retired on every branch before any `v` tag (it publishes to PyPI). The seed (`agent/`, `cognitive/`), SALUS, Moneta, Hanish and `CLAUDE.cozy.md` are Joe's calls.
 
-**Waiting on Joe:** what becomes of the rest of the Nov 2 fewer-approvals proposal, to which he said yes and which never landed; PR #2 then PR #3 (the logo, then the 87 KB 720 px JPEG; squash-merge #3); the seed and temperature proposal; the capsule reorder with the `/report` template and the mark kit (design review); `/dream apply`.
+**Waiting on Joe:** what becomes of the rest of the Nov 2 fewer-approvals proposal, to which he said yes and which never landed; PR #2 then PR #3 (the logo, then the 87 KB 720 px JPEG; squash-merge #3); the seed and temperature proposal; the capsule reorder with the `/report` template and the mark kit (design review); `/dream apply` (the list is `~/.claude/memory/dream-report-2026-11-04-plexus.md`; the Nov 3 report is superseded).
 
 ---
 
