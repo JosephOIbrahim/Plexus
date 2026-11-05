@@ -49,6 +49,10 @@ def default_route(mission: Mission, last: MetricResult | None, recent: list[Atte
 
 STATE_DIR = ".plexus_loop"
 WORKER_DOWN = "the worker could not run"  # starts the stop reason and the refusal
+# How long the model server gets to come back before a run stops or refuses, and how often it is asked. A restart, an
+# update or a busy reply clear in seconds to a minute, and rule 3 holds this stop for Joe, so stopping on one costs the night.
+WORKER_WAIT_S = 300.0
+WORKER_POLL_S = 15.0
 # How much of a dropped attempt's output the next prompt shows. Large enough that a clipped
 # gate output (head + marker + tail) plus its "$ cmd" line is never cut again.
 FEEDBACK_CHARS = GATE_HEAD_CHARS + GATE_TAIL_CHARS + 500
@@ -735,13 +739,28 @@ class MissionRun:
     def _refuse_a_worker_that_cannot_run(self) -> None:
         """Before the baseline, which spends minutes and says nothing about the model. Under the lock, so a second run
         never loads a model beside a live one. A stand-in worker has no such check."""
-        check = getattr(self.worker, "cannot_run", None)
-        if check is None:
+        if getattr(self.worker, "cannot_run", None) is None:
             return
         self.log(f"[plexus-loop] {self.mission.name}: loading {self.mission.worker.model}")
-        why = check(self.profile_fn())
+        why = self._worker_cannot_run()
         if why:
             raise RefuseToStart(f"{WORKER_DOWN}: {why}. Nothing was run.")
+
+    def _worker_cannot_run(self) -> str:
+        """Why the model still cannot load after WORKER_WAIT_S, or "" as soon as it can. A stop file ends the wait. Each
+        ask reads the profile afresh, so a load during the wait follows Houdini. A stand-in worker has no such check."""
+        check = getattr(self.worker, "cannot_run", None)
+        if check is None:
+            return ""
+        why = check(self.profile_fn())
+        if not why:
+            return ""
+        self.log(f"[plexus-loop] {self.mission.name}: the model server is not answering, so this waits up to {WORKER_WAIT_S:.0f} s: {why}")
+        deadline = time.monotonic() + WORKER_WAIT_S
+        while why and time.monotonic() < deadline and not (self.state / "STOP").exists():
+            time.sleep(WORKER_POLL_S)
+            why = check(self.profile_fn())
+        return why
 
     def _run(self) -> RunReport:
         mi = self.mission
@@ -898,12 +917,18 @@ class MissionRun:
             report = RunReport(mi.name, mi.branch, base, tip, baseline, best, attempts,
                                "running", started, self.clock())
             write_review(self.mdir / "REVIEW.md", mi, report)
-            if a.unreachable and len(attempts) > 1 and attempts[-2].unreachable:
-                # Every attempt after these would fail the same way in seconds, each with a Jev routing call, and spend the
-                # budget and the consecutive count on nothing (rows 90 to 119). One alone costs only its attempt, as any drop
-                # does, because a server that dropped one call can still answer the next. A restart starts both counts afresh.
-                stop = f"{WORKER_DOWN}: {a.reason}"
-                break
+            if a.unreachable:
+                # Every attempt after this one would fail the same way in seconds, each with a Jev routing call, and spend
+                # the budget and the consecutive count on nothing (rows 90 to 119). So the server gets its wait here, and one
+                # that comes back costs this row alone. Two rows in a row stop whatever the load says, because a load that
+                # answers is no proof a real call can. A restart starts both counts afresh.
+                if len(attempts) > 1 and attempts[-2].unreachable:
+                    stop = f"{WORKER_DOWN}: {a.reason}"
+                    break
+                why = self._worker_cannot_run()
+                if why and not (self.state / "STOP").exists():
+                    stop = f"{WORKER_DOWN}: {why}"
+                    break
 
         report = RunReport(mi.name, mi.branch, base, tip, baseline, best, attempts, stop,
                            started, self.clock())

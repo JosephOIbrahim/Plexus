@@ -200,6 +200,87 @@ def test_an_outage_row_leaves_the_next_prompt_as_it_was(tmp_path):
     assert prompts[2] == prompts[1] and "DRAFT = 1" in prompts[2] and "RemoteDisconnected" not in prompts[2]
 
 
+class Answers(Worker):
+    """A stand-in with the real worker's check. ``why(i)`` says what the i-th ask of the load answers."""
+
+    def __init__(self, *results, why=lambda i: ""):
+        super().__init__(*results)
+        self.why, self.asks = why, 0
+
+    def cannot_run(self, profile):
+        self.asks += 1
+        return self.why(self.asks - 1)
+
+
+DOWN = WorkerResult(False, "ollama call failed: URLError: refused", unreachable=True)
+
+
+def _wait(monkeypatch, seconds=30.0):
+    monkeypatch.setattr(loop, "WORKER_WAIT_S", seconds)
+    monkeypatch.setattr(loop, "WORKER_POLL_S", 0.01)
+
+
+def test_a_server_that_comes_back_costs_one_row_and_the_run_goes_on(tmp_path, monkeypatch):
+    # Ask 0 is the load before the baseline. Asks 1 and 2 are the gap, a restart or an update taking its time.
+    _wait(monkeypatch)
+    w = Answers(DOWN, _score(4), why=lambda i: "refused" if i in (1, 2) else "")
+    rep = MissionRun(_mission(attempts=2), _repo(tmp_path), worker=w, profile_fn=lambda: CPU, log=lambda s: None).run()
+    assert [(a.kept, a.unreachable) for a in rep.attempts] == [(False, True), (True, False)]
+    assert w.asks == 4 and "attempt budget" in rep.stop_reason
+
+
+def test_an_engine_that_stays_gone_stops_after_the_wait_on_one_row(tmp_path, monkeypatch):
+    _wait(monkeypatch, 0.05)
+    routed = []
+
+    def route(mi, last, attempts):
+        routed.append(1)
+        return loop.Route(None, "none")
+
+    w = Answers(DOWN, _score(1), why=lambda i: "binary not found" if i else "")
+    rep = MissionRun(_mission(), _repo(tmp_path), worker=w, profile_fn=lambda: CPU, log=lambda s: None, route_fn=route).run()
+    assert w.calls == 1 and len(routed) == 1 and rep.stop_reason == f"{WORKER_DOWN}: binary not found"
+    assert w.asks > 2  # it asked again during the wait
+
+
+def test_two_rows_in_a_row_stop_even_when_the_load_answers(tmp_path, monkeypatch):
+    # A server that loads and then drops every real call would otherwise spend the whole consecutive count.
+    _wait(monkeypatch)
+    w = Answers(DOWN, DOWN, _score(1))
+    rep = MissionRun(_mission(), _repo(tmp_path), worker=w, profile_fn=lambda: CPU, log=lambda s: None).run()
+    assert w.calls == 2 and rep.stop_reason == f"{WORKER_DOWN}: worker: {DOWN.note}"
+
+
+def test_a_load_that_clears_during_the_wait_starts_the_run(tmp_path, monkeypatch):
+    _wait(monkeypatch)
+    w = Answers(why=lambda i: "busy" if i < 2 else "")
+    rep = MissionRun(_mission(attempts=0), _repo(tmp_path), worker=w, profile_fn=lambda: CPU, log=lambda s: None).run()
+    assert w.asks == 3 and rep.baseline == 5
+
+
+def test_a_load_that_stays_down_refuses_only_after_the_wait(tmp_path, monkeypatch):
+    _wait(monkeypatch, 0.05)
+    w = Answers(why=lambda i: "binary not found")
+    r = _repo(tmp_path)
+    with pytest.raises(RefuseToStart, match=f"{WORKER_DOWN}: binary not found"):
+        MissionRun(_mission(), r, worker=w, profile_fn=lambda: CPU, log=lambda s: None).run()
+    assert w.asks > 2 and not (r / ".plexus_loop" / "lock").exists()
+
+
+def test_a_stop_file_ends_the_wait_and_says_stop_file(tmp_path, monkeypatch):
+    _wait(monkeypatch)
+    r = _repo(tmp_path)
+
+    def why(i):
+        if i == 3:
+            (r / ".plexus_loop" / "STOP").write_text("stop")
+        return "refused" if i else ""
+
+    w = Answers(DOWN, _score(1), why=why)
+    rep = MissionRun(_mission(), r, worker=w, profile_fn=lambda: CPU, log=lambda s: None).run()
+    assert w.calls == 1 and w.asks == 4 and rep.stop_reason == "stop file"
+
+
 def _left_out_replies(tmp_path, *steps):
     d = {
         "mission": {"name": "demo", "goal": "g", "requires": ["fixed"], "focus": ["plexus/**"], "frozen": ["fixed/**"]},
