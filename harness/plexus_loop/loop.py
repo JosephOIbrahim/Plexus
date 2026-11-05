@@ -300,6 +300,11 @@ def _one_line(text: str) -> str:
     return text.replace("\r", " ").replace("\n", " ")[:SYNTAX_LINE_CHARS]
 
 
+def _same_step(a: Attempt, step: Step | None) -> bool:
+    """Whether a dropped attempt's failure and files belong to the step a prompt is for. No step on either side counts."""
+    return step is None or not a.route or a.route.split()[0] == step.id
+
+
 class RefuseToStart(RuntimeError):
     """The run can't begin, and the message says why."""
 
@@ -429,7 +434,7 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                  carried: tuple[int, dict[str, str]] | None = None) -> str:
     """The worker's prompt. ``carried`` is (attempt number, {path: text}) of the files the next
     prompt hands back after a drop: what a gate-passing attempt sent, or what a left-out reply sent
-    laid over the last full attempt's files; it is shown only when that attempt is the last one."""
+    laid over the last full attempt's files; it is shown only when that attempt is the last one and on this prompt's step."""
     lines = [
         f"# Mission: {mission.name}",
         "",
@@ -472,7 +477,9 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                 lines.append(f"Not in the repo yet, so your reply must include each in full: {', '.join(absent)}.")
             lines.append("")
         lines.append("Do this step only. Later steps get their own attempts.")
-    dropped = recent[-1] if recent and not recent[-1].kept else None
+    # Another step's failure and files are not this step's, the same rule as the search below: with two steps ready,
+    # "Start here" would aim this attempt at that step's test, and "resend" would hand it that step's draft.
+    dropped = recent[-1] if recent and not recent[-1].kept and _same_step(recent[-1], step) else None
     if dropped is not None and (dropped.detail or dropped.syntax or absent or dropped.target_failures
                                 or left_out_of(dropped.reason)):
         lines += [
@@ -827,7 +834,7 @@ class MissionRun:
                     a.syntax = syntax_errors(wt, a.changed)
                     # The reply's files over whatever the last prompt carried, so a one-file
                     # reply does not shrink the next prompt to that one file.
-                    prev = carried[1] if carried and carried[0] == worked[-1].n else {}
+                    prev = carried[1] if carried and carried[0] == worked[-1].n and _same_step(worked[-1], route.step) else {}
                     carried = (n, merge_carried(prev, carry_files(wt, a.changed, mi, route.step), route.step))
                     a.handed_on = list(carried[1])
                 else:

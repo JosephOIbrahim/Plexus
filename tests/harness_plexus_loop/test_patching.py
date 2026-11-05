@@ -137,6 +137,14 @@ def test_a_diff_for_a_file_a_block_already_wrote_is_left_to_the_block(tmp_path):
     assert not (r / "b").exists()
 
 
+def test_a_diff_that_does_not_apply_fails_the_whole_reply(tmp_path):
+    # Row 77 sent all four step files and a diff that did not apply. The blocks stay on disk, so going on
+    # would build half a reply, and a keep would lack the edit.
+    reply = "```file:plexus/b.py\nB = 1\n```\n```diff\n" + EDIT.replace(" one\n", " ONE\n") + "```\n"
+    res = apply_reply(_repo(tmp_path), reply)
+    assert not res.ok and "patch did not apply" in res.note and res.reply == reply and res.wrote == ["plexus/b.py"]
+
+
 def test_a_reply_cut_off_inside_a_file_block_is_refused(tmp_path):
     res = apply_reply(_repo(tmp_path), "```file:plexus/b.py\nx = 1\n")
     assert not res.ok and "ended inside" in res.note

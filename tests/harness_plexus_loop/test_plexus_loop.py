@@ -7,13 +7,14 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from harness.plexus_loop import MissionRun, RefuseToStart
+from harness.plexus_loop import MissionRun, RefuseToStart, loop
 from harness.plexus_loop.__main__ import main as cli_main
 from harness.plexus_loop.loop import Lock
-from harness.plexus_loop.metrics import measure, run_gate
+from harness.plexus_loop.metrics import MetricResult, measure, run_gate
 from harness.plexus_loop.mission import Gate, HoudiniPolicy, Metric, MissionError, WorkerSpec, mission_from_dict
 from harness.plexus_loop.profile import Profile, choose_profile, houdini_state
 from harness.plexus_loop.workers import OllamaWorker, WorkerResult, extract_diff
@@ -161,6 +162,24 @@ def test_attempt_starts_from_best_commit(repo):
     assert seen == ["4"]
 
 
+def test_a_restart_works_from_the_loop_branch_whatever_head_says(repo):
+    # Every run after the first is a restart, and only the mission file comes from the main tree: rows 64 to 73 ran on a
+    # brief the loop branch lacked. The tip is the base and the baseline, and the ledger's row N stays line N.
+    d = _mission()
+    d["budget"]["attempts"] = 1
+    first = run(repo, d, Scripted(set_score(4)))
+    (repo / "plexus" / "score.txt").write_text("9\n")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-qam", "head moves on")
+    master = _git(repo, "rev-parse", "master").strip()
+    w = Scripted(set_score(3))
+    second = run(repo, d, w)
+    assert second.base == first.tip and second.baseline == 4 and second.attempts[0].kept
+    assert "```file:plexus/score.txt\n4\n" in w.prompts[0]
+    assert _git(repo, "rev-parse", "plexus-loop/demo").strip() == second.tip and _git(repo, "rev-parse", "master").strip() == master
+    rows = (repo / ".plexus_loop" / "demo" / "attempts.jsonl").read_text(encoding="utf-8").splitlines()
+    assert [json.loads(row)["n"] for row in rows] == [1, 1]
+
+
 def test_drops_frozen_path(repo):
     def touch_frozen(wt):
         (wt / "plexus" / "score.txt").write_text("0\n")
@@ -303,6 +322,38 @@ def test_build_core_passes_with_no_crate_yet(tmp_path):
     assert not (tmp_path / "plexus").exists()
 
 
+def test_build_core_copies_only_what_this_build_made(tmp_path, monkeypatch):
+    # Every worktree shares one cargo target, so an earlier attempt's library is always there. A failed build that copied
+    # it would pass the core gate on Rust that does not compile, and the metric would score the old code. cargo keeps the
+    # gate's own pipes, which is how rows 78 and 79 had E0596 in the next prompt.
+    from harness.plexus_loop import build_core
+
+    root, target = tmp_path / "wt", tmp_path / "shared"
+    (root / "crates" / "plexus-core").mkdir(parents=True)
+    (root / "crates" / "plexus-core" / "Cargo.toml").write_text("")
+    built, name = build_core.artifact(target)
+    built.parent.mkdir(parents=True)
+    built.write_text("LIB")
+    dest = root / "plexus" / name
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(target))
+    codes, calls = [101, 0, 0], []
+
+    def cargo(cmd, **kw):
+        calls.append((cmd, kw))
+        return SimpleNamespace(returncode=codes.pop(0))
+
+    with monkeypatch.context() as mp:  # undone here: the shared fixtures' teardown runs later and imports modules
+        mp.setattr(subprocess, "run", cargo)
+        assert build_core.main(root) == 101 and not dest.exists()
+        assert build_core.main(root) == 0 and dest.read_text() == "LIB"
+        dest.unlink()
+        built.unlink()
+        assert build_core.main(root) == 2 and not dest.exists()
+    (cmd, kw), *_ = calls
+    assert "--release" in cmd and "python" in cmd and kw["cwd"] == root.resolve()
+    assert not {"capture_output", "stdout", "stderr"} & set(kw)
+
+
 def test_profile_is_rechecked_each_attempt(repo):
     profiles = iter([CPU, CPU, Profile(device="gpu", houdini="absent"), CPU])
     w = Scripted(set_score(4), set_score(3))
@@ -438,6 +489,16 @@ def test_a_run_that_collects_nothing_is_an_error_never_a_score_of_zero(tmp_path)
     assert res.value is None and res.error == "no tests collected"
 
 
+def test_a_pytest_that_writes_no_report_is_an_error_never_a_score(tmp_path):
+    # A conftest that raises takes this path, and so does a native crash in code a test calls. The output is all the next
+    # prompt has, and without the check a baseline ends the run on FileNotFoundError.
+    (tmp_path / "t").mkdir()
+    (tmp_path / "t" / "conftest.py").write_text("raise RuntimeError('BOOM-AT-CONFTEST')\n")
+    (tmp_path / "t" / "test_x.py").write_text("def test_x(): pass\n")
+    res = measure(Metric(kind="pytest_failures", target="t"), tmp_path, CPU)
+    assert res.value is None and res.error == "pytest wrote no report" and "BOOM-AT-CONFTEST" in res.tail
+
+
 def test_a_gain_that_comes_from_breaking_collection_is_dropped(tmp_path):
     # Three failures become one collection error: a lower number, from fewer tests.
     r = tmp_path / "r"
@@ -461,6 +522,20 @@ def test_a_gain_that_comes_from_breaking_collection_is_dropped(tmp_path):
     (a,) = report.attempts
     assert not a.kept and a.metric == 1 and report.best == 3
     assert a.reason == "tests went missing (1 collected, was 3)"
+
+
+def test_a_keep_raises_the_count_a_later_gain_must_hold(repo, monkeypatch):
+    # A keep that turns a collection error into real tests moves the floor. A later reply that breaks collection again
+    # scores lower on fewer tests, and measured against the baseline's count it would be a false keep.
+    seq = [MetricResult(3.0, total=3), MetricResult(2.0, total=10), MetricResult(1.0, total=3)]
+    monkeypatch.setattr(loop, "measure", lambda metric, wt, profile: seq.pop(0))
+    d = _mission()
+    d["budget"]["attempts"] = 2
+    report = run(repo, d, Scripted(set_score(4), set_score(3)))
+    first, second = report.attempts
+    assert first.kept and not second.kept and report.best == 2
+    assert second.reason == "tests went missing (3 collected, was 10)"
+    assert _git(repo, "show", "plexus-loop/demo:plexus/score.txt").strip() == "4"
 
 
 def test_mission_validation():
