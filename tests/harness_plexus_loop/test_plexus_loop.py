@@ -114,6 +114,18 @@ def test_refuses_when_gates_fail_before_any_change(repo):
     assert w.prompts == []
 
 
+def test_a_baseline_worktree_that_cannot_be_made_is_a_refusal(repo, monkeypatch):
+    def cannot_add(*args):
+        raise loop.gitops.GitError("git worktree add: fatal: already exists")
+
+    monkeypatch.setattr(loop.gitops, "add_worktree", cannot_add)
+    w = Scripted()
+    with pytest.raises(RefuseToStart, match="baseline worktree"):
+        run(repo, _mission(), w)
+    assert w.prompts == []
+    assert not (repo / ".plexus_loop" / "lock").exists()
+
+
 def test_lock_blocks_a_second_run(repo):
     state = repo / ".plexus_loop"
     Lock(state).acquire("other")  # held by this live process
@@ -255,6 +267,38 @@ def test_no_change_and_worker_failure_are_dropped(repo):
     report = run(repo, _mission(), Scripted(lambda wt: None, lambda wt: WorkerResult(False, "boom")))
     assert report.attempts[0].reason == "no change"
     assert report.attempts[1].reason == "worker: boom"
+
+
+def test_a_worktree_that_cannot_be_made_costs_its_attempt_and_stays_out_of_the_next_prompt(repo, monkeypatch):
+    # A folder held open by a left-behind process belongs to one attempt number, so the next attempt's fresh path runs.
+    # git's message quotes this machine's paths: the review shows it, and the router and the next prompt never read it.
+    real_add = loop.gitops.add_worktree
+
+    def add_worktree(rp, path, sha):
+        if path.name == "attempt-2":
+            raise loop.gitops.GitError(f"git worktree add: fatal: '{path}' already exists")
+        real_add(rp, path, sha)
+
+    monkeypatch.setattr(loop.gitops, "add_worktree", add_worktree)
+    routed = []
+
+    def route(mi, last, attempts):
+        routed.append([a.n for a in attempts])
+        return loop.Route(None, "none")
+
+    def no_gain(wt):
+        (wt / "plexus" / "note.txt").write_text("no gain\n")
+
+    w = Scripted(no_gain, set_score(4))
+    m = mission_from_dict(_mission(budget={"attempts": 3, "hours": 1, "max_consecutive_failures": 5}))
+    report = MissionRun(m, repo, worker=w, profile_fn=lambda: CPU, log=lambda s: None, route_fn=route).run()
+    _, failed, last = report.attempts
+    assert failed.reason.startswith("git: ") and failed.route_s is None
+    assert len(w.prompts) == 2 and last.kept
+    assert routed == [[], [1]]
+    assert "Attempt 1 was dropped" in w.prompts[1] and "file:plexus/note.txt" in w.prompts[1]
+    assert "already exists" not in w.prompts[1]
+    assert "already exists" in (repo / ".plexus_loop" / "demo" / "REVIEW.md").read_text(encoding="utf-8")
 
 
 def test_min_delta_requires_strict_gain(repo):

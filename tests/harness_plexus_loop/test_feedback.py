@@ -28,7 +28,8 @@ def _repo(tmp_path: Path) -> Path:
     return r
 
 
-# The gate fails, printing a rule, whenever plexus/bad.txt exists.
+# The gate fails, printing a rule, whenever plexus/bad.txt exists. Its source holds the rule too and the
+# prompt echoes the command, so only a newline-bounded rule is the gate's output.
 GATE = [PY, "-c", "import os,sys; bad=os.path.exists('plexus/bad.txt'); "
         "print('RULE: plexus.core must stay free of pxr' if bad else 'ok'); sys.exit(1 if bad else 0)"]
 
@@ -78,7 +79,7 @@ def test_a_failed_gate_shows_its_output_in_the_next_prompt(tmp_path):
     first, second = w.prompts
     assert "## Why the last attempt was dropped" not in first
     assert "## Why the last attempt was dropped" in second
-    assert "gate 'layers' failed" in second and "RULE: plexus.core must stay free of pxr" in second
+    assert "gate 'layers' failed" in second and "\nRULE: plexus.core must stay free of pxr\n" in second
     # The files come first so Ollama can reuse their cached prefix; the drop follows them.
     assert second.index("## Files") < second.index("## Why the last attempt was dropped")
 
@@ -98,7 +99,7 @@ def test_a_long_gate_output_keeps_its_first_error_and_command_in_the_prompt(tmp_
     MissionRun(m, r, worker=w, log=lambda s: None,
                profile_fn=lambda: Profile(device="cpu", houdini="running")).run()
     section = w.prompts[1].split("## Why the last attempt was dropped", 1)[1]
-    assert "FIRST-ERROR" in section and "\n$ " in section and "left out" in section
+    assert "\nFIRST-ERROR\n" in section and "\n$ " in section and "left out" in section
 
 
 def test_a_gate_output_with_an_undecodable_byte_still_reaches_the_prompt(tmp_path):
@@ -187,4 +188,4 @@ def test_the_ledger_records_the_detail(tmp_path):
     r = _repo(tmp_path)
     _run(r, Steps(_write("plexus/bad.txt", "x")), attempts=1)
     line = (r / ".plexus_loop" / "demo" / "attempts.jsonl").read_text(encoding="utf-8").splitlines()[-1]
-    assert "RULE: plexus.core must stay free of pxr" in json.loads(line)["detail"]
+    assert "\nRULE: plexus.core must stay free of pxr\n" in json.loads(line)["detail"]

@@ -52,7 +52,7 @@ WORKER_DOWN = "the worker could not run"  # starts the stop reason and the refus
 # How much of a dropped attempt's output the next prompt shows. Large enough that a clipped
 # gate output (head + marker + tail) plus its "$ cmd" line is never cut again.
 FEEDBACK_CHARS = GATE_HEAD_CHARS + GATE_TAIL_CHARS + 500
-# At most this many syntax errors lead the feedback; one per file, each line clipped.
+# At most this many syntax errors sit above the output in the feedback; one per file, each line clipped.
 SYNTAX_MAX = 10
 SYNTAX_LINE_CHARS = 200
 
@@ -62,7 +62,7 @@ def syntax_errors(root: Path, paths: list[str]) -> list[str]:
 
     A gate that parses files (the layers guard) or imports them (pytest) reports a syntax
     error deep in a traceback, often in the part of its output the next prompt leaves out.
-    This puts the file, line and reason first. It only compiles; it never runs the code.
+    This puts the file, line and reason above that output. It only compiles; it never runs the code.
     """
     out: list[str] = []
     for rel in paths:
@@ -134,7 +134,7 @@ def known_fix_quotes(mission: Mission, repo: Path, failures: list[str]) -> list[
     """The written-down fix for each recognised error in ``failures``, each quoted once.
 
     A known fix matches with its regular expression against a target failure's text, or against
-    a failing gate's output when the attempt has no target failures (``build_prompt``), and quotes
+    a failing gate's output when the attempt has no target failures (``_drop_fix_lines``), and quotes
     the line of its file that contains its anchor, read from ``repo`` (the attempt's tree at tip,
     so the quote is the version the worker is given). A missing file or anchor quotes nothing.
     """
@@ -165,7 +165,7 @@ def fix_lines(mission: Mission, repo: Path, a: Attempt) -> list[str]:
     """What a prompt says under this attempt's failure: its known fixes, word for word, then the line the
     fix router chose, worded as the guess it is, unless a known fix already quotes that line. Whole lines
     compare, because a known fix's quote keeps the list marker, can start at a later sentence of its line
-    and stops at KNOWN_FIX_CHARS. Only reads what the attempt holds; it never calls Jev."""
+    and stops at KNOWN_FIX_CHARS. It reads the attempt and the known fixes' files under ``repo``; it never calls Jev."""
     where = "failure" if a.target_failures else "output"
     fixes = _drop_fix_lines(mission, repo, a)
     out: list[str] = []
@@ -342,7 +342,7 @@ class Attempt:
     # and ignored-file scans, the syntax check, the fix router's call (fix_route["seconds"]),
     # and on a keep the commit and branch advance.
     wall_s: float | None = None  # the whole attempt, worktree in to worktree out
-    route_s: float | None = None  # choosing the step (one Jev call when the router is jev)
+    route_s: float | None = None  # choosing the step (at most one Jev call when the router is jev; none with one ready step)
     worker_s: float | None = None  # the worker: the model call plus writing its files
     gates: list[dict] = field(default_factory=list)  # [{"name", "seconds", "ok"}], in run order
     metric_s: float | None = None  # the metric run; only when every gate passed
@@ -755,7 +755,10 @@ class MissionRun:
         # metric must be readable, or no attempt could ever be judged.
         profile = self.profile_fn()
         wt = wt_root / "baseline"
-        gitops.add_worktree(self.repo, wt, tip)
+        try:
+            gitops.add_worktree(self.repo, wt, tip)
+        except gitops.GitError as e:
+            raise RefuseToStart(f"the baseline worktree could not be made: {e}") from e
         try:
             why, last, _ = self._evaluate(wt, profile)
         finally:
@@ -794,18 +797,19 @@ class MissionRun:
             a = Attempt(n=n, started=self.clock(), houdini=profile.houdini, device=profile.device)
             t_attempt = time.monotonic()
             wt = wt_root / f"attempt-{n}"
-            gitops.add_worktree(self.repo, wt, tip)
             try:
+                gitops.add_worktree(self.repo, wt, tip)
+                # A row that never reached a model reads as if it had not happened, to the router and to the next prompt:
+                # an outage's, or one with no worktree (route_s None), whose git message quotes this machine's paths. The
+                # failure text and the handed-on files of the attempt before it stay in view.
+                worked = [x for x in attempts if not x.unreachable and x.route_s is not None]
                 t0 = time.monotonic()
-                route = self.route_fn(mi, last, attempts)
+                route = self.route_fn(mi, last, worked)
                 a.route_s = _secs(t0)
                 a.route, a.route_note = route.label(), route.note
                 if route.step is not None:
                     self.log(f"[plexus-loop] attempt {n}: step {a.route}"
                              + (f" ({route.note})" if route.note else ""))
-                # An outage row never reached a model, so the next prompt reads as if it had not happened: the failure
-                # text and the handed-on files of the attempt before it stay in view.
-                worked = [x for x in attempts if not x.unreachable]
                 prompt = build_prompt(mi, wt, best, last, worked, mi.worker.context_chars,
                                       step=route.step, carried=carried)
                 t0 = time.monotonic()

@@ -12,7 +12,7 @@ python -m harness.plexus_loop run   harness/plexus_loop/missions/acceptance.toml
 python -m harness.plexus_loop stop
 ```
 
-`check` validates the mission and says whether the next attempt would run on the CPU or the GPU. It does not load the model, so `ready` says nothing about the worker. `run` works until a budget or a stop condition ends it. `stop` drops a stop file, and the run halts after its current attempt.
+`check` validates the mission and says whether the next attempt would run on the CPU or the GPU. `ready` means the mission file loads and every path it requires exists, and nothing more: `check` does not load the model, and it does not look for a stop file, a held lock or a mission with no gates, so `run` can still refuse. `run` works until a budget or a stop condition ends it. `stop` drops a stop file, and the run halts after its current attempt.
 
 ## What one attempt does
 
@@ -28,7 +28,7 @@ python -m harness.plexus_loop stop
 
 It stops when the attempt or hour budget is used, after too many attempts in a row that weren't kept, after two attempts in a row that reached no server able to run the model, when a stop file appears, or when every target test passes.
 
-It refuses to start if a path the mission requires is missing, if a stop file is already there, if the mission names no gates, if another mission holds the lock, if the worker cannot load its model, or if the gates or the metric fail before any change.
+It refuses to start if a path the mission requires is missing, if a stop file is already there, if the mission names no gates, if another mission holds the lock, if the worker cannot load its model, if the baseline's worktree cannot be made, or if the gates or the metric fail before any change.
 
 ## What it leaves
 

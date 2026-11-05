@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,7 @@ from .profile import Profile
 
 TAIL_CHARS = 4000
 TEST_MESSAGE_CHARS = 1500  # one test's own failure, as the next prompt shows it
+KILL_DRAIN_S = 10  # after a timeout: the limit on taskkill, then on the wait for the pipes
 
 
 @dataclass
@@ -52,15 +54,39 @@ def _clip(*texts: str) -> str:
     return text[:GATE_HEAD_CHARS] + "\n[... middle of the output left out ...]\n" + text[-GATE_TAIL_CHARS:]
 
 
+def _run_bounded(cmd: list[str], worktree: Path, profile: Profile,
+                 timeout: float) -> subprocess.CompletedProcess:
+    """subprocess.run with a timeout that holds on Windows, raising TimeoutExpired as it does.
+
+    There subprocess.run kills only the direct child and then waits with no limit for the pipes,
+    and a grandchild holds them (cargo under build_core.py, a test binary under cargo), so a stuck
+    one never returns, past every budget and the stop file. So the whole tree goes first, and the
+    wait for the pipes has a limit in case something left the tree. No ``with``: its exit closes a
+    pipe a grandchild still holds, and that blocks until the grandchild exits.
+    """
+    # errors="replace": a byte the locale cannot decode (rustc echoing a worker's '”' or '←')
+    # costs a replacement character (plus mojibake for that character's other bytes), never
+    # the stream. Without it the reader thread dies and the output comes back None, so the
+    # next prompt would show nothing of the error.
+    p = subprocess.Popen(cmd, cwd=worktree, env=profile.environ(), stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, text=True, errors="replace")
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except BaseException:  # a timeout or Ctrl-C: subprocess.run also kills on any exception
+        if sys.platform.startswith("win"):
+            with contextlib.suppress(OSError, subprocess.SubprocessError):
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], capture_output=True,
+                               timeout=KILL_DRAIN_S, check=False)
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            p.kill()
+            p.communicate(timeout=KILL_DRAIN_S)
+        raise
+    return subprocess.CompletedProcess(cmd, p.returncode, out, err)
+
+
 def run_gate(gate: Gate, worktree: Path, profile: Profile) -> GateResult:
     try:
-        # errors="replace": a byte the locale cannot decode (rustc echoing a worker's '”' or '←')
-        # costs a replacement character (plus mojibake for that character's other bytes), never
-        # the stream. Without it the reader thread dies and the output comes back None, so the
-        # next prompt would show nothing of the error.
-        r = subprocess.run(
-            gate.cmd, cwd=worktree, env=profile.environ(), capture_output=True, text=True,
-            errors="replace", timeout=gate.timeout_s, check=False)
+        r = _run_bounded(gate.cmd, worktree, profile, gate.timeout_s)
     except subprocess.TimeoutExpired:
         return GateResult(gate.name, False, "timed out")
     except OSError as e:
@@ -86,8 +112,7 @@ def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> Metric
         cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                metric.target, f"--junitxml={junit}"]
         try:
-            r = subprocess.run(cmd, cwd=worktree, env=profile.environ(), capture_output=True,
-                               text=True, errors="replace", timeout=metric.timeout_s, check=False)
+            r = _run_bounded(cmd, worktree, profile, metric.timeout_s)
         except subprocess.TimeoutExpired:
             return MetricResult(None, error="metric run timed out")
         tail = _tail(r.stdout, r.stderr)
@@ -132,8 +157,7 @@ def _case_message(el: ET.Element) -> str:
 def _command(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:
     """Run the mission's command and read a number from its last output line."""
     try:
-        r = subprocess.run(metric.cmd, cwd=worktree, env=profile.environ(), capture_output=True,
-                           text=True, errors="replace", timeout=metric.timeout_s, check=False)
+        r = _run_bounded(metric.cmd, worktree, profile, metric.timeout_s)
     except subprocess.TimeoutExpired:
         return MetricResult(None, error="metric command timed out")
     except OSError as e:

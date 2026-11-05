@@ -738,6 +738,8 @@ def test_a_lock_with_a_dead_or_unreadable_pid_is_not_a_live_run(tmp_path):
     (tmp_path / ".plexus_loop").mkdir()
     (tmp_path / ".plexus_loop" / "lock").write_text("not json", encoding="utf-8")
     assert live.live_run_pid(tmp_path) is None
+    (tmp_path / ".plexus_loop" / "lock").write_text(json.dumps({"pid": DEAD_PID}), encoding="utf-8")
+    assert live.live_run_pid(tmp_path) is None
     (tmp_path / ".plexus_loop" / "lock").write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")
     if sys.platform.startswith("win"):
         assert live.live_run_pid(tmp_path) == os.getpid()
