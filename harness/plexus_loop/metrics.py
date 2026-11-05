@@ -103,9 +103,11 @@ def measure(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:
 def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:
     """Count what did not pass under the target, from the report's own totals.
 
-    Failures, errors and skips all count, so a change can't score by skipping a test. The totals count
-    report entries, not tests: a test that fails and then errors in teardown adds two, so the value can
-    pass ``total``. A run that collects nothing is an error, never a score of zero.
+    Failures, errors and skips all count, so a change can't score by skipping a test. The value counts
+    report entries, not tests: a test that fails and then errors in teardown adds two, so it can pass
+    ``total``. ``total`` counts test ids and not the report's own ``tests``, which adds a passing test
+    with a teardown error twice, so the attempt that fixes that error would read as a test gone missing.
+    A run that collects nothing is an error, never a score of zero.
     """
     with tempfile.TemporaryDirectory() as d:
         junit = Path(d) / "junit.xml"
@@ -123,16 +125,17 @@ def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> Metric
         except ET.ParseError:
             return MetricResult(None, tail=tail, error="pytest report could not be read")
     suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
-    total = bad = 0
+    bad = 0
+    tests: set[str] = set()
     failing: list[str] = []
     messages: dict[str, str] = {}
     for s in suites:
-        total += int(s.get("tests", 0))
         bad += int(s.get("failures", 0)) + int(s.get("errors", 0)) + int(s.get("skipped", 0))
         for case in s.iter("testcase"):
+            tid = f"{case.get('classname', '')}::{case.get('name', '')}"
+            tests.add(tid)
             bad_children = [c for c in case if c.tag in ("failure", "error", "skipped")]
             if bad_children:
-                tid = f"{case.get('classname', '')}::{case.get('name', '')}"
                 failing.append(tid)
                 # A test that fails and then errors in teardown appears twice under one id: keep
                 # its own failure first and add the teardown after it, never replace it.
@@ -140,9 +143,9 @@ def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> Metric
                 if tid in messages:  # the first entry is whole (each is at most the cap); clip the rest
                     text = (messages[tid] + "\n" + text)[:TEST_MESSAGE_CHARS]
                 messages[tid] = text
-    if total == 0:
+    if not tests:
         return MetricResult(None, total=0, tail=tail, error="no tests collected")
-    return MetricResult(float(bad), total=total, tail=tail, failing=failing, messages=messages)
+    return MetricResult(float(bad), total=len(tests), tail=tail, failing=failing, messages=messages)
 
 
 def _case_message(el: ET.Element) -> str:

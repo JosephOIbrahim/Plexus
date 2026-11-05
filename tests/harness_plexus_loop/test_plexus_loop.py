@@ -626,6 +626,38 @@ def test_a_keep_raises_the_count_a_later_gain_must_hold(repo, monkeypatch):
     assert _git(repo, "show", "plexus-loop/demo:plexus/score.txt").strip() == "4"
 
 
+def test_a_teardown_error_in_a_passing_test_is_one_test_and_its_fix_is_kept(tmp_path):
+    # The report's own tests= counts that test twice, so the attempt that clears the error read as a test gone missing,
+    # at every restart too, because the next baseline measured the same tip.
+    r = tmp_path / "r"
+    (r / "plexus").mkdir(parents=True)
+    acc = r / "tests" / "acceptance"
+    acc.mkdir(parents=True)
+    (acc / "test_t.py").write_text(
+        "from pathlib import Path\n"
+        "import pytest\n"
+        "FLAG = Path(__file__).parents[2] / 'plexus' / 'stop_raises.txt'\n"
+        "@pytest.fixture\n"
+        "def rt():\n"
+        "    yield\n"
+        "    if FLAG.read_text() == '1':\n"
+        "        raise RuntimeError('stop raised')\n"
+        "def test_a(rt): pass\n"
+        "def test_b(): pass\n"
+    )
+    (r / "plexus" / "stop_raises.txt").write_text("1")
+    (r / ".gitignore").write_text("__pycache__/\n")
+    _git(r, "init", "-q", "-b", "master")
+    _git(r, "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A")
+    _git(r, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "s")
+    d = _mission(metric={"kind": "pytest_failures", "target": "tests/acceptance", "min_delta": 1})
+    d["budget"]["attempts"] = 1
+    report = run(r, d, Scripted(lambda wt: (wt / "plexus" / "stop_raises.txt").write_text("0")))
+    (a,) = report.attempts
+    assert a.kept and report.baseline == 1 and report.best == 0
+    assert measure(Metric(kind="pytest_failures", target="tests/acceptance"), r, CPU).total == 2
+
+
 def test_mission_validation():
     with pytest.raises(MissionError, match="min_delta"):
         d = _mission()
