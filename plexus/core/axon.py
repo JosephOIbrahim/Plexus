@@ -95,9 +95,9 @@ class PlexusAxon:
             
             # Collect as many events as possible within the debounce window
             start_time = time.perf_counter()
-            while (time.perf_counter() - start_time) < self._debounce_s:
+            while (remaining := self._debounce_s - (time.perf_counter() - start_time)) > 0:
                 try:
-                    next_event = self._queue.get(timeout=0.01)
+                    next_event = self._queue.get(timeout=remaining)
                     collected_paths.update(next_event.paths)
                     collected_resynced.update(next_event.resynced)
                     t = max(t, next_event.t)
