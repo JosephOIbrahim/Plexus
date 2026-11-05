@@ -75,10 +75,11 @@ def measure(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:
 
 
 def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:
-    """Count tests under the target that did not pass.
+    """Count what did not pass under the target, from the report's own totals.
 
-    Failures, errors and skips all count, so a change can't score by skipping
-    a test. A run that collects nothing is an error, never a score of zero.
+    Failures, errors and skips all count, so a change can't score by skipping a test. The totals count
+    report entries, not tests: a test that fails and then errors in teardown adds two, so the value can
+    pass ``total``. A run that collects nothing is an error, never a score of zero.
     """
     with tempfile.TemporaryDirectory() as d:
         junit = Path(d) / "junit.xml"

@@ -12,7 +12,8 @@ import pytest
 from harness.plexus_loop import MissionRun, RefuseToStart
 from harness.plexus_loop.__main__ import main as cli_main
 from harness.plexus_loop.loop import Lock
-from harness.plexus_loop.mission import HoudiniPolicy, MissionError, WorkerSpec, mission_from_dict
+from harness.plexus_loop.metrics import measure
+from harness.plexus_loop.mission import HoudiniPolicy, Metric, MissionError, WorkerSpec, mission_from_dict
 from harness.plexus_loop.profile import Profile, choose_profile, houdini_state
 from harness.plexus_loop.workers import OllamaWorker, WorkerResult, extract_diff
 
@@ -351,7 +352,7 @@ def test_prompt_names_rules_and_focus_files(repo):
     assert "```file:plexus/score.txt" in p and "file:README.md" not in p
 
 
-def test_pytest_failures_metric_counts_and_guards(tmp_path):
+def test_pytest_failures_metric_counts_down_and_stops_at_zero(tmp_path):
     r = tmp_path / "r"
     (r / "plexus").mkdir(parents=True)
     acc = r / "tests" / "acceptance"
@@ -377,6 +378,46 @@ def test_pytest_failures_metric_counts_and_guards(tmp_path):
     assert report.baseline == 3
     assert [a.metric for a in report.attempts[:2]] == [1, 0]
     assert report.best == 0 and report.stop_reason == "every target test passes"
+
+
+def test_a_skipped_test_counts_as_not_passing(tmp_path):
+    # A change must never score by skipping a test.
+    (tmp_path / "t").mkdir()
+    (tmp_path / "t" / "test_s.py").write_text("import pytest\n\ndef test_skips(): pytest.skip('x')\n\ndef test_passes(): pass\n")
+    res = measure(Metric(kind="pytest_failures", target="t"), tmp_path, CPU)
+    assert (res.value, res.total) == (1.0, 2) and res.failing == ["t.test_s::test_skips"]
+
+
+def test_a_run_that_collects_nothing_is_an_error_never_a_score_of_zero(tmp_path):
+    # A zero would read as "every target test passes" and end the run.
+    (tmp_path / "t").mkdir()
+    res = measure(Metric(kind="pytest_failures", target="t"), tmp_path, CPU)
+    assert res.value is None and res.error == "no tests collected"
+
+
+def test_a_gain_that_comes_from_breaking_collection_is_dropped(tmp_path):
+    # Three failures become one collection error: a lower number, from fewer tests.
+    r = tmp_path / "r"
+    (r / "plexus").mkdir(parents=True)
+    acc = r / "tests" / "acceptance"
+    acc.mkdir(parents=True)
+    (acc / "test_t.py").write_text(
+        "from pathlib import Path\n"
+        "N = int(Path(__file__).parents[2].joinpath('plexus/n.txt').read_text())\n"
+        "def test_t1(): assert N >= 1\n"
+        "def test_t2(): assert N >= 2\n"
+        "def test_t3(): assert N >= 3\n"
+    )
+    (r / "plexus" / "n.txt").write_text("0")
+    _git(r, "init", "-q", "-b", "master")
+    _git(r, "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A")
+    _git(r, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "s")
+    d = _mission(metric={"kind": "pytest_failures", "target": "tests/acceptance", "min_delta": 1})
+    d["budget"]["attempts"] = 1
+    report = run(r, d, Scripted(lambda wt: (wt / "plexus" / "n.txt").write_text("not a number")))
+    (a,) = report.attempts
+    assert not a.kept and a.metric == 1 and report.best == 3
+    assert a.reason == "tests went missing (1 collected, was 3)"
 
 
 def test_mission_validation():

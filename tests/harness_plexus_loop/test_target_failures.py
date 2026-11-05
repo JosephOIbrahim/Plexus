@@ -90,7 +90,7 @@ def test_long_traceback():
 '''
 
 
-def test_teardown_error_keeps_the_tests_own_failure_first_and_counts_once(tmp_path):
+def test_teardown_error_keeps_the_tests_own_failure_first_and_is_picked_once(tmp_path):
     r = _repo(tmp_path)
     (r / "tests" / "acceptance" / "phase1" / "test_t1_target.py").write_text(T_TEARDOWN)
     m = measure(Metric(kind="pytest_failures", target="tests/acceptance/phase1/test_t1_target.py"), r, PROFILE)
@@ -103,6 +103,8 @@ def test_teardown_error_keeps_the_tests_own_failure_first_and_counts_once(tmp_pa
     assert all(len(v) <= TEST_MESSAGE_CHARS for v in m.messages.values())
     picked = target_failures(m, STEP)
     assert [p.split("\n", 1)[0] for p in picked].count(tid) == 1
+    # The score adds junit's failures and errors, so the test that fails both ways counts twice: 2 tests score 3.
+    assert m.total == 2 and m.value == 3
 
 
 # -- matching and selection --------------------------------------------------------

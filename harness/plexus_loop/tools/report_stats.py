@@ -24,8 +24,13 @@ def load(repo: Path, mission: str) -> list[dict]:
     return [json.loads(x) for x in text.splitlines() if x.strip()]
 
 
+def no_server(r: dict) -> bool:
+    """Newer rows say so themselves; rows 90 to 119 predate the field, so their reason still decides."""
+    return bool(r.get("unreachable") or NO_SERVER.search(r.get("reason") or ""))
+
+
 def real_attempts(rows: list[dict]) -> list[dict]:
-    return [r for r in rows if not NO_SERVER.search(r.get("reason") or "")]
+    return [r for r in rows if not no_server(r)]
 
 
 def wall_by_device(rows: list[dict]) -> dict[str, tuple[int, float, float]]:
@@ -41,7 +46,7 @@ def drop_reasons(rows: list[dict]) -> Counter:
     reasons: Counter = Counter()
     for r in rows:
         why = r.get("reason") or ""
-        if NO_SERVER.search(why):
+        if no_server(r):
             key = "no server"
         elif r.get("kept"):
             key = "kept"

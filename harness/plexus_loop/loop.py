@@ -42,11 +42,13 @@ RouteFn = Callable[[Mission, MetricResult | None, list["Attempt"]], Route]
 
 
 def default_route(mission: Mission, last: MetricResult | None, recent: list[Attempt]) -> Route:
+    # An outage says nothing about a step, and a server's error text can quote this machine's paths, so it stays off Jev.
     return choose_route(mission.router, mission.steps,
                         last.failing if last else [], last.tail if last else "",
-                        [f"step {a.route or '?'}: {a.reason}" for a in recent if not a.kept])
+                        [f"step {a.route or '?'}: {a.reason}" for a in recent if not a.kept and not a.unreachable])
 
 STATE_DIR = ".plexus_loop"
+WORKER_DOWN = "the worker could not run"  # starts the stop reason
 # How much of a dropped attempt's output the next prompt shows. Large enough that a clipped
 # gate output (head + marker + tail) plus its "$ cmd" line is never cut again.
 FEEDBACK_CHARS = GATE_HEAD_CHARS + GATE_TAIL_CHARS + 500
@@ -353,6 +355,8 @@ class Attempt:
     # adds nothing, "other" when one matched and Jev chose anything else), or {} when it was not asked:
     # no [fix_router], a keep, a drop that ran nothing, or a drop that printed nothing.
     fix_route: dict = field(default_factory=dict)
+    # The call reached no server that could run the model, and two in a row stop the run.
+    unreachable: bool = False
 
 
 @dataclass
@@ -784,6 +788,7 @@ class MissionRun:
                 finally:
                     a.worker_s = _secs(t0)
                 a.ollama = dict(getattr(res, "stats", None) or {})
+                a.unreachable = res.unreachable
                 if getattr(res, "reply", ""):
                     a.reply_file = self._save_reply(started, n, res.reply)
                 a.changed = sorted(set(gitops.changed_paths(wt)) | set(getattr(res, "wrote", []) or []))
@@ -863,6 +868,12 @@ class MissionRun:
             report = RunReport(mi.name, mi.branch, base, tip, baseline, best, attempts,
                                "running", started, self.clock())
             write_review(self.mdir / "REVIEW.md", mi, report)
+            if a.unreachable and len(attempts) > 1 and attempts[-2].unreachable:
+                # Every attempt after these would fail the same way in seconds, each with a Jev routing call, and spend the
+                # budget and the consecutive count on nothing (rows 90 to 119). One alone costs only its attempt, as any drop
+                # does, because a server that dropped one call can still answer the next. A restart starts both counts afresh.
+                stop = f"{WORKER_DOWN}: {a.reason}"
+                break
 
         report = RunReport(mi.name, mi.branch, base, tip, baseline, best, attempts, stop,
                            started, self.clock())
