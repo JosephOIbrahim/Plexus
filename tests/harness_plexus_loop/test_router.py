@@ -124,8 +124,14 @@ def test_the_loops_own_drop_lines_reach_their_option(monkeypatch):
                                    router={"kind": "jev"}))
     drop = Attempt(n=1, started=0.0, houdini="off", device="cpu", reason="gate 'core' failed",
                    route=Route(m.steps[1], "jev", 0.7).label())
-    assert loop.default_route(m, MetricResult(3.0, failing=FAILING_ALL[1:]), [drop]).step.id == "S5"
-    crit = seen[0][1]["questions"]["next_step"]["criteria"]
+    # A keep is no drop, and the tail is what the question tells Jev to read first: S8 and S9 are ready together.
+    kept = Attempt(n=2, started=0.0, houdini="off", device="cpu", kept=True, reason="strict gain",
+                   route=Route(m.steps[2], "jev", 0.8).label())
+    last = MetricResult(3.0, failing=FAILING_ALL[1:], tail="E   the end of the run")
+    assert loop.default_route(m, last, [drop, kept]).step.id == "S5"
+    body = seen[0][1]
+    assert body["state"]["latest_test_output_tail"] == "E   the end of the run" and body["state"]["failing_tests"] == FAILING_ALL[1:]
+    crit = body["questions"]["next_step"]["criteria"]
     assert crit["S2"]["its_recent_drops"] == ["gate 'core' failed"] and crit["S5"]["its_recent_drops"] == []
 
 

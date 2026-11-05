@@ -23,8 +23,10 @@ def load(repo: Path, mission: str) -> list[dict]:
 
 
 def short(test_id: str) -> str:
-    """The test's own name, from pytest's id or junit's dotted one."""
-    return test_id.rsplit("::", 1)[-1].rsplit(".", 1)[-1]
+    """The test's own name with its parameters, from pytest's id or junit's dotted one."""
+    # Split before the parameters: a parameter id can hold a dot of its own (one-0.3-wakes-once).
+    name, bracket, params = test_id.partition("[")
+    return name.rsplit("::", 1)[-1].rsplit(".", 1)[-1] + bracket + params
 
 
 def changes(rows: list[dict], n: int) -> dict[str, list[str]] | None:
@@ -41,9 +43,10 @@ def changes(rows: list[dict], n: int) -> dict[str, list[str]] | None:
 def describe(rows: list[dict], n: int) -> list[str]:
     r = rows[n - 1]
     o = r.get("ollama") or {}
+    wall = "not measured" if r.get("wall_s") is None else f"{r['wall_s'] / 60:.1f} min"
     lines = [
         f"row {n} | attempt {r.get('n')} | {r.get('route')} | kept {r.get('kept')} | {r.get('reason')} | commit {r.get('commit')}",
-        f"metric {r.get('metric')} | failed_gate {r.get('failed_gate')!r} | wall {(r.get('wall_s') or 0) / 60:.1f} min | device {r.get('device')}",
+        f"metric {r.get('metric')} | failed_gate {r.get('failed_gate')!r} | wall {wall} | device {r.get('device')}",
         f"prompt_eval_s {o.get('prompt_eval_s')} for {o.get('prompt_eval_count')} tokens | reply {o.get('eval_count')} tokens in {o.get('eval_s')} s | load {o.get('load_s')} s",
         f"gates: {[(g['name'], g['ok']) for g in r.get('gates', [])]}",
         f"changed: {r.get('changed')} | handed_on: {r.get('handed_on')} | missing: {r.get('missing')} | syntax: {r.get('syntax')}",

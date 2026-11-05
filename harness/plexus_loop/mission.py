@@ -78,8 +78,8 @@ class Step:
     targets: list[str]  # pytest ids or prefixes, e.g. "tests/acceptance/phase1/test_t0_schema_gate.py"
     text: str
     # Repo-relative files the step writes: every reply to the step must send each of them, or
-    # it is dropped before the gates with the names. The prompt lists them, and a dropped
-    # attempt after which any is absent from the worktree has that named in the next prompt.
+    # it is dropped before the gates with the names. The prompt lists them, and names any absent
+    # from its own fresh worktree, whatever the last reply sent.
     files: list[str] = field(default_factory=list)
     # Ids of earlier steps this one builds on. The router offers a step only once every step
     # it names has no failing target left, so a dependency is a rule in code, never a guess.

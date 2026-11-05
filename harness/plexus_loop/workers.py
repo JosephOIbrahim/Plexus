@@ -16,10 +16,12 @@ how the tests run without a model.
 
 from __future__ import annotations
 
+import http.client
 import json
 import re
 import subprocess
 import tempfile
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +39,8 @@ class WorkerResult:
     wrote: list[str] = field(default_factory=list)  # paths written by whole-file blocks
     # The model server's own account of the call, when it gives one (ollama_stats).
     stats: dict = field(default_factory=dict)
+    # The call reached no server that could run the model, and two in a row stop the run.
+    unreachable: bool = False
 
 
 class Worker(Protocol):
@@ -326,6 +330,25 @@ def ollama_stats(body: dict) -> dict:
 
 
 OLLAMA_KEEP_ALIVE = "15m"
+# What a call raises when no model could answer it: a refused or dropped connection, or an HTTP error (Ollama's 500
+# when its engine folder is gone). A read timeout is not here: the server took the request and the model spent that
+# time, so it stays a real attempt.
+UNREACHABLE = (urllib.error.URLError, ConnectionError, http.client.HTTPException)
+HTTP_ERROR_BODY_CHARS = 300
+# Past Ollama's own five-minute load limit, so a load that fails comes back as its error, not as this timeout.
+READY_TIMEOUT_S = 600
+
+
+def _call_failed(e: Exception) -> str:
+    """A failed call as a note. An HTTP error's own text is only its status line; the reason is in its body."""
+    note = f"ollama call failed: {type(e).__name__}: {e}"
+    if isinstance(e, urllib.error.HTTPError):
+        try:
+            body = " ".join(e.read().decode("utf-8", "replace").split())
+        except Exception:  # noqa: BLE001 - a diagnostic must never end the run
+            body = ""
+        note += f": {body[:HTTP_ERROR_BODY_CHARS]}" if body else ""
+    return note
 
 
 class OllamaWorker:
@@ -346,17 +369,34 @@ class OllamaWorker:
             body["options"] = options
         return body
 
-    def attempt(self, worktree: Path, prompt: str, profile: Profile) -> WorkerResult:
+    def _post(self, payload: dict, timeout: float):
         req = urllib.request.Request(
             self.spec.host.rstrip("/") + "/api/generate",
-            data=json.dumps(self.payload(prompt, profile)).encode("utf-8"),
+            data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def cannot_run(self, profile: Profile) -> str:
+        """Why the model cannot load, or "" when nothing says so. An empty prompt only loads it, and only a load can tell:
+        with the engine folder gone (Nov 4) the version and model-list endpoints answered and every local model returned 500.
+        The same line as ``attempt``: a slow load or an odd reply came from a server that took the call, so the first attempt judges it."""
         try:
-            with urllib.request.urlopen(req, timeout=self.spec.timeout_s) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-        except Exception as e:  # noqa: BLE001 - network, timeout, bad JSON all mean no attempt
-            return WorkerResult(False, f"ollama call failed: {type(e).__name__}: {e}")
+            self._post(self.payload("", profile), READY_TIMEOUT_S)
+        except UNREACHABLE as e:
+            return _call_failed(e)
+        except Exception:  # noqa: BLE001 - see the docstring
+            return ""
+        return ""
+
+    def attempt(self, worktree: Path, prompt: str, profile: Profile) -> WorkerResult:
+        try:
+            body = self._post(self.payload(prompt, profile), self.spec.timeout_s)
+        except UNREACHABLE as e:
+            return WorkerResult(False, _call_failed(e), unreachable=True)
+        except Exception as e:  # noqa: BLE001 - a read timeout or bad JSON: the model had its chance
+            return WorkerResult(False, _call_failed(e))
         if not isinstance(body, dict):
             return WorkerResult(False, "ollama call failed: the reply was not a JSON object")
         res = apply_reply(worktree, body.get("response", "") or "")

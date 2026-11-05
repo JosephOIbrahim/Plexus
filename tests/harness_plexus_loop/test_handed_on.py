@@ -145,3 +145,33 @@ def test_prompt_ignores_a_carry_from_another_attempt(tmp_path):
     p = build_prompt(m, _repo(tmp_path / "2"), 5, None, [a], 100000, step=m.steps[0],
                      carried=(4, {"plexus/a.py": "A\n"}))
     assert "## Your last attempt's files" in p
+
+
+def _two_steps():
+    raw = _raw()
+    raw["steps"].append({"id": "S2", "targets": ["tests/acceptance/test_y.py"], "text": "Write c.", "files": ["plexus/c.py"]})
+    return mission_from_dict(raw)
+
+
+def test_a_drop_on_another_step_stays_out_of_this_steps_prompt(tmp_path):
+    # S8 and S9 are ready together, and the router's own wording favours a step not tried yet. "Start here" and "resend"
+    # would aim an S8 attempt at S9's test and S9's draft. The same step still gets both.
+    m, r = _two_steps(), _repo(tmp_path)
+    a = Attempt(n=1, started=0.0, houdini="off", device="gpu", reason="no strict gain (5 vs best 5)", detail="x",
+                route="S1 via jev 0.61", target_failures=["tests.acceptance.test_x::t\n[failure] S1-FAILURE"], changed=FILES)
+    carried = (1, {"plexus/a.py": "S1-DRAFT\n"})
+    other = build_prompt(m, r, 5, None, [a], 100000, step=m.steps[1], carried=carried)
+    assert "## Why the last attempt was dropped" not in other and "S1-FAILURE" not in other and "S1-DRAFT" not in other
+    assert "- attempt 1: no strict gain" in other  # the list of recent drops still names it
+    same = build_prompt(m, r, 5, None, [a], 100000, step=m.steps[0], carried=carried)
+    assert "S1-FAILURE" in same and "S1-DRAFT" in same
+
+
+def test_a_left_out_drop_after_a_step_switch_carries_nothing_of_the_other_step(tmp_path):
+    routes = iter([0, 1])
+    w = Steps(_write_both, lambda wt: (wt / "plexus" / "other.py").write_text("O\n"))
+    report = MissionRun(_two_steps(), _repo(tmp_path), worker=w, log=lambda s: None,
+                        route_fn=lambda mi, last, att: Route(mi.steps[next(routes)], "first"),
+                        profile_fn=lambda: Profile(device="cpu", houdini="running")).run()
+    assert report.attempts[1].reason == "reply left out step files: plexus/c.py"
+    assert report.attempts[1].handed_on == ["plexus/other.py"]

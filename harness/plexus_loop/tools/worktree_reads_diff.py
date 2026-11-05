@@ -1,8 +1,11 @@
-"""Does the mission branch differ from the loop branch on anything an attempt's worktree reads?
+"""Does the mission branch differ from the loop branch on a context file, which an attempt's prompt reads from its worktree?
 
 build_prompt reads the brief and the other context files from the attempt's worktree, which is cut from the tip of
 plexus-loop/<mission>. Only the toml comes from the main tree. A restart with the two branches apart runs on files nobody
-is looking at, which cost rows 64 to 73, about 4.6 hours. So run this before any restart, and expect none.
+is looking at, which cost rows 64 to 73, about 4.7 hours. So run this before any restart, and expect none.
+
+It compares the mission's context list and nothing else. The gates and the metric read the same worktree (the harness
+scripts, the guards, the tests, the frozen tests the context list leaves out), so a difference there does not show here.
 
     python harness/plexus_loop/tools/worktree_reads_diff.py [mission]
 

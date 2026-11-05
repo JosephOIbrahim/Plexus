@@ -42,15 +42,21 @@ RouteFn = Callable[[Mission, MetricResult | None, list["Attempt"]], Route]
 
 
 def default_route(mission: Mission, last: MetricResult | None, recent: list[Attempt]) -> Route:
+    # An outage says nothing about a step, and a server's error text can quote this machine's paths, so it stays off Jev.
     return choose_route(mission.router, mission.steps,
                         last.failing if last else [], last.tail if last else "",
-                        [f"step {a.route or '?'}: {a.reason}" for a in recent if not a.kept])
+                        [f"step {a.route or '?'}: {a.reason}" for a in recent if not a.kept and not a.unreachable])
 
 STATE_DIR = ".plexus_loop"
+WORKER_DOWN = "the worker could not run"  # starts the stop reason and the refusal
+# How long the model server gets to come back before a run stops or refuses, and how often it is asked. A restart, an
+# update or a busy reply clear in seconds to a minute, and rule 3 holds this stop for Joe, so stopping on one costs the night.
+WORKER_WAIT_S = 300.0
+WORKER_POLL_S = 15.0
 # How much of a dropped attempt's output the next prompt shows. Large enough that a clipped
 # gate output (head + marker + tail) plus its "$ cmd" line is never cut again.
 FEEDBACK_CHARS = GATE_HEAD_CHARS + GATE_TAIL_CHARS + 500
-# At most this many syntax errors lead the feedback; one per file, each line clipped.
+# At most this many syntax errors sit above the output in the feedback; one per file, each line clipped.
 SYNTAX_MAX = 10
 SYNTAX_LINE_CHARS = 200
 
@@ -60,7 +66,7 @@ def syntax_errors(root: Path, paths: list[str]) -> list[str]:
 
     A gate that parses files (the layers guard) or imports them (pytest) reports a syntax
     error deep in a traceback, often in the part of its output the next prompt leaves out.
-    This puts the file, line and reason first. It only compiles; it never runs the code.
+    This puts the file, line and reason above that output. It only compiles; it never runs the code.
     """
     out: list[str] = []
     for rel in paths:
@@ -132,7 +138,7 @@ def known_fix_quotes(mission: Mission, repo: Path, failures: list[str]) -> list[
     """The written-down fix for each recognised error in ``failures``, each quoted once.
 
     A known fix matches with its regular expression against a target failure's text, or against
-    a failing gate's output when the attempt has no target failures (``build_prompt``), and quotes
+    a failing gate's output when the attempt has no target failures (``_drop_fix_lines``), and quotes
     the line of its file that contains its anchor, read from ``repo`` (the attempt's tree at tip,
     so the quote is the version the worker is given). A missing file or anchor quotes nothing.
     """
@@ -163,7 +169,7 @@ def fix_lines(mission: Mission, repo: Path, a: Attempt) -> list[str]:
     """What a prompt says under this attempt's failure: its known fixes, word for word, then the line the
     fix router chose, worded as the guess it is, unless a known fix already quotes that line. Whole lines
     compare, because a known fix's quote keeps the list marker, can start at a later sentence of its line
-    and stops at KNOWN_FIX_CHARS. Only reads what the attempt holds; it never calls Jev."""
+    and stops at KNOWN_FIX_CHARS. It reads the attempt and the known fixes' files under ``repo``; it never calls Jev."""
     where = "failure" if a.target_failures else "output"
     fixes = _drop_fix_lines(mission, repo, a)
     out: list[str] = []
@@ -298,6 +304,11 @@ def _one_line(text: str) -> str:
     return text.replace("\r", " ").replace("\n", " ")[:SYNTAX_LINE_CHARS]
 
 
+def _same_step(a: Attempt, step: Step | None) -> bool:
+    """Whether a dropped attempt's failure and files belong to the step a prompt is for. No step on either side counts."""
+    return step is None or not a.route or a.route.split()[0] == step.id
+
+
 class RefuseToStart(RuntimeError):
     """The run can't begin, and the message says why."""
 
@@ -321,8 +332,8 @@ class Attempt:
     # The dropped attempt's own step's target tests that failed, each "junit id\nits failure",
     # from the metric's junit report. The next prompt leads with them.
     target_failures: list[str] = field(default_factory=list)
-    # Files the next prompt hands back in full after this drop: what it sent when it passed every
-    # gate, or, after a left-out drop, what it sent laid over the last full attempt's files.
+    # Files the next prompt hands back in full if it is on this attempt's step: what it sent when it
+    # passed every gate, or, after a left-out drop, what it sent laid over the last full attempt's files.
     handed_on: list[str] = field(default_factory=list)
     # Ledger diagnostic: the step's files absent from the worktree after the attempt, whatever the reply
     # sent. A file at tip the reply did not send is not here (that is a LEFT_OUT drop). The next prompt
@@ -335,7 +346,7 @@ class Attempt:
     # and ignored-file scans, the syntax check, the fix router's call (fix_route["seconds"]),
     # and on a keep the commit and branch advance.
     wall_s: float | None = None  # the whole attempt, worktree in to worktree out
-    route_s: float | None = None  # choosing the step (one Jev call when the router is jev)
+    route_s: float | None = None  # choosing the step (at most one Jev call when the router is jev; none with one ready step)
     worker_s: float | None = None  # the worker: the model call plus writing its files
     gates: list[dict] = field(default_factory=list)  # [{"name", "seconds", "ok"}], in run order
     metric_s: float | None = None  # the metric run; only when every gate passed
@@ -353,6 +364,8 @@ class Attempt:
     # adds nothing, "other" when one matched and Jev chose anything else), or {} when it was not asked:
     # no [fix_router], a keep, a drop that ran nothing, or a drop that printed nothing.
     fix_route: dict = field(default_factory=dict)
+    # The call reached no server that could run the model, and two in a row stop the run.
+    unreachable: bool = False
 
 
 @dataclass
@@ -374,12 +387,14 @@ def _pid_alive(pid: int) -> bool | None:
         return False
     if sys.platform.startswith("win"):
         try:
-            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-                                 capture_output=True, text=True, errors="replace", timeout=15,
-                                 check=False).stdout or ""
+            listed = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                                    capture_output=True, text=True, errors="replace", timeout=15,
+                                    check=False)
         except Exception:  # noqa: BLE001 - can't tell
             return None
-        return f'"{pid}"' in out
+        if listed.returncode:  # a listing that failed leaves stdout empty, and that is no proof the holder is gone
+            return None
+        return f'"{pid}"' in (listed.stdout or "")
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -425,7 +440,7 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                  carried: tuple[int, dict[str, str]] | None = None) -> str:
     """The worker's prompt. ``carried`` is (attempt number, {path: text}) of the files the next
     prompt hands back after a drop: what a gate-passing attempt sent, or what a left-out reply sent
-    laid over the last full attempt's files; it is shown only when that attempt is the last one."""
+    laid over the last full attempt's files; it is shown only when that attempt is the last one and on this prompt's step."""
     lines = [
         f"# Mission: {mission.name}",
         "",
@@ -468,7 +483,9 @@ def build_prompt(mission: Mission, repo: Path, best: float, last: MetricResult |
                 lines.append(f"Not in the repo yet, so your reply must include each in full: {', '.join(absent)}.")
             lines.append("")
         lines.append("Do this step only. Later steps get their own attempts.")
-    dropped = recent[-1] if recent and not recent[-1].kept else None
+    # Another step's failure and files are not this step's, the same rule as the search below: with two steps ready,
+    # "Start here" would aim this attempt at that step's test, and "resend" would hand it that step's draft.
+    dropped = recent[-1] if recent and not recent[-1].kept and _same_step(recent[-1], step) else None
     if dropped is not None and (dropped.detail or dropped.syntax or absent or dropped.target_failures
                                 or left_out_of(dropped.reason)):
         lines += [
@@ -626,7 +643,7 @@ class MissionRun:
                  route_fn: RouteFn | None = None):
         self.mission = mission
         self.route_fn = route_fn or default_route
-        self.repo = gitops.repo_root(repo)
+        self.repo, main_checkout = gitops.roots(repo)
         self.state = self.repo / STATE_DIR
         self.mdir = self.state / mission.name
         self.worker = worker or make_worker(mission.worker)
@@ -637,7 +654,9 @@ class MissionRun:
         self.profile_fn = lambda: with_env(base_profile(), CARGO_TARGET_DIR=cargo_target)
         self.clock = clock
         self.log = log
-        self.lock = Lock(self.state)
+        # In the main checkout's state folder: a run started from a linked worktree would load the same
+        # model and move the same branch beside a live one, and its own .plexus_loop would not show it.
+        self.lock = Lock(main_checkout / STATE_DIR)
 
     # -- checks before anything runs -------------------------------------
     def preflight(self) -> None:
@@ -712,9 +731,36 @@ class MissionRun:
         self.preflight()
         self.lock.acquire(self.mission.name)
         try:
+            self._refuse_a_worker_that_cannot_run()
             return self._run()
         finally:
             self.lock.release()
+
+    def _refuse_a_worker_that_cannot_run(self) -> None:
+        """Before the baseline, which spends minutes and says nothing about the model. Under the lock, so a second run
+        never loads a model beside a live one. A stand-in worker has no such check."""
+        if getattr(self.worker, "cannot_run", None) is None:
+            return
+        self.log(f"[plexus-loop] {self.mission.name}: loading {self.mission.worker.model}")
+        why = self._worker_cannot_run()
+        if why:
+            raise RefuseToStart(f"{WORKER_DOWN}: {why}. Nothing was run.")
+
+    def _worker_cannot_run(self) -> str:
+        """Why the model still cannot load after WORKER_WAIT_S, or "" as soon as it can. A stop file ends the wait. Each
+        ask reads the profile afresh, so a load during the wait follows Houdini. A stand-in worker has no such check."""
+        check = getattr(self.worker, "cannot_run", None)
+        if check is None:
+            return ""
+        why = check(self.profile_fn())
+        if not why:
+            return ""
+        self.log(f"[plexus-loop] {self.mission.name}: the model server is not answering, so this waits up to {WORKER_WAIT_S:.0f} s: {why}")
+        deadline = time.monotonic() + WORKER_WAIT_S
+        while why and time.monotonic() < deadline and not (self.state / "STOP").exists():
+            time.sleep(WORKER_POLL_S)
+            why = check(self.profile_fn())
+        return why
 
     def _run(self) -> RunReport:
         mi = self.mission
@@ -728,7 +774,10 @@ class MissionRun:
         # metric must be readable, or no attempt could ever be judged.
         profile = self.profile_fn()
         wt = wt_root / "baseline"
-        gitops.add_worktree(self.repo, wt, tip)
+        try:
+            gitops.add_worktree(self.repo, wt, tip)
+        except gitops.GitError as e:
+            raise RefuseToStart(f"the baseline worktree could not be made: {e}") from e
         try:
             why, last, _ = self._evaluate(wt, profile)
         finally:
@@ -767,16 +816,20 @@ class MissionRun:
             a = Attempt(n=n, started=self.clock(), houdini=profile.houdini, device=profile.device)
             t_attempt = time.monotonic()
             wt = wt_root / f"attempt-{n}"
-            gitops.add_worktree(self.repo, wt, tip)
             try:
+                gitops.add_worktree(self.repo, wt, tip)
+                # A row no model answered reads as if it had not happened, to the router and to the next prompt:
+                # an outage's, or one with no worktree (route_s None), whose git message quotes this machine's paths. The
+                # failure text and the handed-on files of the attempt before it stay in view.
+                worked = [x for x in attempts if not x.unreachable and x.route_s is not None]
                 t0 = time.monotonic()
-                route = self.route_fn(mi, last, attempts)
+                route = self.route_fn(mi, last, worked)
                 a.route_s = _secs(t0)
                 a.route, a.route_note = route.label(), route.note
                 if route.step is not None:
                     self.log(f"[plexus-loop] attempt {n}: step {a.route}"
                              + (f" ({route.note})" if route.note else ""))
-                prompt = build_prompt(mi, wt, best, last, attempts, mi.worker.context_chars,
+                prompt = build_prompt(mi, wt, best, last, worked, mi.worker.context_chars,
                                       step=route.step, carried=carried)
                 t0 = time.monotonic()
                 try:
@@ -784,6 +837,7 @@ class MissionRun:
                 finally:
                     a.worker_s = _secs(t0)
                 a.ollama = dict(getattr(res, "stats", None) or {})
+                a.unreachable = res.unreachable
                 if getattr(res, "reply", ""):
                     a.reply_file = self._save_reply(started, n, res.reply)
                 a.changed = sorted(set(gitops.changed_paths(wt)) | set(getattr(res, "wrote", []) or []))
@@ -807,7 +861,7 @@ class MissionRun:
                     a.syntax = syntax_errors(wt, a.changed)
                     # The reply's files over whatever the last prompt carried, so a one-file
                     # reply does not shrink the next prompt to that one file.
-                    prev = carried[1] if carried and carried[0] == n - 1 else {}
+                    prev = carried[1] if carried and carried[0] == worked[-1].n and _same_step(worked[-1], route.step) else {}
                     carried = (n, merge_carried(prev, carry_files(wt, a.changed, mi, route.step), route.step))
                     a.handed_on = list(carried[1])
                 else:
@@ -845,7 +899,7 @@ class MissionRun:
                 if not a.kept and route.step is not None:
                     a.missing = missing_files(wt, route.step.files)
             except gitops.GitError as e:
-                a.reason = f"git: {e}"
+                a.reason = "git: " + " ".join(str(e).split())  # one line: REVIEW.md holds one table row per line
             except (OSError, UnicodeError) as e:
                 # A worker or filesystem error costs this attempt, never the run.
                 a.reason = f"attempt error: {type(e).__name__}: {e}"
@@ -863,6 +917,18 @@ class MissionRun:
             report = RunReport(mi.name, mi.branch, base, tip, baseline, best, attempts,
                                "running", started, self.clock())
             write_review(self.mdir / "REVIEW.md", mi, report)
+            if a.unreachable:
+                # Every attempt after this one would fail the same way in seconds, each with a Jev routing call, and spend
+                # the budget and the consecutive count on nothing (rows 90 to 119). So the server gets its wait here, and one
+                # that comes back costs this row alone. Two rows in a row stop whatever the load says, because a load that
+                # answers is no proof a real call can. A restart starts both counts afresh.
+                if len(attempts) > 1 and attempts[-2].unreachable:
+                    stop = f"{WORKER_DOWN}: {a.reason}"
+                    break
+                why = self._worker_cannot_run()
+                if why and not (self.state / "STOP").exists():
+                    stop = f"{WORKER_DOWN}: {why}"
+                    break
 
         report = RunReport(mi.name, mi.branch, base, tip, baseline, best, attempts, stop,
                            started, self.clock())

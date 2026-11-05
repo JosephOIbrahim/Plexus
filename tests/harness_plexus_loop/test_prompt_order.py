@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from harness.plexus_loop.loop import Attempt, build_prompt
@@ -88,6 +89,24 @@ def test_the_budget_still_counts_the_parts_that_follow_the_files(tmp_path):
     p = build_prompt(m, r, 5, None, [_drop(1, "gate 'core' failed", big)], 4000, step=m.steps[0])
     assert "further files left out to fit the 4000-character budget" in p
     assert "## Why the last attempt was dropped" in p and p.rstrip().endswith("Nothing else inside either.")
+
+
+def test_the_budget_adds_the_files_up_and_falls_after_the_context_files_never_inside_one(tmp_path):
+    # Run 12's prompt lost exchange.py to this budget, and it was raised twice more to keep S4's and S8's files in
+    # (acceptance.toml). The mission's list goes first in its own order: it holds the frozen tests, which sort after plexus/.
+    m, r = replace(_mission(), context=["tests/acceptance/f.txt", "docs/brief.md"]), _repo(tmp_path)
+    for name in "abc":
+        (r / "plexus" / f"{name}.py").write_text(f"{name.upper()} = 1\n" * 100)
+    for args in (["add", "-A"], ["commit", "-q", "-m", "more"]):
+        subprocess.run([*GIT, *args], cwd=r, check=True, capture_output=True)
+    whole = build_prompt(m, r, 5, None, [], 1_000_000, step=m.steps[0])
+    assert "further files left out" not in whole
+    assert whole.index("file:tests/acceptance/f.txt") < whole.index("file:docs/brief.md") < whole.index("file:plexus/a.py")
+    budget = len(whole) - 300  # less than one file short, so only the files added up can pass it
+    cut = build_prompt(m, r, 5, None, [], budget, step=m.steps[0])
+    assert "file:plexus/a.py" in cut and "file:plexus/b.py" in cut
+    assert "file:plexus/c.py" not in cut and "C = 1" not in cut  # a file goes whole or not at all
+    assert f"further files left out to fit the {budget}-character budget" in cut
 
 
 def test_ollama_keeps_the_model_loaded_through_the_gates():

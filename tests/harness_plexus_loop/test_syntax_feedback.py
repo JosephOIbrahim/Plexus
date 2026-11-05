@@ -1,4 +1,4 @@
-"""A dropped attempt's syntax errors lead the next prompt: file, line, reason, source line.
+"""A dropped attempt's syntax errors sit above its output in the next prompt: file, line, reason, source line.
 
 Run 4 attempt 1 wrote ``from_<id> = ...`` in a module. The layers guard crashed parsing it,
 and the SyntaxError itself sat in the part of the gate output the prompt leaves out.
