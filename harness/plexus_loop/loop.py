@@ -48,7 +48,7 @@ def default_route(mission: Mission, last: MetricResult | None, recent: list[Atte
                         [f"step {a.route or '?'}: {a.reason}" for a in recent if not a.kept and not a.unreachable])
 
 STATE_DIR = ".plexus_loop"
-WORKER_DOWN = "the worker could not run"  # starts the stop reason
+WORKER_DOWN = "the worker could not run"  # starts the stop reason and the refusal
 # How much of a dropped attempt's output the next prompt shows. Large enough that a clipped
 # gate output (head + marker + tail) plus its "$ cmd" line is never cut again.
 FEEDBACK_CHARS = GATE_HEAD_CHARS + GATE_TAIL_CHARS + 500
@@ -716,9 +716,21 @@ class MissionRun:
         self.preflight()
         self.lock.acquire(self.mission.name)
         try:
+            self._refuse_a_worker_that_cannot_run()
             return self._run()
         finally:
             self.lock.release()
+
+    def _refuse_a_worker_that_cannot_run(self) -> None:
+        """Before the baseline, which spends minutes and says nothing about the model. Under the lock, so a second run
+        never loads a model beside a live one. A stand-in worker has no such check."""
+        check = getattr(self.worker, "cannot_run", None)
+        if check is None:
+            return
+        self.log(f"[plexus-loop] {self.mission.name}: loading {self.mission.worker.model}")
+        why = check(self.profile_fn())
+        if why:
+            raise RefuseToStart(f"{WORKER_DOWN}: {why}. Nothing was run.")
 
     def _run(self) -> RunReport:
         mi = self.mission
@@ -780,7 +792,10 @@ class MissionRun:
                 if route.step is not None:
                     self.log(f"[plexus-loop] attempt {n}: step {a.route}"
                              + (f" ({route.note})" if route.note else ""))
-                prompt = build_prompt(mi, wt, best, last, attempts, mi.worker.context_chars,
+                # An outage row never reached a model, so the next prompt reads as if it had not happened: the failure
+                # text and the handed-on files of the attempt before it stay in view.
+                worked = [x for x in attempts if not x.unreachable]
+                prompt = build_prompt(mi, wt, best, last, worked, mi.worker.context_chars,
                                       step=route.step, carried=carried)
                 t0 = time.monotonic()
                 try:
@@ -812,7 +827,7 @@ class MissionRun:
                     a.syntax = syntax_errors(wt, a.changed)
                     # The reply's files over whatever the last prompt carried, so a one-file
                     # reply does not shrink the next prompt to that one file.
-                    prev = carried[1] if carried and carried[0] == n - 1 else {}
+                    prev = carried[1] if carried and carried[0] == worked[-1].n else {}
                     carried = (n, merge_carried(prev, carry_files(wt, a.changed, mi, route.step), route.step))
                     a.handed_on = list(carried[1])
                 else:

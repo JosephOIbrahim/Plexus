@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import io
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -12,11 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from harness.plexus_loop import MissionRun, loop
+from harness.plexus_loop import MissionRun, RefuseToStart, loop
+from harness.plexus_loop.__main__ import main as cli_main
 from harness.plexus_loop.loop import WORKER_DOWN
 from harness.plexus_loop.mission import WorkerSpec, mission_from_dict
 from harness.plexus_loop.profile import Profile
-from harness.plexus_loop.workers import OllamaWorker, WorkerResult
+from harness.plexus_loop.workers import READY_TIMEOUT_S, OllamaWorker, WorkerResult
 
 PY = sys.executable
 CPU = Profile(device="cpu", houdini="running", ollama_options={"num_gpu": 0, "num_thread": 2})
@@ -148,3 +150,117 @@ def test_the_new_rows_stay_out_of_the_means():
     ]
     assert len(report_stats.real_attempts(rows)) == 2
     assert report_stats.drop_reasons(rows)["no server"] == 2
+
+
+def test_an_outage_row_leaves_the_next_prompt_as_it_was(tmp_path):
+    # Row 90 lost its connection at 199 s. That call reached no model, so the attempt after it still owes the failure
+    # and the files of the attempt before it.
+    prompts = []
+
+    class Seeing(Worker):
+        def attempt(self, wt, prompt, profile):
+            prompts.append(prompt)
+            return super().attempt(wt, prompt, profile)
+
+    def draft(wt):
+        (wt / "plexus" / "draft.py").write_text("DRAFT = 1\n")
+        return WorkerResult(True, "ok")
+
+    down = WorkerResult(False, "ollama call failed: RemoteDisconnected: closed", unreachable=True)
+    w = Seeing(draft, down, WorkerResult(False, "model reply held no unified diff and no file block"))
+    MissionRun(_mission(attempts=3), _repo(tmp_path), worker=w, profile_fn=lambda: CPU, log=lambda s: None).run()
+    assert prompts[2] == prompts[1] and "DRAFT = 1" in prompts[2] and "RemoteDisconnected" not in prompts[2]
+
+
+def _left_out_replies(tmp_path, *steps):
+    d = {
+        "mission": {"name": "demo", "goal": "g", "requires": ["fixed"], "focus": ["plexus/**"], "frozen": ["fixed/**"]},
+        "metric": {"kind": "command", "cmd": [PY, "-c", "print(open('plexus/score.txt').read().strip())"]},
+        "gates": [{"name": "ok", "cmd": [PY, "-c", "pass"]}],
+        "steps": [{"id": "S1", "targets": ["fixed/f.txt"], "text": "Write the files.", "files": ["plexus/a.py", "plexus/b.py", "plexus/c.py"]}],
+        "router": {"kind": "first"},
+        "budget": {"attempts": len(steps), "hours": 1, "max_consecutive_failures": 30},
+    }
+    return MissionRun(mission_from_dict(d), _repo(tmp_path), worker=Worker(*steps), log=lambda s: None,
+                      route_fn=lambda mi, last, att: loop.Route(mi.steps[0], "first"), profile_fn=lambda: CPU).run().attempts
+
+
+def _writes(rel):
+    def step(wt):
+        (wt / rel).write_text(f"# {rel}\n")
+        return WorkerResult(True, "ok", wrote=[rel])
+    return step
+
+
+DROPPED = WorkerResult(False, "ollama call failed: RemoteDisconnected: closed", unreachable=True)
+
+
+def test_a_left_out_reply_after_an_outage_row_keeps_the_draft_from_before_it(tmp_path):
+    # The draft from attempt 1 must survive the outage at attempt 2, or attempt 3 would hand on its own file alone.
+    rows = _left_out_replies(tmp_path, _writes("plexus/a.py"), DROPPED, _writes("plexus/b.py"))
+    assert [a.handed_on for a in rows] == [["plexus/a.py"], [], ["plexus/a.py", "plexus/b.py"]]
+
+
+def test_a_left_out_reply_after_a_first_row_outage_has_no_draft_to_keep(tmp_path):
+    rows = _left_out_replies(tmp_path, DROPPED, _writes("plexus/a.py"))
+    assert [a.handed_on for a in rows] == [[], ["plexus/a.py"]]
+
+
+def _recording(monkeypatch, error=None):
+    sent = []
+
+    def urlopen(req, timeout):
+        sent.append((json.loads(req.data), timeout))
+        if error is not None:
+            raise error
+        return io.BytesIO(b'{"response": "", "done": true, "done_reason": "load"}')
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    return sent
+
+
+def test_a_model_that_cannot_load_refuses_the_run_before_its_baseline(tmp_path, monkeypatch):
+    r = _repo(tmp_path)
+    gone = urllib.error.HTTPError("u", 500, "Internal Server Error", {}, io.BytesIO(b'{"error":"llama-server binary not found"}'))
+    sent = _recording(monkeypatch, gone)
+    with pytest.raises(RefuseToStart, match=f"{WORKER_DOWN}: .*llama-server binary not found.*Nothing was run"):
+        MissionRun(_mission(), r, profile_fn=lambda: CPU, log=lambda s: None).run()
+    ((body, timeout),) = sent
+    assert body["prompt"] == "" and body["options"] == {"num_gpu": 0, "num_thread": 2} and timeout == READY_TIMEOUT_S
+    assert not (r / ".plexus_loop" / "demo").exists() and not (r / ".plexus_loop" / "lock").exists()
+    assert "plexus-loop/demo" not in subprocess.run([*GIT, "branch"], cwd=r, capture_output=True, text=True, check=True).stdout
+
+
+def test_a_model_that_loads_starts_the_run(tmp_path, monkeypatch):
+    sent = _recording(monkeypatch)
+    rep = MissionRun(_mission(attempts=0), _repo(tmp_path), profile_fn=lambda: CPU, log=lambda s: None).run()
+    assert len(sent) == 1 and rep.baseline == 5 and rep.attempts == []
+
+
+@pytest.mark.parametrize("error", [TimeoutError("timed out"), ValueError("bad json")])
+def test_a_slow_load_or_an_odd_reply_is_no_refusal(monkeypatch, error):
+    # The same line attempt() draws: the server took the call.
+    _recording(monkeypatch, error)
+    assert OllamaWorker(WorkerSpec()).cannot_run(CPU) == ""
+
+
+def test_a_second_run_never_loads_a_model_beside_a_live_one(tmp_path, monkeypatch):
+    r = _repo(tmp_path)
+    (r / ".plexus_loop").mkdir()
+    (r / ".plexus_loop" / "lock").write_text(json.dumps({"pid": os.getpid(), "mission": "other"}))
+    sent = _recording(monkeypatch)
+    with pytest.raises(RefuseToStart, match="holds the lock"):
+        MissionRun(_mission(), r, profile_fn=lambda: CPU, log=lambda s: None).run()
+    assert sent == []
+
+
+def test_check_never_loads_the_model_and_keeps_ready_last_within_five_lines(tmp_path, monkeypatch, capsys):
+    # /mission reads check through head -5, and the real mission prints the fix router's line too.
+    sent = _recording(monkeypatch)
+    r = _repo(tmp_path)
+    assert cli_main(["check", str(Path(loop.__file__).parent / "missions" / "acceptance.toml"), "--repo", str(r)]) == 2
+    lines = capsys.readouterr().out.splitlines()
+    assert sent == [] and len(lines) <= 5 and "does not load" in lines[-2] and lines[-1].startswith("not ready")
+    monkeypatch.setattr("harness.plexus_loop.__main__.load_mission", lambda p: _mission())
+    assert cli_main(["check", "any.toml", "--repo", str(r)]) == 0
+    assert sent == [] and capsys.readouterr().out.splitlines()[-1] == "ready"

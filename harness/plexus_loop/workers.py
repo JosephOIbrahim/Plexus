@@ -335,6 +335,8 @@ OLLAMA_KEEP_ALIVE = "15m"
 # time, so it stays a real attempt.
 UNREACHABLE = (urllib.error.URLError, ConnectionError, http.client.HTTPException)
 HTTP_ERROR_BODY_CHARS = 300
+# Past Ollama's own five-minute load limit, so a load that fails comes back as its error, not as this timeout.
+READY_TIMEOUT_S = 600
 
 
 def _call_failed(e: Exception) -> str:
@@ -375,6 +377,18 @@ class OllamaWorker:
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
+
+    def cannot_run(self, profile: Profile) -> str:
+        """Why the model cannot load, or "" when nothing says so. An empty prompt only loads it, and only a load can tell:
+        with the engine folder gone (Nov 4) the version and model-list endpoints answered and every local model returned 500.
+        The same line as ``attempt``: a slow load or an odd reply came from a server that took the call, so the first attempt judges it."""
+        try:
+            self._post(self.payload("", profile), READY_TIMEOUT_S)
+        except UNREACHABLE as e:
+            return _call_failed(e)
+        except Exception:  # noqa: BLE001 - see the docstring
+            return ""
+        return ""
 
     def attempt(self, worktree: Path, prompt: str, profile: Profile) -> WorkerResult:
         try:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
@@ -12,8 +13,8 @@ import pytest
 from harness.plexus_loop import MissionRun, RefuseToStart
 from harness.plexus_loop.__main__ import main as cli_main
 from harness.plexus_loop.loop import Lock
-from harness.plexus_loop.metrics import measure
-from harness.plexus_loop.mission import HoudiniPolicy, Metric, MissionError, WorkerSpec, mission_from_dict
+from harness.plexus_loop.metrics import measure, run_gate
+from harness.plexus_loop.mission import Gate, HoudiniPolicy, Metric, MissionError, WorkerSpec, mission_from_dict
 from harness.plexus_loop.profile import Profile, choose_profile, houdini_state
 from harness.plexus_loop.workers import OllamaWorker, WorkerResult, extract_diff
 
@@ -308,6 +309,48 @@ def test_profile_is_rechecked_each_attempt(repo):
     m = mission_from_dict(_mission())
     report = MissionRun(m, repo, worker=w, profile_fn=lambda: next(profiles), log=lambda s: None).run()
     assert [a.device for a in report.attempts[:2]] == ["cpu", "gpu"]
+    assert [p.device for p in w.profiles[:2]] == ["cpu", "gpu"]  # the row and the worker, not the row alone
+
+
+def test_houdini_opening_mid_run_reaches_the_next_request_on_the_wire(repo, monkeypatch):
+    # The hard rule with nothing handed in. Every other test injects a profile or reads payload() alone, so a profile
+    # cached at the start, a lost [houdini] policy or a request built from another profile would leave them all green.
+    monkeypatch.setenv("PLEXUS_LOOP_HOUDINI", "absent")
+    # The run's load goes through this urlopen too, and test_worker_outage.py has its own test of that load.
+    monkeypatch.setattr(OllamaWorker, "cannot_run", lambda self, profile: "", raising=False)
+    sent = []
+
+    def urlopen(req, timeout):
+        sent.append((req.full_url, json.loads(req.data), timeout))
+        monkeypatch.setenv("PLEXUS_LOOP_HOUDINI", "running")
+        return io.BytesIO(json.dumps({"response": f"```file:plexus/score.txt\n{5 - len(sent)}\n```\n"}).encode())
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    d = _mission(worker={"host": "http://ollama:1/", "timeout_s": 4800, "num_ctx": 100}, houdini={"cpu_threads": 3})
+    d["budget"]["attempts"] = 2
+    report = MissionRun(mission_from_dict(d), repo, log=lambda s: None).run()
+    assert [a.device for a in report.attempts] == ["gpu", "cpu"] and report.best == 3
+    (url, first, timeout), (_, second, _) = sent
+    assert url == "http://ollama:1/api/generate" and timeout == 4800 and "Lower the score." in first["prompt"]
+    assert first["options"] == {"num_ctx": 100}
+    assert second["options"] == {"num_gpu": 0, "num_thread": 3, "num_ctx": 100}
+
+
+def test_gates_and_both_metrics_run_in_the_profile_environment_without_the_key(tmp_path, monkeypatch):
+    # They run code the worker wrote, and what it prints reaches the next prompt and the API. The two device variables
+    # are cleared first: inside the unit gate this process holds the CPU profile's own, and a child would inherit them.
+    monkeypatch.setenv("TYPESAFE_API_KEY", "fake-key")
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.delenv("PLEXUS_LOOP_DEVICE", raising=False)
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")  # the child's plugins would add seconds to every attempt's unit gate
+    ok = ("import os\nok = (os.environ.get('CUDA_VISIBLE_DEVICES') == '' and os.environ.get('PLEXUS_LOOP_DEVICE') == 'cpu'\n"
+          "      and 'TYPESAFE_API_KEY' not in os.environ)\n")
+    assert run_gate(Gate("g", [PY, "-c", ok + "raise SystemExit(0 if ok else 1)"]), tmp_path, CPU).passed
+    assert measure(Metric(kind="command", cmd=[PY, "-c", ok + "print(1 if ok else 0)"]), tmp_path, CPU).value == 1
+    (tmp_path / "t").mkdir()
+    (tmp_path / "t" / "test_env.py").write_text(ok + "def test_env(): assert ok\n")
+    res = measure(Metric(kind="pytest_failures", target="t"), tmp_path, CPU)
+    assert (res.value, res.total) == (0.0, 1)
 
 
 def test_ollama_payload_goes_cpu_only_beside_houdini():
