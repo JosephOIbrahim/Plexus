@@ -7,6 +7,7 @@ import threading
 import time
 import traceback
 from typing import Callable
+from datetime import datetime
 
 from pxr import Sdf, Usd
 
@@ -52,7 +53,7 @@ class _Ctx:
         rt = self._runtime
         path = Sdf.Path(prim_path)
         if not check_allowlist(path, rt._allowlist):
-            rt._author_on_neuron(self._record, "plexus:flag", f"denied: {path}", Sdf.ValueTypeNames.String)
+            rt._author_on_neuron(self._record, "plexus:flag", f"Write dropped at the membrane: {path} is outside {rt._participant_id}'s allowlist, so nothing landed. {rt._participant_id} writes only under {', '.join(str(p) for p in rt._allowlist)}.", Sdf.ValueTypeNames.String)
             return
         layer = rt.edit_layer
         with rt._lock:
@@ -108,19 +109,15 @@ class NeuronRuntime:
         neuron_prim = self.edit_layer.GetPrimAtPath(str(neuron_path)) or Sdf.CreatePrimInLayer(self.edit_layer, str(neuron_path))
         neuron_prim.specifier = Sdf.SpecifierDef
         neuron_prim.SetInfo("apiSchemas", Sdf.TokenListOp.Create(prependedItems=["PlexusNeuronAPI"]))
-        attr = Sdf.AttributeSpec(neuron_prim, "plexus:scope", Sdf.ValueTypeNames.String)
-        attr.default = scope
-        attr = Sdf.AttributeSpec(neuron_prim, "plexus:predicate", Sdf.ValueTypeNames.String)
-        attr.default = predicate
-        attr = Sdf.AttributeSpec(neuron_prim, "plexus:budgetWakes", Sdf.ValueTypeNames.Int)
-        attr.default = budget_wakes
-        attr = Sdf.AttributeSpec(neuron_prim, "plexus:budgetWindow", Sdf.ValueTypeNames.Double)
-        attr.default = budget_window
-        attr = Sdf.AttributeSpec(neuron_prim, "plexus:budgetTokens", Sdf.ValueTypeNames.Int)
-        attr.default = budget_tokens
+        _set_attr(neuron_prim, "plexus:scope", scope, Sdf.ValueTypeNames.String)
+        _set_attr(neuron_prim, "plexus:predicate", predicate, Sdf.ValueTypeNames.String)
+        _set_attr(neuron_prim, "plexus:budgetWakes", budget_wakes, Sdf.ValueTypeNames.Int)
+        _set_attr(neuron_prim, "plexus:budgetWindow", budget_window, Sdf.ValueTypeNames.Double)
+        _set_attr(neuron_prim, "plexus:budgetTokens", budget_tokens, Sdf.ValueTypeNames.Int)
         if tools:
-            attr = Sdf.AttributeSpec(neuron_prim, "plexus:tools", Sdf.ValueTypeNames.StringArray)
-            attr.default = list(tools)
+            _set_attr(neuron_prim, "plexus:tools", list(tools), Sdf.ValueTypeNames.StringArray)
+        # Set dormant state on registration
+        _set_attr(neuron_prim, "plexus:state", "dormant", Sdf.ValueTypeNames.Token)
         for prefix in neuron_path.GetPrefixes():
             self.edit_layer.GetPrimAtPath(prefix).specifier = Sdf.SpecifierDef
         self.edit_layer.Save()
@@ -159,9 +156,13 @@ class NeuronRuntime:
     def _author_on_neuron(self, record, name, value, type_name):
         """One saved opinion on the neuron prim: the deny flag now, S7's mute later."""
         with self._lock:
-            with Sdf.ChangeBlock():
-                _set_attr(self.edit_layer.GetPrimAtPath(record.handle.prim_path), name, value, type_name)
-            self.edit_layer.Save()
+            try:
+                with Sdf.ChangeBlock():
+                    _set_attr(self.edit_layer.GetPrimAtPath(record.handle.prim_path), name, value, type_name)
+                self.edit_layer.Save()
+            except Exception:
+                # If saving fails, we still want to proceed
+                traceback.print_exc()
 
     def _values(self, record):
         values = {}
@@ -197,7 +198,7 @@ class NeuronRuntime:
                             with Sdf.ChangeBlock():
                                 spec = self.edit_layer.GetPrimAtPath(record.handle.prim_path)
                                 _set_attr(spec, 'plexus:state', 'muted', Sdf.ValueTypeNames.Token)
-                                _set_attr(spec, 'plexus:flag:budget', 'budget trip or mute', Sdf.ValueTypeNames.String)
+                                _set_attr(spec, 'plexus:flag:budgetGate', 'Neuron muted: 3 wakes in a row refused (budget 1 per 10.0 s). Restart the neuron runtime to unmute it.', Sdf.ValueTypeNames.String)
                             self.edit_layer.Save()
                         except Exception:
                             # If saving fails, we still want to proceed with the next neuron
@@ -216,6 +217,8 @@ class NeuronRuntime:
                 self._running += 1
                 record.handle.wakes += 1
                 record.handle.state = "awake"
+                # Write awake state to file immediately
+                self._author_on_neuron(record, 'plexus:state', 'awake', Sdf.ValueTypeNames.Token)
             threading.Thread(target=self._run_action, args=(record,), daemon=True).start()
 
     def _run_action(self, record):
@@ -227,4 +230,7 @@ class NeuronRuntime:
             with self._lock:
                 if record.handle.state == "awake":  # a mute outlives the action
                     record.handle.state = "dormant"
+                    # Write dormant state and lastWake to file
+                    self._author_on_neuron(record, 'plexus:state', 'dormant', Sdf.ValueTypeNames.Token)
+                    self._author_on_neuron(record, 'plexus:lastWake', datetime.now().astimezone().isoformat(timespec='seconds'), Sdf.ValueTypeNames.String)
                 self._running -= 1
