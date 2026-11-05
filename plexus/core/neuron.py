@@ -53,7 +53,7 @@ class _Ctx:
         rt = self._runtime
         path = Sdf.Path(prim_path)
         if not check_allowlist(path, rt._allowlist):
-            rt._author_on_neuron(self._record, "plexus:flag", f"Write dropped at the membrane: {path} is outside {rt._participant_id}'s allowlist, so nothing landed. {rt._participant_id} writes only under {', '.join(str(p) for p in rt._allowlist)}.", Sdf.ValueTypeNames.String)
+            rt._author_on_neuron(self._record, "plexus:flag:publicationGate", f"Write dropped at the membrane: {path} is outside {rt._participant_id}'s allowlist, so nothing landed. {rt._participant_id} writes only under {', '.join(str(p) for p in rt._allowlist)}.", Sdf.ValueTypeNames.String)
             return
         layer = rt.edit_layer
         with rt._lock:
@@ -198,7 +198,7 @@ class NeuronRuntime:
                             with Sdf.ChangeBlock():
                                 spec = self.edit_layer.GetPrimAtPath(record.handle.prim_path)
                                 _set_attr(spec, 'plexus:state', 'muted', Sdf.ValueTypeNames.Token)
-                                _set_attr(spec, 'plexus:flag:budgetGate', 'Neuron muted: 3 wakes in a row refused (budget 1 per 10.0 s). Restart the neuron runtime to unmute it.', Sdf.ValueTypeNames.String)
+                                _set_attr(spec, 'plexus:flag:budgetGate', f"Neuron muted: 3 wakes in a row refused (budget {record.budget_wakes} per {record.budget_window:g} s). Restart the neuron runtime to unmute it.", Sdf.ValueTypeNames.String)
                             self.edit_layer.Save()
                         except Exception:
                             # If saving fails, we still want to proceed with the next neuron
