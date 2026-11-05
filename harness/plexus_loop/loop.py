@@ -818,7 +818,7 @@ class MissionRun:
             wt = wt_root / f"attempt-{n}"
             try:
                 gitops.add_worktree(self.repo, wt, tip)
-                # A row that never reached a model reads as if it had not happened, to the router and to the next prompt:
+                # A row no model answered reads as if it had not happened, to the router and to the next prompt:
                 # an outage's, or one with no worktree (route_s None), whose git message quotes this machine's paths. The
                 # failure text and the handed-on files of the attempt before it stay in view.
                 worked = [x for x in attempts if not x.unreachable and x.route_s is not None]
@@ -899,7 +899,7 @@ class MissionRun:
                 if not a.kept and route.step is not None:
                     a.missing = missing_files(wt, route.step.files)
             except gitops.GitError as e:
-                a.reason = f"git: {e}"
+                a.reason = "git: " + " ".join(str(e).split())  # one line: REVIEW.md holds one table row per line
             except (OSError, UnicodeError) as e:
                 # A worker or filesystem error costs this attempt, never the run.
                 a.reason = f"attempt error: {type(e).__name__}: {e}"

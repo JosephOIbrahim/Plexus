@@ -146,9 +146,10 @@ def wait_for_comfyui(url: str, child, timeout_s: float, *, marker: Path | None =
         if stats:
             return stats
         if child.poll() is not None:
-            raise LaunchError(f"ComfyUI's window closed before ComfyUI answered (exit {child.returncode}). Its log was in that window.")
+            ended = "" if child.returncode is None else f" (exit {child.returncode})"  # a waiter never saw the other window's code
+            raise LaunchError(f"ComfyUI's window closed before ComfyUI answered{ended}. Its log was in that window.")
         if marker is not None and marker.exists():  # after the window's own check, so a window closed since its failure is not called open
-            raise LaunchError("ComfyUI failed in its window, which stays open so its log can be read. Close that window, then start again.")
+            raise LaunchError(f"ComfyUI failed in its window, which stays open so its log can be read. Close that window, then start again.{timeout_note}")
         if now >= next_note:
             say(f"[still waiting for ComfyUI: {now - start:.0f} s of {timeout_s:.0f}]")
             next_note += 15.0
@@ -222,7 +223,6 @@ class OtherStart:
         # can land after this launcher's read of the port and before this read. The next read of the port says so.
         if not pid or pid_alive(pid) is not False:
             return None
-        self.returncode = 0
         return 0
 
 

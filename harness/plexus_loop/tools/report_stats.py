@@ -25,8 +25,9 @@ def load(repo: Path, mission: str) -> list[dict]:
 
 
 def no_server(r: dict) -> bool:
-    """Newer rows say so themselves; rows 90 to 119 predate the field, so their reason still decides."""
-    return bool(r.get("unreachable") or NO_SERVER.search(r.get("reason") or ""))
+    """Newer rows say so themselves; rows 90 to 119 predate the field, so their reason still decides. A null
+    route_s is a row with no worktree, which reached no model either; older rows have no such key at all."""
+    return bool(r.get("unreachable") or NO_SERVER.search(r.get("reason") or "") or ("route_s" in r and r["route_s"] is None))
 
 
 def real_attempts(rows: list[dict]) -> list[dict]:

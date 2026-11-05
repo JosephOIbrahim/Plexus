@@ -175,13 +175,14 @@ def test_the_new_rows_stay_out_of_the_means():
         {"reason": 'worker: ollama call failed: HTTPError: HTTP Error 500: {"error":"llama-server binary not found"}', "unreachable": True, "device": "cpu", "wall_s": 2},
         {"reason": "worker: ollama call failed: URLError: refused", "device": "cpu", "wall_s": 3},
         {"reason": "worker: ollama call failed: TimeoutError: timed out", "device": "cpu", "wall_s": 4800},
+        {"reason": "git: worktree add failed", "route_s": None, "device": "cpu", "wall_s": 0.2},
     ]
     assert len(report_stats.real_attempts(rows)) == 2
-    assert report_stats.drop_reasons(rows)["no server"] == 2
+    assert report_stats.drop_reasons(rows)["no server"] == 3
 
 
 def test_an_outage_row_leaves_the_next_prompt_as_it_was(tmp_path):
-    # Row 90 lost its connection at 199 s. That call reached no model, so the attempt after it still owes the failure
+    # Row 90 lost its connection at 199 s. No model answered that call, so the attempt after it still owes the failure
     # and the files of the attempt before it.
     prompts = []
 
@@ -369,7 +370,8 @@ def test_check_never_loads_the_model_and_keeps_ready_last_within_five_lines(tmp_
     r = _repo(tmp_path)
     assert cli_main(["check", str(Path(loop.__file__).parent / "missions" / "acceptance.toml"), "--repo", str(r)]) == 2
     lines = capsys.readouterr().out.splitlines()
-    assert sent == [] and len(lines) <= 5 and "does not load" in lines[-2] and lines[-1].startswith("not ready")
+    assert sent == [] and len(lines) <= 5 and lines[-1].startswith("not ready")
     monkeypatch.setattr("harness.plexus_loop.__main__.load_mission", lambda p: _mission())
     assert cli_main(["check", "any.toml", "--repo", str(r)]) == 0
-    assert sent == [] and capsys.readouterr().out.splitlines()[-1] == "ready"
+    lines = capsys.readouterr().out.splitlines()
+    assert sent == [] and "does not load" in lines[-2] and lines[-1] == "ready"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -44,3 +46,13 @@ def test_a_run_that_cannot_start_says_why_and_exits_two(tmp_path, capsys):
     for verb in ("run", "check"):
         assert cli_main([verb, str(toml), "--repo", str(r)]) == 2
         assert "mission file problem" in capsys.readouterr().err
+
+
+def test_a_stdout_with_no_reconfigure_does_not_end_the_process(tmp_path):
+    # pythonw has no stdout at all, and a caller can hand in a StringIO. Neither may die on main's first line.
+    r = tmp_path / "r"
+    r.mkdir()
+    subprocess.run([*GIT, "init", "-q"], cwd=r, check=True, capture_output=True)
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        assert cli_main(["stop", "--repo", str(r)]) == 0
+    assert "STOP" in out.getvalue() or (r / ".plexus_loop" / "STOP").exists()

@@ -527,8 +527,9 @@ def test_a_waiter_whose_holder_dies_says_the_window_closed(closed_url, root, mon
     alive = iter([True, False])
     monkeypatch.setattr(live, "comfyui_stats", lambda url: None)
     monkeypatch.setattr(live, "pid_alive", lambda pid: next(alive))
-    with pytest.raises(live.LaunchError, match="closed before"):
+    with pytest.raises(live.LaunchError, match="closed before") as e:
         live.ensure_comfyui(closed_url, root, start=refuse_to_start, say=quiet, sleep=refuse_to_sleep)
+    assert "exit" not in str(e.value)  # a waiter never saw that window's code
 
 
 def test_a_waiter_reads_the_same_marker(closed_url, root, monkeypatch):

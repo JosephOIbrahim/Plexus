@@ -293,7 +293,7 @@ def test_a_worktree_that_cannot_be_made_costs_its_attempt_and_stays_out_of_the_n
     m = mission_from_dict(_mission(budget={"attempts": 3, "hours": 1, "max_consecutive_failures": 5}))
     report = MissionRun(m, repo, worker=w, profile_fn=lambda: CPU, log=lambda s: None, route_fn=route).run()
     _, failed, last = report.attempts
-    assert failed.reason.startswith("git: ") and failed.route_s is None
+    assert failed.reason.startswith("git: ") and "\n" not in failed.reason and failed.route_s is None
     assert len(w.prompts) == 2 and last.kept
     assert routed == [[], [1]]
     assert "Attempt 1 was dropped" in w.prompts[1] and "file:plexus/note.txt" in w.prompts[1]
