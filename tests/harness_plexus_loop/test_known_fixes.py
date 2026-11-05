@@ -184,40 +184,11 @@ def test_the_real_null_layer_quote_carries_the_whole_fix():
     ("AttributeError: type object 'Notice' has no attribute 'ObjectsChanged'", "`Tf.Notice.ObjectsChanged` does not exist"),
     ("None.None(Layer, ListProxy_SdfSubLayerTypePolicy) did not match C++ signature", "`layer.subLayerPaths` is a live"),
     ("NameError: name 'Usd' is not defined", "Import every `pxr` module"),
-    ("error[E0255]: the name `PredicateError` is defined multiple times", "never import anything as `PredicateError`"),
-    ("error[E0277]: can't compare `&f64` with `f64`", "compare numbers by value"),
-    ("error[E0599]: no method named `len` found for enum `Clause` in the current scope", "returns what it parsed"),
-    ("error[E0308]: mismatched types\n    |         ^^^^^ expected `f64`, found `Value`", "holds an `f64`, never a `Value`"),
-    ("AssertionError: predicate.rs (rank 2) uses crate::py (rank 4)", "only for a strictly lower rank"),
-    # run 12, rows 52, 54 and 55: the texts rustc printed, as the ledger's `detail` holds them
-    ("error[E0106]: missing lifetime specifier\n   --> crates/plexus-core/src/predicate.rs:196:58",
-     "must name the lifetime"),
-    ("error[E0204]: the trait `Copy` cannot be implemented for this type", "and nothing else"),
-    ("error[E0308]: mismatched types\n    |   expected `Result<(f64, &str), String>`, found `Option<_>`",
-     "never an `Option`"),
-    ("error[E0277]: `predicate::PredicateError` cannot be converted to a Python object", "defines no error type"),
-    ("error[E0277]: the trait bound `predicate::PredicateError: PyErrArguments` is not satisfied",
-     "defines no error type"),
-    # run 13 attempt 1, row 56
-    ("error: `<` is interpreted as a start of generic arguments for `i32`, not a comparison",
-     "never cast with `as` to compare"),
-    ("error[E0308]: mismatched types\n    |   expected `Value`, found `Option<_>`", "gives an `Option<&Value>`"),
-    # run 14 attempt 2 (d626436), as the predicate_smoke gate's hint lines report the two patterns
-    ("predicate_smoke hint: the plain changed(...) predicate fails too, so the fault sits before the comparator: "
-     "parse_clause does not read the keyword before parse_path, or in_scope does not split the path at its first '.' "
-     "and rejects the attribute of the scope prim", "reads the keyword first"),
-    ("predicate_smoke hint: the plain changed(...) predicate fails too, so the fault sits before the comparator: "
-     "parse_clause does not read the keyword before parse_path, or in_scope does not split the path at its first '.' "
-     "and rejects the attribute of the scope prim", "splits the path at the first"),
-    ("predicate_smoke hint: changed(...) compiles but the predicates with a comparator fail: trim the rest before "
-     "parse_cmp and parse_number, and take the clause kind from the keyword", "Call `trim_start()`"),
-    # the two the S4 block's reviewers asked for
+    # the S4 block's reviewers asked for this one, and S9 resends axon.py whole
     ("AttributeError: 'PlexusAxon' object has no attribute 'idle'", "Expose `idle() -> bool`"),
     # run 16 attempts 1 and 2: T5 target failure, as the junit report carries it
     ("AssertionError: assert invalid null prim\n +  where invalid null prim = GetPrimAtPath('/Exchange/lookNeuron/Hints')",
      "The dispatcher lives in `_on_event`"),
-    ("predicate_smoke: cannot import plexus.core.predicate: ImportError: cannot import name 'compile_predicate'",
-     "In S7 only, `py.rs` gains three pieces"),
 ])
 def test_each_real_run_error_finds_its_fix_in_the_real_brief(error, anchor):
     m = load_mission(REPO / "harness" / "plexus_loop" / "missions" / "acceptance.toml")

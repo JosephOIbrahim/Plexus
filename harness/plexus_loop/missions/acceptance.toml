@@ -24,6 +24,7 @@
 # brief, proved on a scratch export (7 -> 5); Jev's floor 0.1; context_chars 135000. The worker reads the
 # brief from the loop branch, so the loop branch moves with this commit (plan section 10).
 # Nov 4, after S5 kept: the block is cut, because its copy of neuron.py no longer matches the tip.
+# Nov 4, on Joe's /dream apply 1 to 9 (src:b30a0d29 date:2026-11-04): the worker's prompt loses what S1 to S7c no longer need. Focus is plexus/** only, because S8 and S9 change no Rust. PLEXUS_SPEC.md, T0, T2 and T4 leave the context list, and the metric still counts those tests. S3's and S7's text shrink to S4's form. 15 known fixes retire with the brief lines they quote. The proposals and their evidence are in ~/.claude/memory/dream-report-2026-11-04-plexus.md.
 # Nov 4, Joe placed the burst and disk tests (7ce9dd0): S8 is re-aimed at the disk file with his stage words and a guard on its Saves, and S9 fixes the window.
 # Nov 4, rows 87 and 88: the try landed only around the mute's writes, and a repeat came back byte-identical. S7c's text narrows to the one test left.
 # Nov 4, row 86: S7c's text says the try goes inside the for and _run_action stays; the idle known fix retires.
@@ -44,21 +45,17 @@
 name = "acceptance"
 goal = "Make the frozen Plexus phase 1 acceptance tests in tests/acceptance/phase1 (the schema gate and T1 to T6, from PLEXUS_SPEC.md) pass, one honest step at a time. tests/acceptance/CONTRACT.md is the Python surface they call; harness/plexus_loop/missions/acceptance.worker.md says how the work is split and what the gates enforce."
 requires = ["tests/acceptance/phase1", "PLEXUS_SPEC.md"]
-focus = ["plexus/**", "crates/**", "Cargo.toml", "Cargo.lock"]
+focus = ["plexus/**"]
 frozen = ["tests/acceptance/**", "harness/**", "docs/plexus/**", "PLEXUS_SPEC.md", ".github/**", "pyproject.toml"]
 context = [
   "harness/plexus_loop/missions/acceptance.worker.md",
   "tests/acceptance/CONTRACT.md",
   "tests/acceptance/_support.py",
   "tests/acceptance/conftest.py",
-  "tests/acceptance/phase1/test_t0_schema_gate.py",
   "tests/acceptance/phase1/test_t1_propagation.py",
-  "tests/acceptance/phase1/test_t2_predicate_precision.py",
   "tests/acceptance/phase1/test_t3_budget.py",
-  "tests/acceptance/phase1/test_t4_provenance.py",
   "tests/acceptance/phase1/test_t5_gate.py",
   "tests/acceptance/phase1/test_t6_truth.py",
-  "PLEXUS_SPEC.md",
   "tests/acceptance/phase1/test_budget_order.py",
   "tests/acceptance/phase1/test_mute_isolation.py",
   "tests/acceptance/phase1/test_truth_on_disk.py",
@@ -151,8 +148,8 @@ text = "Membrane, stagekit and axon in Python. Create plexus/core/__init__.py an
 id = "S3"
 after = ["S2"]
 targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_bad_predicates_fail_at_registration"]
-files = ["crates/plexus-core/src/predicate.rs", "crates/plexus-core/src/lib.rs", "crates/plexus-core/src/py.rs", "plexus/core/predicate.py", "plexus/core/neuron.py"]
-text = "Rust grammar-v0 predicate, all whole files. crates/plexus-core/src/predicate.rs in plain Rust with the Value enum, compile() and Predicate signatures the brief lists: clauses changed, delta, attr, exists joined by AND only; OR or any other text is an Err; every path is absolute and inside the scope, meaning the part before the first '.' equals the scope or starts with scope + '/' (a plain starts_with would accept /Exchange/LookStateX). paths() gives each path once, in order. eval handles all four clause kinds, with delta compared against a cache that only seed and commit_wake write. Start predicate.rs from the brief's skeleton with every type and signature unchanged and every todo!() replaced; no unit tests in S3. lib.rs adds mod predicate;. py.rs is the brief's py.rs block, copied exactly; it has no Budget parts. plexus/core/predicate.py: from plexus._core import PredicateError, compile_predicate. plexus/core/neuron.py: NeuronRuntime.__init__ (register_participant first, then open the composed exchange as its stage, so the sublayer append never reaches its axon; edit_layer is Sdf.Layer.FindOrOpen of its own from_<id>.usda, the same object the stage composes) and register(), which calls compile_predicate(predicate, scope) before anything else, so PredicateError propagates."
+files = ["plexus/core/predicate.py", "plexus/core/neuron.py"]
+text = "Rust grammar-v0 predicate, kept on row 62. If this step ever routes again, start from plexus/core/predicate.py and plexus/core/neuron.py under Files: predicate.py re-exports PredicateError and compile_predicate from plexus._core, and register() calls compile_predicate(predicate, scope) before anything else, so PredicateError propagates. No Rust change."
 
 [[steps]]
 id = "S4"
@@ -166,7 +163,7 @@ id = "S5"
 after = ["S4"]
 targets = ["tests/acceptance/phase1/test_t2_predicate_precision.py::test_delta_threshold_and_cache", "tests/acceptance/phase1/test_t4_provenance.py"]
 files = ["plexus/core/neuron.py"]
-text = "Delta wiring in plexus/core/neuron.py. predicate.rs already evaluates delta since S3: touch it only to fix a bug T2 shows, or to give in_scope the descendant branch the brief states (a path under scope + '/' is inside; 9d7bb5f rejects it), and add no .rs file. Fill the two comments that name S5: register() calls record.compiled.seed(self._values(record)), and _on_event, under the lock, calls record.compiled.commit_wake(values) with the same values eval saw, so sub-threshold changes accumulate. S7's comment stays above that call."
+text = "Delta wiring in plexus/core/neuron.py. Fill the two comments that name S5: register() calls record.compiled.seed(self._values(record)), and _on_event, under the lock, calls record.compiled.commit_wake(values) with the same values eval saw, so sub-threshold changes accumulate. S7's comment stays above that call."
 
 [[steps]]
 id = "S6"
@@ -179,8 +176,8 @@ text = "A write outside the allowlist is dropped (nothing lands in any exchange 
 id = "S7"
 after = ["S5"]
 targets = ["tests/acceptance/phase1/test_t3_budget.py"]
-files = ["crates/plexus-core/src/budget.rs", "crates/plexus-core/src/lib.rs", "crates/plexus-core/src/py.rs", "plexus/core/neuron.py"]
-text = "Rust Budget in crates/plexus-core/src/budget.rs, plain Rust: Budget::new(wakes: u32, window_s: f64), peek(&self, now: f64) -> &'static str and admit(&mut self, now: f64) -> &'static str, each returning wake, trip or mute. It stores the timestamps of admitted wakes, a trip count and a muted flag. A stored wake at t counts while now < t + window_s. peek takes &self and only counts, so it never removes anything: count with self.timestamps.iter().filter(|t| now < **t + self.window_s).count(), and no pop_front, retain or field assignment in peek; rustc's E0596 in budget.rs means peek is changing a field, and the fix is to take that line out, never to make peek &mut self, because py.rs calls it through &self. peek returns mute when muted, wake when that count is below wakes, otherwise trip; it does not always say wake. Only admit removes timestamps. admit returns mute when muted; it drops timestamps that no longer count; below the limit it stores now, clears the trip count and returns wake; at the limit it stores nothing and adds a trip, and the third consecutive trip sets muted and returns mute, otherwise trip. Write no #[cfg(test)] tests in this step, because frozen T3 checks the sequence: Budget::new(1, 10.0) admitted at t = 0, 2, 4, 6 gives wake, trip, trip, mute, and peek at t = 6 still says trip. lib.rs adds mod budget;. py.rs, whole file, gains the brief's PyBudget block and its add_class line. Start from plexus/core/neuron.py under Files, whole, and change only what this step names; the dispatcher and the S5 lines stay. Import Budget from plexus._core. __init__ adds self._global_budget = Budget(global_wakes_per_min, 60.0). _Record gains a last field budget: object = None, the _Record(...) call stays as it is, and register sets record.budget = Budget(budget_wakes, budget_window) right after that call. The budgets live on the runtime and the record: record.compiled is the predicate, and it has no peek or admit. In _on_event, the comment naming S7 becomes the budget check, inside the lock and above record.compiled.commit_wake(values): set now = self._clock(). If record.budget.peek(now) != 'wake', call record.budget.admit(now); if that returns 'mute', set record.handle.state = 'muted', then write plexus:state = muted as a Token and plexus:flag:budget as a non-empty String with self._author_on_neuron, which saves; then continue. If self._global_budget.peek(now) != 'wake', continue. Otherwise call admit(now) on both budgets and fall through to the kept lines, unchanged: commit_wake, the counters and the thread. A trip or a mute continues before commit_wake, so neither moves the delta cache and no action starts. The mute branch must be there: T3 reads record.handle.state and plexus:state, and fails with 'dormant' == 'muted' without it. The mute flag is plexus:flag:budget; the bare plexus:flag holds the deny record. plexus/core/axon.py does not change in this step: send exactly these four files, whole, and no diff."
+files = ["plexus/core/neuron.py"]
+text = "Rust Budget, kept on row 84. If this step ever routes again, start from plexus/core/neuron.py under Files, whole, and keep the budget check, the mute branch, the dispatcher and the S5 lines. No Rust change."
 
 [[steps]]
 id = "S7b"
@@ -306,92 +303,14 @@ match = '''_on_notice[\s\S]*object has no attribute '_\w*(lock|Lock)''''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "So it takes no lock"
 
-[[known_fixes]]
-match = '''the name `PredicateError` is defined multiple times'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "never import anything as `PredicateError`"
-
-[[known_fixes]]
-match = '''can't compare `&f64` with `f64`|can't compare `f64` with `&f64`'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "In `predicate.rs`, compare numbers by value"
-
-[[known_fixes]]
-match = '''no method named `len` found for (enum|struct) `Clause`'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "Each parse function in `predicate.rs` returns what it parsed"
-
-[[known_fixes]]
-match = '''expected `f64`, found `Value`|expected `Value`, found `f64`'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "A `delta` clause holds an `f64`, never a `Value`"
-
-[[known_fixes]]
-match = '''\.rs \(rank \d\) uses crate::\w+ \(rank \d\)'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "A module may write `crate::X` only for a strictly lower rank"
-
-# Run 12 (Joe, Nov 3, "A + set"): the four rustc errors its five-file replies dropped on.
-[[known_fixes]]
-match = '''missing lifetime specifier'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "must name the lifetime"
-
-[[known_fixes]]
-match = '''the trait `Copy` cannot be implemented for this type'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "`Value` derives `Debug, Clone, PartialEq` and nothing else"
-
-[[known_fixes]]
-match = '''expected `Result<[^`]*>`, found `Option<[^`]*>`|expected `Option<[^`]*>`, found `Result<[^`]*>`'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "return a `Result`, never an `Option`"
-
-[[known_fixes]]
-match = '''PredicateError` cannot be converted to a Python object|PredicateError: PyErrArguments` is not satisfied'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "`predicate.rs` defines no error type"
-
-# Run 13 attempt 1 (row 56): a cast before `<` parsed as generics; `Some(..)` matched on a `&Value`.
-[[known_fixes]]
-match = '''is interpreted as a start of generic arguments for `(i|u|f)(8|16|32|64|128|size)`'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "never cast with `as` to compare"
-
-[[known_fixes]]
-match = '''expected `Value`, found `Option<[^`]*>`|expected `Option<[^`]*>`, found `Value`'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "gives an `Option<&Value>`"
-
-# Run 14 attempt 2 (d626436): the predicate_smoke gate prints one fixed hint line per failure
-# pattern, because the worker's own PredicateError text cannot be anticipated; each fragment
-# quotes the brief rule it names.
-[[known_fixes]]
-match = '''parse_clause does not read the keyword'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "`parse_clause` reads the keyword first"
-
-[[known_fixes]]
-match = '''in_scope does not split the path at its first'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "`in_scope` splits the path at the first"
-
-[[known_fixes]]
-match = '''trim the rest before parse_cmp and parse_number'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "Call `trim_start()` on the rest before `parse_cmp`"
+# Retired Nov 4, on Joe's /dream apply: the known fixes for predicate.rs, py.rs and the rank rule, with the brief lines they quoted. S3 and S7 are kept and
+# merged, and Rust is out of focus, so no attempt can reach these errors. Their last firing was row 58. git show ac84b88 has them, if a later mission writes Rust.
 
 # Run 16 attempts 1-2: T5's Hints prim never existed because _on_event stayed `pass`.
 [[known_fixes]]
 match = '''invalid null prim[\s\S]*lookNeuron/Hints'''
 file = "harness/plexus_loop/missions/acceptance.worker.md"
 anchor = "The dispatcher lives in `_on_event`"
-
-# An S7 py.rs rewrite that drops compile_predicate, PredicateError or an add_* line fails the gate here.
-[[known_fixes]]
-match = '''cannot import plexus\.core\.predicate'''
-file = "harness/plexus_loop/missions/acceptance.worker.md"
-anchor = "In S7 only, `py.rs` gains three pieces"
 
 # S4 with the kept axon: the block's wait_idle calls axon.idle(), which the S2 axon does not have.
 [[known_fixes]]
