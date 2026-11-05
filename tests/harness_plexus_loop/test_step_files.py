@@ -155,9 +155,9 @@ def test_the_list_is_for_the_current_step_not_the_dropped_one(tmp_path):
                          "files": ["plexus/d.py"]})
     m = mission_from_dict(raw)
     a = _dropped(missing=["plexus/b.py", "plexus/c.py"], detail="E   boom")
-    fb = _feedback(build_prompt(m, _repo(tmp_path), 5, None, [a], 100000, step=m.steps[1]))
-    assert "Step S3 needs" in fb and "- plexus/d.py" in fb
-    assert "- plexus/b.py" not in fb and "- plexus/c.py" not in fb
+    p = build_prompt(m, _repo(tmp_path), 5, None, [a], 100000, step=m.steps[1])
+    assert "must include each in full: plexus/d.py." in p
+    assert "plexus/b.py" not in p and "plexus/c.py" not in p and "E   boom" not in p
 
 
 def test_no_list_when_every_step_file_is_in_the_repo(tmp_path):

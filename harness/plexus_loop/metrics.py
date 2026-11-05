@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,7 @@ from .profile import Profile
 
 TAIL_CHARS = 4000
 TEST_MESSAGE_CHARS = 1500  # one test's own failure, as the next prompt shows it
+KILL_DRAIN_S = 10  # after a timeout: the limit on taskkill, then on the wait for the pipes
 
 
 @dataclass
@@ -52,15 +54,39 @@ def _clip(*texts: str) -> str:
     return text[:GATE_HEAD_CHARS] + "\n[... middle of the output left out ...]\n" + text[-GATE_TAIL_CHARS:]
 
 
+def _run_bounded(cmd: list[str], worktree: Path, profile: Profile,
+                 timeout: float) -> subprocess.CompletedProcess:
+    """subprocess.run with a timeout that holds on Windows, raising TimeoutExpired as it does.
+
+    There subprocess.run kills only the direct child and then waits with no limit for the pipes,
+    and a grandchild holds them (cargo under build_core.py, a test binary under cargo), so a stuck
+    one never returns, past every budget and the stop file. So the whole tree goes first, and the
+    wait for the pipes has a limit in case something left the tree. No ``with``: its exit closes a
+    pipe a grandchild still holds, and that blocks until the grandchild exits.
+    """
+    # errors="replace": a byte the locale cannot decode (rustc echoing a worker's '”' or '←')
+    # costs a replacement character (plus mojibake for that character's other bytes), never
+    # the stream. Without it the reader thread dies and the output comes back None, so the
+    # next prompt would show nothing of the error.
+    p = subprocess.Popen(cmd, cwd=worktree, env=profile.environ(), stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, text=True, errors="replace")
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except BaseException:  # a timeout or Ctrl-C: subprocess.run also kills on any exception
+        if sys.platform.startswith("win"):
+            with contextlib.suppress(OSError, subprocess.SubprocessError):
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], capture_output=True,
+                               timeout=KILL_DRAIN_S, check=False)
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            p.kill()
+            p.communicate(timeout=KILL_DRAIN_S)
+        raise
+    return subprocess.CompletedProcess(cmd, p.returncode, out, err)
+
+
 def run_gate(gate: Gate, worktree: Path, profile: Profile) -> GateResult:
     try:
-        # errors="replace": a byte the locale cannot decode (rustc echoing a worker's '”' or '←')
-        # costs a replacement character (plus mojibake for that character's other bytes), never
-        # the stream. Without it the reader thread dies and the output comes back None, so the
-        # next prompt would show nothing of the error.
-        r = subprocess.run(
-            gate.cmd, cwd=worktree, env=profile.environ(), capture_output=True, text=True,
-            errors="replace", timeout=gate.timeout_s, check=False)
+        r = _run_bounded(gate.cmd, worktree, profile, gate.timeout_s)
     except subprocess.TimeoutExpired:
         return GateResult(gate.name, False, "timed out")
     except OSError as e:
@@ -75,18 +101,20 @@ def measure(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:
 
 
 def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:
-    """Count tests under the target that did not pass.
+    """Count what did not pass under the target, from the report's own totals.
 
-    Failures, errors and skips all count, so a change can't score by skipping
-    a test. A run that collects nothing is an error, never a score of zero.
+    Failures, errors and skips all count, so a change can't score by skipping a test. The value counts
+    report entries, not tests: a test that fails and then errors in teardown adds two, so it can pass
+    ``total``. ``total`` counts test ids and not the report's own ``tests``, which adds a passing test
+    with a teardown error twice, so the attempt that fixes that error would read as a test gone missing.
+    A run that collects nothing is an error, never a score of zero.
     """
     with tempfile.TemporaryDirectory() as d:
         junit = Path(d) / "junit.xml"
         cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                metric.target, f"--junitxml={junit}"]
         try:
-            r = subprocess.run(cmd, cwd=worktree, env=profile.environ(), capture_output=True,
-                               text=True, errors="replace", timeout=metric.timeout_s, check=False)
+            r = _run_bounded(cmd, worktree, profile, metric.timeout_s)
         except subprocess.TimeoutExpired:
             return MetricResult(None, error="metric run timed out")
         tail = _tail(r.stdout, r.stderr)
@@ -97,16 +125,17 @@ def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> Metric
         except ET.ParseError:
             return MetricResult(None, tail=tail, error="pytest report could not be read")
     suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
-    total = bad = 0
+    bad = 0
+    tests: set[str] = set()
     failing: list[str] = []
     messages: dict[str, str] = {}
     for s in suites:
-        total += int(s.get("tests", 0))
         bad += int(s.get("failures", 0)) + int(s.get("errors", 0)) + int(s.get("skipped", 0))
         for case in s.iter("testcase"):
+            tid = f"{case.get('classname', '')}::{case.get('name', '')}"
+            tests.add(tid)
             bad_children = [c for c in case if c.tag in ("failure", "error", "skipped")]
             if bad_children:
-                tid = f"{case.get('classname', '')}::{case.get('name', '')}"
                 failing.append(tid)
                 # A test that fails and then errors in teardown appears twice under one id: keep
                 # its own failure first and add the teardown after it, never replace it.
@@ -114,9 +143,9 @@ def _pytest_failures(metric: Metric, worktree: Path, profile: Profile) -> Metric
                 if tid in messages:  # the first entry is whole (each is at most the cap); clip the rest
                     text = (messages[tid] + "\n" + text)[:TEST_MESSAGE_CHARS]
                 messages[tid] = text
-    if total == 0:
+    if not tests:
         return MetricResult(None, total=0, tail=tail, error="no tests collected")
-    return MetricResult(float(bad), total=total, tail=tail, failing=failing, messages=messages)
+    return MetricResult(float(bad), total=len(tests), tail=tail, failing=failing, messages=messages)
 
 
 def _case_message(el: ET.Element) -> str:
@@ -131,8 +160,7 @@ def _case_message(el: ET.Element) -> str:
 def _command(metric: Metric, worktree: Path, profile: Profile) -> MetricResult:
     """Run the mission's command and read a number from its last output line."""
     try:
-        r = subprocess.run(metric.cmd, cwd=worktree, env=profile.environ(), capture_output=True,
-                           text=True, errors="replace", timeout=metric.timeout_s, check=False)
+        r = _run_bounded(metric.cmd, worktree, profile, metric.timeout_s)
     except subprocess.TimeoutExpired:
         return MetricResult(None, error="metric command timed out")
     except OSError as e:

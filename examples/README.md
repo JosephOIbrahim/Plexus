@@ -10,8 +10,8 @@ Or double-click `Plexus Live` on the desktop.
 
 ## What it does
 
-1. It rebuilds the Rust core if it is older than the crates. The build stays in the repo's own `target/`, never in the harness's.
-2. It starts `G:\COMFY\ComfyUI` in its own window, unless ComfyUI already answers on 8188, and waits for `/system_stats`.
+1. It builds the Rust core if it is missing or older than the crates. The build stays in the repo's own `target/`, never in the harness's.
+2. It starts `G:\COMFY\ComfyUI` in its own window, unless ComfyUI already answers on 8188, and waits for `/system_stats`. If ComfyUI fails in that window, it says so at once and leaves the window open. If another launcher's start is still loading, it waits for that one and starts nothing.
 3. It checks the checkpoints ComfyUI lists sit under `G:\COMFYUI_Database\Models`.
 4. It opens a new session folder under `%LOCALAPPDATA%\Plexus\sessions` and gives you a prompt.
 
@@ -41,7 +41,7 @@ That file's countdown calls `choice /c " qo"`. Windows rejects the space with "I
 | Flag | What it does |
 |---|---|
 | `--minimized` | ComfyUI's window starts minimized and never takes the focus |
-| `--stop-comfyui-on-exit` | Stops ComfyUI when the session ends, only if this launcher started it |
+| `--stop-comfyui-on-exit` | Stops ComfyUI when the session ends, only if this launcher started it. A window that failed stays open, so its log can be read. |
 | `--script "a; b"` | Runs commands instead of the prompt |
 | `--timeout 300` | Seconds to wait for ComfyUI to answer |
-| `--comfyui-root`, `--models-root`, `--url`, `--sessions-root` | Point it somewhere else |
+| `--comfyui-root`, `--models-root`, `--url`, `--sessions-root` | Point it somewhere else. `--url` needs http or https, a host and a port. If nothing answers there, the launcher starts ComfyUI on that port, and only at an http URL on this machine. |

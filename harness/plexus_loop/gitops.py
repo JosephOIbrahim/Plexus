@@ -35,8 +35,14 @@ def git(repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
     return r.stdout
 
 
+def roots(start: Path) -> tuple[Path, Path]:
+    """This checkout's root, then the main checkout's, which a linked worktree shares its branches with."""
+    top, common = git(start, "rev-parse", "--show-toplevel", "--git-common-dir").splitlines()
+    return Path(top), (start / common).resolve().parent
+
+
 def repo_root(start: Path) -> Path:
-    return Path(git(start, "rev-parse", "--show-toplevel").strip())
+    return roots(start)[0]
 
 
 def rev(repo: Path, ref: str) -> str:

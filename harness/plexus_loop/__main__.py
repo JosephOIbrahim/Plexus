@@ -14,6 +14,11 @@ from .profile import choose_profile, houdini_state
 
 
 def main(argv: list[str] | None = None) -> int:
+    # A drop reason can quote a path or an error in any script, and print raises on what a redirected stdout's locale
+    # cannot encode, which ended a run at an attempt's log line. Line buffered, because a run's log is read while it
+    # runs, and a redirected file otherwise stays empty until exit.
+    if hasattr(sys.stdout, "reconfigure"):  # not under pythonw, where stdout is None, nor a caller's StringIO
+        sys.stdout.reconfigure(errors="backslashreplace", line_buffering=True)
     ap = argparse.ArgumentParser(prog="plexus_loop", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run", help="run one mission until it stops")
@@ -51,6 +56,10 @@ def main(argv: list[str] | None = None) -> int:
         if fr.kind != "none":
             key = "is set" if os.environ.get(fr.api_key_env, "").strip() else "is NOT set, so nothing will be quoted"
             print(f"fix router: {fr.kind} ({fr.model}), floor {fr.min_confidence:g}; {fr.api_key_env} {key}")
+        if mission.worker.kind == "ollama":
+            # Never a load here: this runs inside /doctor and /mission, and a model left on the GPU for keep_alive is a bad
+            # surprise when Houdini opens next. Above the last line, because callers read that one for ready.
+            print(f"worker: check does not load {mission.worker.model}; run loads it first and refuses if it cannot")
         print("ready" if not missing else f"not ready: missing {', '.join(missing)}")
         return 0 if not missing else 2
 

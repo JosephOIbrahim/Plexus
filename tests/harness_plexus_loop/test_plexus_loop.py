@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from harness.plexus_loop import MissionRun, RefuseToStart
+from harness.plexus_loop import MissionRun, RefuseToStart, loop
 from harness.plexus_loop.__main__ import main as cli_main
 from harness.plexus_loop.loop import Lock
-from harness.plexus_loop.mission import HoudiniPolicy, MissionError, WorkerSpec, mission_from_dict
+from harness.plexus_loop.metrics import MetricResult, measure, run_gate
+from harness.plexus_loop.mission import Gate, HoudiniPolicy, Metric, MissionError, WorkerSpec, mission_from_dict
 from harness.plexus_loop.profile import Profile, choose_profile, houdini_state
 from harness.plexus_loop.workers import OllamaWorker, WorkerResult, extract_diff
 
@@ -111,6 +114,18 @@ def test_refuses_when_gates_fail_before_any_change(repo):
     assert w.prompts == []
 
 
+def test_a_baseline_worktree_that_cannot_be_made_is_a_refusal(repo, monkeypatch):
+    def cannot_add(*args):
+        raise loop.gitops.GitError("git worktree add: fatal: already exists")
+
+    monkeypatch.setattr(loop.gitops, "add_worktree", cannot_add)
+    w = Scripted()
+    with pytest.raises(RefuseToStart, match="baseline worktree"):
+        run(repo, _mission(), w)
+    assert w.prompts == []
+    assert not (repo / ".plexus_loop" / "lock").exists()
+
+
 def test_lock_blocks_a_second_run(repo):
     state = repo / ".plexus_loop"
     Lock(state).acquire("other")  # held by this live process
@@ -128,6 +143,50 @@ def test_stale_lock_from_dead_process_is_taken_over(repo):
     report = run(repo, _mission(), Scripted(set_score(4)))
     assert report.best == 4
     assert not (state / "lock").exists()
+
+
+def test_one_lock_holds_across_the_main_checkout_and_a_linked_worktree(repo, tmp_path):
+    # A linked worktree moves the same branch and loads the same model, so each side refuses while the other holds it.
+    # Only the lock is shared: the ledger, REVIEW.md and the stop file stay with the checkout that owns them.
+    linked = tmp_path / "linked"
+    _git(repo, "worktree", "add", "-q", "--detach", str(linked))
+    runs = {checkout: MissionRun(mission_from_dict(_mission()), checkout, worker=Scripted()) for checkout in (repo, linked)}
+    for holder, other in ((repo, linked), (linked, repo)):
+        runs[holder].lock.acquire("other")  # held by this live process
+        try:
+            with pytest.raises(RefuseToStart, match="holds the lock"):
+                runs[other].run()
+        finally:
+            runs[holder].lock.release()
+    main_lock, own_state = repo / ".plexus_loop" / "lock", linked / ".plexus_loop"
+    seen = []
+
+    def look(wt):
+        seen.append((main_lock.is_file(), (own_state / "lock").exists()))
+        set_score(4)(wt)
+
+    run(linked, _mission(budget={"attempts": 1, "hours": 1, "max_consecutive_failures": 3}), Scripted(look))
+    assert seen == [(True, False)] and not main_lock.exists()
+    assert (own_state / "demo" / "attempts.jsonl").is_file() and (own_state / "demo" / "REVIEW.md").is_file()
+    assert not (repo / ".plexus_loop" / "demo").exists()
+    (own_state / "STOP").touch()
+    with pytest.raises(RefuseToStart, match="stop file"):
+        run(linked, _mission(), Scripted())
+    runs[repo].preflight()  # that stop file is the linked checkout's alone
+
+
+def test_a_listing_that_failed_says_nothing_about_the_lock_holder(repo, monkeypatch):
+    # tasklist exits 1 with stdout empty on a filter it rejects or a WMI error, and reading that as "gone" would take a
+    # live run's lock over. profile.py's check=True and the launcher's pid_alive both call it "can't tell".
+    state = repo / ".plexus_loop"
+    state.mkdir()
+    (state / "lock").write_text(json.dumps({"pid": 4242, "mission": "other"}))
+    with monkeypatch.context() as mp:  # undone here: the shared fixtures' teardown runs later and imports modules
+        mp.setattr(sys, "platform", "win32")
+        mp.setattr(subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=1, stdout=""))
+        with pytest.raises(RefuseToStart, match="holds the lock"):
+            Lock(state).acquire("second")
+    assert json.loads((state / "lock").read_text())["mission"] == "other"
 
 
 # -- keeping and dropping -------------------------------------------------
@@ -157,6 +216,24 @@ def test_attempt_starts_from_best_commit(repo):
 
     run(repo, _mission(), Scripted(set_score(4), look))
     assert seen == ["4"]
+
+
+def test_a_restart_works_from_the_loop_branch_whatever_head_says(repo):
+    # Every run after the first is a restart, and only the mission file comes from the main tree: rows 64 to 73 ran on a
+    # brief the loop branch lacked. The tip is the base and the baseline, and the ledger's row N stays line N.
+    d = _mission()
+    d["budget"]["attempts"] = 1
+    first = run(repo, d, Scripted(set_score(4)))
+    (repo / "plexus" / "score.txt").write_text("9\n")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-qam", "head moves on")
+    master = _git(repo, "rev-parse", "master").strip()
+    w = Scripted(set_score(3))
+    second = run(repo, d, w)
+    assert second.base == first.tip and second.baseline == 4 and second.attempts[0].kept
+    assert "```file:plexus/score.txt\n4\n" in w.prompts[0]
+    assert _git(repo, "rev-parse", "plexus-loop/demo").strip() == second.tip and _git(repo, "rev-parse", "master").strip() == master
+    rows = (repo / ".plexus_loop" / "demo" / "attempts.jsonl").read_text(encoding="utf-8").splitlines()
+    assert [json.loads(row)["n"] for row in rows] == [1, 1]
 
 
 def test_drops_frozen_path(repo):
@@ -190,6 +267,38 @@ def test_no_change_and_worker_failure_are_dropped(repo):
     report = run(repo, _mission(), Scripted(lambda wt: None, lambda wt: WorkerResult(False, "boom")))
     assert report.attempts[0].reason == "no change"
     assert report.attempts[1].reason == "worker: boom"
+
+
+def test_a_worktree_that_cannot_be_made_costs_its_attempt_and_stays_out_of_the_next_prompt(repo, monkeypatch):
+    # A folder held open by a left-behind process belongs to one attempt number, so the next attempt's fresh path runs.
+    # git's message quotes this machine's paths: the review shows it, and the router and the next prompt never read it.
+    real_add = loop.gitops.add_worktree
+
+    def add_worktree(rp, path, sha):
+        if path.name == "attempt-2":
+            raise loop.gitops.GitError(f"git worktree add: fatal: '{path}' already exists")
+        real_add(rp, path, sha)
+
+    monkeypatch.setattr(loop.gitops, "add_worktree", add_worktree)
+    routed = []
+
+    def route(mi, last, attempts):
+        routed.append([a.n for a in attempts])
+        return loop.Route(None, "none")
+
+    def no_gain(wt):
+        (wt / "plexus" / "note.txt").write_text("no gain\n")
+
+    w = Scripted(no_gain, set_score(4))
+    m = mission_from_dict(_mission(budget={"attempts": 3, "hours": 1, "max_consecutive_failures": 5}))
+    report = MissionRun(m, repo, worker=w, profile_fn=lambda: CPU, log=lambda s: None, route_fn=route).run()
+    _, failed, last = report.attempts
+    assert failed.reason.startswith("git: ") and "\n" not in failed.reason and failed.route_s is None
+    assert len(w.prompts) == 2 and last.kept
+    assert routed == [[], [1]]
+    assert "Attempt 1 was dropped" in w.prompts[1] and "file:plexus/note.txt" in w.prompts[1]
+    assert "already exists" not in w.prompts[1]
+    assert "already exists" in (repo / ".plexus_loop" / "demo" / "REVIEW.md").read_text(encoding="utf-8")
 
 
 def test_min_delta_requires_strict_gain(repo):
@@ -301,12 +410,86 @@ def test_build_core_passes_with_no_crate_yet(tmp_path):
     assert not (tmp_path / "plexus").exists()
 
 
+def test_build_core_copies_only_what_this_build_made(tmp_path, monkeypatch):
+    # Every worktree shares one cargo target, so an earlier attempt's library is always there. A failed build that copied
+    # it would pass the core gate on Rust that does not compile, and the metric would score the old code. cargo keeps the
+    # gate's own pipes, which is how rows 78 and 79 had E0596 in the next prompt.
+    from harness.plexus_loop import build_core
+
+    root, target = tmp_path / "wt", tmp_path / "shared"
+    (root / "crates" / "plexus-core").mkdir(parents=True)
+    (root / "crates" / "plexus-core" / "Cargo.toml").write_text("")
+    built, name = build_core.artifact(target)
+    built.parent.mkdir(parents=True)
+    built.write_text("LIB")
+    dest = root / "plexus" / name
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(target))
+    codes, calls = [101, 0, 0], []
+
+    def cargo(cmd, **kw):
+        calls.append((cmd, kw))
+        return SimpleNamespace(returncode=codes.pop(0))
+
+    with monkeypatch.context() as mp:  # undone here: the shared fixtures' teardown runs later and imports modules
+        mp.setattr(subprocess, "run", cargo)
+        assert build_core.main(root) == 101 and not dest.exists()
+        assert build_core.main(root) == 0 and dest.read_text() == "LIB"
+        dest.unlink()
+        built.unlink()
+        assert build_core.main(root) == 2 and not dest.exists()
+    (cmd, kw), *_ = calls
+    assert "--release" in cmd and "python" in cmd and kw["cwd"] == root.resolve()
+    assert not {"capture_output", "stdout", "stderr"} & set(kw)
+
+
 def test_profile_is_rechecked_each_attempt(repo):
     profiles = iter([CPU, CPU, Profile(device="gpu", houdini="absent"), CPU])
     w = Scripted(set_score(4), set_score(3))
     m = mission_from_dict(_mission())
     report = MissionRun(m, repo, worker=w, profile_fn=lambda: next(profiles), log=lambda s: None).run()
     assert [a.device for a in report.attempts[:2]] == ["cpu", "gpu"]
+    assert [p.device for p in w.profiles[:2]] == ["cpu", "gpu"]  # the row and the worker, not the row alone
+
+
+def test_houdini_opening_mid_run_reaches_the_next_request_on_the_wire(repo, monkeypatch):
+    # The hard rule with nothing handed in. Every other test injects a profile or reads payload() alone, so a profile
+    # cached at the start, a lost [houdini] policy or a request built from another profile would leave them all green.
+    monkeypatch.setenv("PLEXUS_LOOP_HOUDINI", "absent")
+    # The run's load goes through this urlopen too, and test_worker_outage.py has its own test of that load.
+    monkeypatch.setattr(OllamaWorker, "cannot_run", lambda self, profile: "", raising=False)
+    sent = []
+
+    def urlopen(req, timeout):
+        sent.append((req.full_url, json.loads(req.data), timeout))
+        monkeypatch.setenv("PLEXUS_LOOP_HOUDINI", "running")
+        return io.BytesIO(json.dumps({"response": f"```file:plexus/score.txt\n{5 - len(sent)}\n```\n"}).encode())
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    d = _mission(worker={"host": "http://ollama:1/", "timeout_s": 4800, "num_ctx": 100}, houdini={"cpu_threads": 3})
+    d["budget"]["attempts"] = 2
+    report = MissionRun(mission_from_dict(d), repo, log=lambda s: None).run()
+    assert [a.device for a in report.attempts] == ["gpu", "cpu"] and report.best == 3
+    (url, first, timeout), (_, second, _) = sent
+    assert url == "http://ollama:1/api/generate" and timeout == 4800 and "Lower the score." in first["prompt"]
+    assert first["options"] == {"num_ctx": 100}
+    assert second["options"] == {"num_gpu": 0, "num_thread": 3, "num_ctx": 100}
+
+
+def test_gates_and_both_metrics_run_in_the_profile_environment_without_the_key(tmp_path, monkeypatch):
+    # They run code the worker wrote, and what it prints reaches the next prompt and the API. The two device variables
+    # are cleared first: inside the unit gate this process holds the CPU profile's own, and a child would inherit them.
+    monkeypatch.setenv("TYPESAFE_API_KEY", "fake-key")
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.delenv("PLEXUS_LOOP_DEVICE", raising=False)
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")  # the child's plugins would add seconds to every attempt's unit gate
+    ok = ("import os\nok = (os.environ.get('CUDA_VISIBLE_DEVICES') == '' and os.environ.get('PLEXUS_LOOP_DEVICE') == 'cpu'\n"
+          "      and 'TYPESAFE_API_KEY' not in os.environ)\n")
+    assert run_gate(Gate("g", [PY, "-c", ok + "raise SystemExit(0 if ok else 1)"]), tmp_path, CPU).passed
+    assert measure(Metric(kind="command", cmd=[PY, "-c", ok + "print(1 if ok else 0)"]), tmp_path, CPU).value == 1
+    (tmp_path / "t").mkdir()
+    (tmp_path / "t" / "test_env.py").write_text(ok + "def test_env(): assert ok\n")
+    res = measure(Metric(kind="pytest_failures", target="t"), tmp_path, CPU)
+    assert (res.value, res.total) == (0.0, 1)
 
 
 def test_ollama_payload_goes_cpu_only_beside_houdini():
@@ -351,7 +534,7 @@ def test_prompt_names_rules_and_focus_files(repo):
     assert "```file:plexus/score.txt" in p and "file:README.md" not in p
 
 
-def test_pytest_failures_metric_counts_and_guards(tmp_path):
+def test_pytest_failures_metric_counts_down_and_stops_at_zero(tmp_path):
     r = tmp_path / "r"
     (r / "plexus").mkdir(parents=True)
     acc = r / "tests" / "acceptance"
@@ -377,6 +560,102 @@ def test_pytest_failures_metric_counts_and_guards(tmp_path):
     assert report.baseline == 3
     assert [a.metric for a in report.attempts[:2]] == [1, 0]
     assert report.best == 0 and report.stop_reason == "every target test passes"
+
+
+def test_a_skipped_test_counts_as_not_passing(tmp_path):
+    # A change must never score by skipping a test.
+    (tmp_path / "t").mkdir()
+    (tmp_path / "t" / "test_s.py").write_text("import pytest\n\ndef test_skips(): pytest.skip('x')\n\ndef test_passes(): pass\n")
+    res = measure(Metric(kind="pytest_failures", target="t"), tmp_path, CPU)
+    assert (res.value, res.total) == (1.0, 2) and res.failing == ["t.test_s::test_skips"]
+
+
+def test_a_run_that_collects_nothing_is_an_error_never_a_score_of_zero(tmp_path):
+    # A zero would read as "every target test passes" and end the run.
+    (tmp_path / "t").mkdir()
+    res = measure(Metric(kind="pytest_failures", target="t"), tmp_path, CPU)
+    assert res.value is None and res.error == "no tests collected"
+
+
+def test_a_pytest_that_writes_no_report_is_an_error_never_a_score(tmp_path):
+    # A conftest that raises takes this path, and so does a native crash in code a test calls. The output is all the next
+    # prompt has, and without the check a baseline ends the run on FileNotFoundError.
+    (tmp_path / "t").mkdir()
+    (tmp_path / "t" / "conftest.py").write_text("raise RuntimeError('BOOM-AT-CONFTEST')\n")
+    (tmp_path / "t" / "test_x.py").write_text("def test_x(): pass\n")
+    res = measure(Metric(kind="pytest_failures", target="t"), tmp_path, CPU)
+    assert res.value is None and res.error == "pytest wrote no report" and "BOOM-AT-CONFTEST" in res.tail
+
+
+def test_a_gain_that_comes_from_breaking_collection_is_dropped(tmp_path):
+    # Three failures become one collection error: a lower number, from fewer tests.
+    r = tmp_path / "r"
+    (r / "plexus").mkdir(parents=True)
+    acc = r / "tests" / "acceptance"
+    acc.mkdir(parents=True)
+    (acc / "test_t.py").write_text(
+        "from pathlib import Path\n"
+        "N = int(Path(__file__).parents[2].joinpath('plexus/n.txt').read_text())\n"
+        "def test_t1(): assert N >= 1\n"
+        "def test_t2(): assert N >= 2\n"
+        "def test_t3(): assert N >= 3\n"
+    )
+    (r / "plexus" / "n.txt").write_text("0")
+    _git(r, "init", "-q", "-b", "master")
+    _git(r, "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A")
+    _git(r, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "s")
+    d = _mission(metric={"kind": "pytest_failures", "target": "tests/acceptance", "min_delta": 1})
+    d["budget"]["attempts"] = 1
+    report = run(r, d, Scripted(lambda wt: (wt / "plexus" / "n.txt").write_text("not a number")))
+    (a,) = report.attempts
+    assert not a.kept and a.metric == 1 and report.best == 3
+    assert a.reason == "tests went missing (1 collected, was 3)"
+
+
+def test_a_keep_raises_the_count_a_later_gain_must_hold(repo, monkeypatch):
+    # A keep that turns a collection error into real tests moves the floor. A later reply that breaks collection again
+    # scores lower on fewer tests, and measured against the baseline's count it would be a false keep.
+    seq = [MetricResult(3.0, total=3), MetricResult(2.0, total=10), MetricResult(1.0, total=3)]
+    monkeypatch.setattr(loop, "measure", lambda metric, wt, profile: seq.pop(0))
+    d = _mission()
+    d["budget"]["attempts"] = 2
+    report = run(repo, d, Scripted(set_score(4), set_score(3)))
+    first, second = report.attempts
+    assert first.kept and not second.kept and report.best == 2
+    assert second.reason == "tests went missing (3 collected, was 10)"
+    assert _git(repo, "show", "plexus-loop/demo:plexus/score.txt").strip() == "4"
+
+
+def test_a_teardown_error_in_a_passing_test_is_one_test_and_its_fix_is_kept(tmp_path):
+    # The report's own tests= counts that test twice, so the attempt that clears the error read as a test gone missing,
+    # at every restart too, because the next baseline measured the same tip.
+    r = tmp_path / "r"
+    (r / "plexus").mkdir(parents=True)
+    acc = r / "tests" / "acceptance"
+    acc.mkdir(parents=True)
+    (acc / "test_t.py").write_text(
+        "from pathlib import Path\n"
+        "import pytest\n"
+        "FLAG = Path(__file__).parents[2] / 'plexus' / 'stop_raises.txt'\n"
+        "@pytest.fixture\n"
+        "def rt():\n"
+        "    yield\n"
+        "    if FLAG.read_text() == '1':\n"
+        "        raise RuntimeError('stop raised')\n"
+        "def test_a(rt): pass\n"
+        "def test_b(): pass\n"
+    )
+    (r / "plexus" / "stop_raises.txt").write_text("1")
+    (r / ".gitignore").write_text("__pycache__/\n")
+    _git(r, "init", "-q", "-b", "master")
+    _git(r, "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A")
+    _git(r, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "s")
+    d = _mission(metric={"kind": "pytest_failures", "target": "tests/acceptance", "min_delta": 1})
+    d["budget"]["attempts"] = 1
+    report = run(r, d, Scripted(lambda wt: (wt / "plexus" / "stop_raises.txt").write_text("0")))
+    (a,) = report.attempts
+    assert a.kept and report.baseline == 1 and report.best == 0
+    assert measure(Metric(kind="pytest_failures", target="tests/acceptance"), r, CPU).total == 2
 
 
 def test_mission_validation():

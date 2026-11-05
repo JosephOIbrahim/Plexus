@@ -69,6 +69,17 @@ def test_the_row_reader_says_when_a_row_never_reached_the_metric():
     assert "no metric on this row, so no test changed" in ledger_row.describe(rows, 2)
 
 
+def test_the_row_reader_keeps_a_parametrized_name_whole():
+    assert ledger_row.short("phase1.test_t2::test_delta[one-0.3-wakes-once]") == "test_delta[one-0.3-wakes-once]"
+    assert ledger_row.short("phase1.test_a.test_one[0.5]") == "test_one[0.5]"
+    rows = [row(1.0, ["p.t::test_x[a-0.3-b]"]), row(1.0, ["p.t::test_y[c-0.3-b]"])]
+    assert ledger_row.changes(rows, 2) == {"passing_now": ["test_x[a-0.3-b]"], "newly_failing": ["test_y[c-0.3-b]"], "still_failing": []}
+
+
+def test_the_row_reader_never_reads_a_missing_wall_time_as_zero():
+    assert "wall not measured" in ledger_row.describe([row(None, None, n=1)], 1)[1]
+
+
 def test_a_row_with_no_server_is_not_an_attempt_and_stays_out_of_the_means():
     rows = [
         {"reason": "strict gain", "kept": True, "device": "cpu", "wall_s": 1800},

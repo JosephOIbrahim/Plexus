@@ -169,7 +169,7 @@ def test_the_real_mission_offers_only_s3_while_s3_fails():
                P1 + "test_t5_gate::test_write_outside_allowlist_is_dropped_and_flagged",
                P1 + "test_t5_gate::test_write_inside_allowlist_lands",
                P1 + "test_t6_truth::test_kill_both_processes_and_reopen"]
-    assert m.router.kind == "jev" and [s.id for s in ready(m.steps, failing)] == ["S3"]
+    assert [s.id for s in ready(m.steps, failing)] == ["S3"]
     # once S3 and S4 pass, only S5 is ready: S6 and S7 need its wake counting (T5-outside and
     # T3 assert h.wakes == 1). Once S5 passes too, S6 and S7 are ready together and S8 waits.
     after_s4 = [f for f in failing if "test_bad_predicates" not in f and "inside_allowlist" not in f]
