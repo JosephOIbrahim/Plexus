@@ -111,7 +111,8 @@ timeout_s = 1800
 kind = "ollama"
 model = "qwen3-coder:30b"
 host = "http://127.0.0.1:11434"
-timeout_s = 3600
+# Nov 4, Joe's go: 4800. A cold S8 attempt at the worst rates on record comes to about 3,520 s, and a reviewer proposed 4800 earlier.
+timeout_s = 4800
 # Run 12 attempt 4's prompt at 100000 chars cut plexus/membrane/exchange.py and the schema
 # files (checked against the rebuilt prompt). 120000 holds every run 12 prompt whole; at the
 # measured ~3.7 chars per token that is ~32k tokens, and 49152 leaves room for a 6k-token reply.

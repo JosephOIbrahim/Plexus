@@ -448,3 +448,4 @@ Placement reads 6 of 25 failing, not the 5 of the first version, and the expecte
 | 3 | Nov 4 | Placed the isolation test, which starts S7c | Yes | No: frozen tests are his |
 | 4 | Nov 4 | Once the reviewer and adversary clear S7c, merge S7, S7b and S7c without waiting for the burst finding, and push both branches | Yes | No: merges are his |
 | 5 | Nov 4 | Placed the burst and disk tests | Yes | No: frozen tests are his |
+| 6 | Nov 4 | Go: `timeout_s` 4800, `context_chars` 150000, merge the mission into the loop branch, start run 29 | Yes | No: a mission-file change stops for him under rule 3 |
