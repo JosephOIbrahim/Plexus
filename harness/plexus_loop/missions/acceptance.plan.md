@@ -475,3 +475,4 @@ Placement reads 6 of 25 failing, not the 5 of the first version, and the expecte
 | 16 | Nov 5 | Organ: budget 8 attempts | Yes | No: a budget stops for him |
 | 17 | Nov 5 | Organ: the mission ends when T7 and T8 pass, and the blueprint's longer list gets its own missions | Yes | No: scope is his |
 | 18 | Nov 5 | Merge S8 and S9 and push both branches if the reviewer and adversary both clear; the adversary did not | Came before the recommendation | No: merges are his |
+| 19 | Nov 5 | Route A on S8's hard finding: merge S9, push both branches with his frozen commit, one frozen stall test and S8b | Yes | No: merges and frozen tests are his |
