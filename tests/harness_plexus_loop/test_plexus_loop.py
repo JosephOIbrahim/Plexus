@@ -133,6 +133,50 @@ def test_stale_lock_from_dead_process_is_taken_over(repo):
     assert not (state / "lock").exists()
 
 
+def test_one_lock_holds_across_the_main_checkout_and_a_linked_worktree(repo, tmp_path):
+    # A linked worktree moves the same branch and loads the same model, so each side refuses while the other holds it.
+    # Only the lock is shared: the ledger, REVIEW.md and the stop file stay with the checkout that owns them.
+    linked = tmp_path / "linked"
+    _git(repo, "worktree", "add", "-q", "--detach", str(linked))
+    runs = {checkout: MissionRun(mission_from_dict(_mission()), checkout, worker=Scripted()) for checkout in (repo, linked)}
+    for holder, other in ((repo, linked), (linked, repo)):
+        runs[holder].lock.acquire("other")  # held by this live process
+        try:
+            with pytest.raises(RefuseToStart, match="holds the lock"):
+                runs[other].run()
+        finally:
+            runs[holder].lock.release()
+    main_lock, own_state = repo / ".plexus_loop" / "lock", linked / ".plexus_loop"
+    seen = []
+
+    def look(wt):
+        seen.append((main_lock.is_file(), (own_state / "lock").exists()))
+        set_score(4)(wt)
+
+    run(linked, _mission(budget={"attempts": 1, "hours": 1, "max_consecutive_failures": 3}), Scripted(look))
+    assert seen == [(True, False)] and not main_lock.exists()
+    assert (own_state / "demo" / "attempts.jsonl").is_file() and (own_state / "demo" / "REVIEW.md").is_file()
+    assert not (repo / ".plexus_loop" / "demo").exists()
+    (own_state / "STOP").touch()
+    with pytest.raises(RefuseToStart, match="stop file"):
+        run(linked, _mission(), Scripted())
+    runs[repo].preflight()  # that stop file is the linked checkout's alone
+
+
+def test_a_listing_that_failed_says_nothing_about_the_lock_holder(repo, monkeypatch):
+    # tasklist exits 1 with stdout empty on a filter it rejects or a WMI error, and reading that as "gone" would take a
+    # live run's lock over. profile.py's check=True and the launcher's pid_alive both call it "can't tell".
+    state = repo / ".plexus_loop"
+    state.mkdir()
+    (state / "lock").write_text(json.dumps({"pid": 4242, "mission": "other"}))
+    with monkeypatch.context() as mp:  # undone here: the shared fixtures' teardown runs later and imports modules
+        mp.setattr(sys, "platform", "win32")
+        mp.setattr(subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=1, stdout=""))
+        with pytest.raises(RefuseToStart, match="holds the lock"):
+            Lock(state).acquire("second")
+    assert json.loads((state / "lock").read_text())["mission"] == "other"
+
+
 # -- keeping and dropping -------------------------------------------------
 
 def test_keeps_strict_gain_and_advances_branch(repo):

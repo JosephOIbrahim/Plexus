@@ -41,7 +41,7 @@ That file's countdown calls `choice /c " qo"`. Windows rejects the space with "I
 | Flag | What it does |
 |---|---|
 | `--minimized` | ComfyUI's window starts minimized and never takes the focus |
-| `--stop-comfyui-on-exit` | Stops ComfyUI when the session ends, only if this launcher started it |
+| `--stop-comfyui-on-exit` | Stops ComfyUI when the session ends, only if this launcher started it. A window that failed stays open, so its log can be read. |
 | `--script "a; b"` | Runs commands instead of the prompt |
 | `--timeout 300` | Seconds to wait for ComfyUI to answer |
-| `--comfyui-root`, `--models-root`, `--url`, `--sessions-root` | Point it somewhere else. `--url` needs http or https, a host and a port. |
+| `--comfyui-root`, `--models-root`, `--url`, `--sessions-root` | Point it somewhere else. `--url` needs http or https, a host and a port. If nothing answers there, the launcher starts ComfyUI on that port, and only at an http URL on this machine. |

@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 PY = sys.executable
 SCRIPT = Path(__file__).resolve().parents[2] / "harness" / "plexus_loop" / "predicate_smoke.py"
 
@@ -119,3 +121,19 @@ def test_the_frozen_predicates_compiling_and_the_bad_ones_raising_passes(tmp_pat
     r = _run(tmp_path)
     assert r.returncode == 0, r.stdout
     assert "compile and the bad ones raise" in r.stdout
+
+
+PATHS = '["/Exchange/LookState.temperature"]'
+
+
+@pytest.mark.parametrize("predicate_py, says", [
+    (ACCEPTS_AND_REJECTS.replace(PATHS, '["/Exchange/LookState"]'), "expected it to name"),
+    (ACCEPTS_AND_REJECTS.replace(PATHS, f'{PATHS[:-1]}, "/Exchange/LookState.other"]'), "expected it to name"),
+    (ACCEPTS_AND_REJECTS.replace(f"return {PATHS}", 'raise RuntimeError("no paths")'), "raised RuntimeError"),
+    (ACCEPTS_AND_REJECTS.replace('raise PredicateError("bad")', 'raise KeyError("bad")'), "not PredicateError"),
+    ("raise RuntimeError('boom at import')\n", "cannot import plexus.core.predicate"),
+], ids=["paths name the prim", "paths name one too many", "paths raises", "a bad predicate raises another type", "does not import"])
+def test_every_other_way_the_predicate_module_can_be_wrong_fails_the_gate(tmp_path, predicate_py, says):
+    _fake_package(tmp_path, predicate_py)
+    r = _run(tmp_path)
+    assert r.returncode == 1 and says in r.stdout

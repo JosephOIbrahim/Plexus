@@ -328,8 +328,8 @@ class Attempt:
     # The dropped attempt's own step's target tests that failed, each "junit id\nits failure",
     # from the metric's junit report. The next prompt leads with them.
     target_failures: list[str] = field(default_factory=list)
-    # Files the next prompt hands back in full after this drop: what it sent when it passed every
-    # gate, or, after a left-out drop, what it sent laid over the last full attempt's files.
+    # Files the next prompt hands back in full if it is on this attempt's step: what it sent when it
+    # passed every gate, or, after a left-out drop, what it sent laid over the last full attempt's files.
     handed_on: list[str] = field(default_factory=list)
     # Ledger diagnostic: the step's files absent from the worktree after the attempt, whatever the reply
     # sent. A file at tip the reply did not send is not here (that is a LEFT_OUT drop). The next prompt
@@ -383,12 +383,14 @@ def _pid_alive(pid: int) -> bool | None:
         return False
     if sys.platform.startswith("win"):
         try:
-            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-                                 capture_output=True, text=True, errors="replace", timeout=15,
-                                 check=False).stdout or ""
+            listed = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                                    capture_output=True, text=True, errors="replace", timeout=15,
+                                    check=False)
         except Exception:  # noqa: BLE001 - can't tell
             return None
-        return f'"{pid}"' in out
+        if listed.returncode:  # a listing that failed leaves stdout empty, and that is no proof the holder is gone
+            return None
+        return f'"{pid}"' in (listed.stdout or "")
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -637,7 +639,7 @@ class MissionRun:
                  route_fn: RouteFn | None = None):
         self.mission = mission
         self.route_fn = route_fn or default_route
-        self.repo = gitops.repo_root(repo)
+        self.repo, main_checkout = gitops.roots(repo)
         self.state = self.repo / STATE_DIR
         self.mdir = self.state / mission.name
         self.worker = worker or make_worker(mission.worker)
@@ -648,7 +650,9 @@ class MissionRun:
         self.profile_fn = lambda: with_env(base_profile(), CARGO_TARGET_DIR=cargo_target)
         self.clock = clock
         self.log = log
-        self.lock = Lock(self.state)
+        # In the main checkout's state folder: a run started from a linked worktree would load the same
+        # model and move the same branch beside a live one, and its own .plexus_loop would not show it.
+        self.lock = Lock(main_checkout / STATE_DIR)
 
     # -- checks before anything runs -------------------------------------
     def preflight(self) -> None:

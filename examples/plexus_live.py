@@ -32,7 +32,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 COMFYUI_ROOT = Path(r"G:\COMFY\ComfyUI")
 MODELS_ROOT = Path(r"G:\COMFYUI_Database\Models")
-COMFYUI_URL = "http://127.0.0.1:8188"
+COMFYUI_PORT = 8188  # ComfyUI's own default, so its command stays the batch file's Stable line unless --url asks for another
+COMFYUI_URL = f"http://127.0.0.1:{COMFYUI_PORT}"
 START_TIMEOUT_S = 300.0  # every custom node in G:\COMFYUI_Database\Custom_Nodes loads before the port opens: 47 s on Nov 4, Houdini open
 STOP_SETTLE_S = 10.0  # a killed process lets go of its port after taskkill returns: about 0.1 s on a small fake, not measured on a ComfyUI with a GPU to release
 CHECKPOINT_SUFFIXES = (".safetensors", ".ckpt")  # fixed here so nothing reads G: to learn them, and a stray .txt or .yaml can never warn
@@ -105,10 +106,11 @@ def describe(stats: dict) -> str:
     return f"{system.get('comfyui_version', 'unknown version')}, Python {str(system.get('python_version', '?')).split()[0]}, {gpu}"
 
 
-def comfyui_command(root: Path, marker: Path, python: str = sys.executable) -> str:
+def comfyui_command(root: Path, marker: Path, python: str = sys.executable, port: int = COMFYUI_PORT) -> str:
     """The Stable line of comfyui_launcher.bat, in a window that stays open if it fails, so its log can be read.
     That open window keeps poll() at None, so the marker is how the launcher learns of the failure."""
-    return f'cmd /c "title ComfyUI & chcp 65001 >nul & "{python}" -m comfy_cli --workspace="{root}" launch -- --reserve-vram 1.0 || (echo failed>"{marker}" & pause)"'
+    port_arg = "" if port == COMFYUI_PORT else f" --port {port}"
+    return f'cmd /c "title ComfyUI & chcp 65001 >nul & "{python}" -m comfy_cli --workspace="{root}" launch -- --reserve-vram 1.0{port_arg} || (echo failed>"{marker}" & pause)"'
 
 
 def comfyui_env() -> dict[str, str]:
@@ -116,7 +118,7 @@ def comfyui_env() -> dict[str, str]:
     return {**env, **COMFYUI_ENV}
 
 
-def start_comfyui(root: Path, minimized: bool = False) -> subprocess.Popen:
+def start_comfyui(root: Path, minimized: bool = False, port: int = COMFYUI_PORT) -> subprocess.Popen:
     """Its own console, so its log stays where Joe expects it."""
     startup = None
     if minimized:
@@ -126,7 +128,7 @@ def start_comfyui(root: Path, minimized: bool = False) -> subprocess.Popen:
     marker = state_folder() / FAILED_MARKER
     marker.parent.mkdir(parents=True, exist_ok=True)  # cmd's echo cannot make the folder, and it would fail with nobody watching
     marker.unlink(missing_ok=True)  # a stale one would fire at once
-    return subprocess.Popen(comfyui_command(root, marker), cwd=root, env=comfyui_env(), startupinfo=startup, creationflags=subprocess.CREATE_NEW_CONSOLE)
+    return subprocess.Popen(comfyui_command(root, marker, port=port), cwd=root, env=comfyui_env(), startupinfo=startup, creationflags=subprocess.CREATE_NEW_CONSOLE)
 
 
 def stop_tree(child: subprocess.Popen) -> None:
@@ -234,6 +236,9 @@ def ensure_comfyui(url: str, root: Path, *, start=start_comfyui, timeout_s: floa
     if stats:
         say(f"ComfyUI   already running at {url}, so it stays as it is: {describe(stats)}")
         return stats
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "http" or parts.hostname not in ("127.0.0.1", "localhost"):  # ComfyUI starts here on plain http, so the wait would run out on an address it never serves
+        raise LaunchError(f"Nothing answers at {url}, and this launcher can start ComfyUI only at an http URL on this machine. Start it there, or leave --url out.")
     if not (root / "main.py").is_file():
         raise LaunchError(f"{root} has no main.py, so it is not a ComfyUI install.")
     marker, lock = state_folder() / FAILED_MARKER, state_folder() / START_LOCK
@@ -274,11 +279,15 @@ def models_line(url: str, models_root: Path) -> str:
     return f"Models    {here} of the {len(names)} checkpoints ComfyUI lists are under {folder}"
 
 
+def core_file(repo: Path) -> Path:
+    return repo / "plexus" / ("_core.pyd" if os.name == "nt" else "_core.so")
+
+
 def core_is_stale(repo: Path) -> bool:
-    built = repo / "plexus" / ("_core.pyd" if os.name == "nt" else "_core.so")
+    built = core_file(repo)
     if not built.is_file():
         return True
-    sources = [*repo.glob("crates/**/*.rs"), *repo.glob("crates/**/Cargo.toml"), repo / "Cargo.lock"]
+    sources = [*repo.glob("crates/**/*.rs"), *repo.glob("crates/**/Cargo.toml"), repo / "Cargo.lock", repo / "Cargo.toml"]  # the root file's profiles change what cargo builds
     return any(s.stat().st_mtime > built.stat().st_mtime for s in sources if s.is_file())
 
 
@@ -287,9 +296,14 @@ def build_core(repo: Path, say=print) -> None:
     say("Core      the Rust core is missing or older than the crates, so it builds now")
     env = dict(os.environ, CARGO_BUILD_JOBS="8")
     env.pop("CARGO_TARGET_DIR", None)
+    began = time.time()
     result = subprocess.run([sys.executable, str(repo / "harness" / "plexus_loop" / "build_core.py")], cwd=repo, env=env, check=False)
     if result.returncode:
         raise LaunchError(f"The Rust core did not build (exit {result.returncode}). If a Python process in {repo} is using plexus/_core.pyd, close it and start again.")
+    # Cargo has nothing to do for a crate file with a new time and the same bytes, and the copy keeps the library's old
+    # time, so that file would read as newer on every launch. The build's start, so an edit made during it still does.
+    with contextlib.suppress(OSError):
+        os.utime(core_file(repo), (began, began))
 
 
 def live_run_pid(repo: Path) -> int | None:
@@ -322,6 +336,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     args = p.parse_args(argv)
     if not _url_is_usable(args.url):  # without a scheme it reads as nothing listening, and ComfyUI would start beside one already up
         raise SystemExit(f"Plexus did not start: --url needs http or https, a host and a port, such as {COMFYUI_URL}. It got {args.url}.")
+    args.comfyui_root = args.comfyui_root.absolute()  # the window starts inside this folder, where a relative path would point inside itself
     return args
 
 
@@ -338,22 +353,17 @@ def _still_answers_after_the_kill(url: str) -> bool:
 def final_line(child, url: str, stop: bool) -> str:
     """The launcher's last word on the window it started. The window is read before any kill, because the kill
     closes it, and the port after. Taskkill's code is never read: a server that left the tree survives a kill that worked."""
-    closed = child.poll() is not None
-    if stop:
-        if closed:  # no kill: a closed window's pid can already belong to something else, and /T /F would take that down
-            answers = _port_open(url)
-        else:
-            stop_tree(child)
-            answers = _still_answers_after_the_kill(url)
-        if answers:
-            return f"ComfyUI still answers at {url} after this launcher tried to stop it, so stop it by hand."
-        if closed:
-            return "ComfyUI's window had already closed, so there was nothing to stop."
-        return "ComfyUI stopped, because this launcher started it and --stop-comfyui-on-exit asked."
-    if closed:
-        return "ComfyUI's window has closed, so ComfyUI is not running."
-    if (state_folder() / FAILED_MARKER).exists():
+    if child.poll() is not None:  # no kill: a closed window's pid can already belong to something else, and /T /F would take that down
+        if _port_open(url):
+            return f"ComfyUI's window has closed and something still answers at {url}. This launcher sent it no kill, so stop it by hand if it should not be running."
+        return "ComfyUI's window had already closed, so there was nothing to stop." if stop else "ComfyUI's window has closed, so ComfyUI is not running."
+    if (state_folder() / FAILED_MARKER).exists():  # no kill, flag or not: that window holds the only log of the failure, and the error above told the operator to read it there
         return "ComfyUI failed and its window stays open at its error. Close it after reading its log."
+    if stop:
+        stop_tree(child)
+        if _still_answers_after_the_kill(url):
+            return f"ComfyUI still answers at {url} after this launcher tried to stop it, so stop it by hand."
+        return "ComfyUI stopped, because this launcher started it and --stop-comfyui-on-exit asked."
     if not _port_open(url):
         return f"ComfyUI keeps running in its own window and has not answered at {url}. Its log will say why."
     return "ComfyUI keeps running in its own window. Close that window to stop it."
@@ -364,7 +374,7 @@ def main(argv=None) -> int:
     started: list[subprocess.Popen] = []
 
     def start(root: Path) -> subprocess.Popen:
-        started.append(start_comfyui(root, args.minimized))  # here, so a start that times out can still be stopped
+        started.append(start_comfyui(root, args.minimized, urllib.parse.urlsplit(args.url).port))  # here, so a start that times out can still be stopped
         return started[-1]
 
     code = 1

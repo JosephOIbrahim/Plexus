@@ -179,11 +179,13 @@ def test_the_command_is_the_stable_line_of_the_batch_file_and_keeps_a_failed_win
     command = live.comfyui_command(Path(r"G:\COMFY\ComfyUI"), marker, python=r"C:\Python314\python.exe")
     assert r'"C:\Python314\python.exe" -m comfy_cli --workspace="G:\COMFY\ComfyUI" launch -- --reserve-vram 1.0' in command
     assert command.startswith('cmd /c "') and command.endswith(f' || (echo failed>"{marker}" & pause)"')
+    assert "--port" not in command
+    assert f'--reserve-vram 1.0 --port 9000 || (echo failed>"{marker}"' in live.comfyui_command(Path(r"G:\COMFY\ComfyUI"), marker, port=9000)
 
 
 @pytest.mark.skipif(not WINDOWS, reason="the command is cmd's")
-@pytest.mark.parametrize("code, fails", [(3, True), (0, False)])
-def test_the_real_command_leaves_the_marker_only_when_the_program_in_it_fails(tmp_path, code, fails):
+@pytest.mark.parametrize("code, fails, port", [(3, True, live.COMFYUI_PORT), (0, False, live.COMFYUI_PORT), (3, True, 9000)])
+def test_the_real_command_leaves_the_marker_only_when_the_program_in_it_fails(tmp_path, code, fails, port):
     # The workspace holds a shadow comfy_cli.py and python -m looks in the cwd first, so nothing real can start. With no
     # stdin, pause returns at once. A console of its own keeps title and chcp off the console running these tests.
     workspace = tmp_path / "with space"
@@ -192,7 +194,7 @@ def test_the_real_command_leaves_the_marker_only_when_the_program_in_it_fails(tm
     marker = tmp_path / "state folder" / "comfyui_failed"
     marker.parent.mkdir()
     r = subprocess.run(
-        live.comfyui_command(workspace, marker),
+        live.comfyui_command(workspace, marker, port=port),
         cwd=workspace,
         env=live.comfyui_env(),
         stdin=subprocess.DEVNULL,
@@ -206,6 +208,7 @@ def test_the_real_command_leaves_the_marker_only_when_the_program_in_it_fails(tm
     lines = r.stdout.splitlines()
     assert "FAKE" in lines and f"--workspace={workspace}" in lines, r.stdout + r.stderr  # the marker's absence means nothing unless the program ran
     assert marker.exists() is fails
+    assert ("--port" in lines and "9000" in lines) is (port == 9000)
 
 
 @pytest.mark.skipif(not WINDOWS, reason="CREATE_NEW_CONSOLE is Windows'")
@@ -240,7 +243,7 @@ def launch_that_times_out(monkeypatch, closed_url, tmp_path, *flags):
     child, stopped = Child(), []
     monkeypatch.setattr(live, "core_is_stale", lambda repo: False)
     monkeypatch.setattr(live, "live_run_pid", lambda repo: None)
-    monkeypatch.setattr(live, "start_comfyui", lambda root, minimized: child)
+    monkeypatch.setattr(live, "start_comfyui", lambda root, minimized, port: child)
     monkeypatch.setattr(live, "stop_tree", stopped.append)
     code = live.main(["--url", closed_url, "--comfyui-root", str(tmp_path), "--timeout", "0.05", *flags])
     return code, child, stopped
@@ -264,9 +267,10 @@ def launch_to_the_last_line(monkeypatch, capsys, url, root, child, *flags, faile
     """main with a start that times out at once, so the launcher's last words are all that is left to read."""
     kills, port_reads = [], []
 
-    def start(where, minimized):
+    def start(where, minimized, port):
         if child is None:
             refuse_to_start(where)
+        child.port = port
         if failed:
             leave_the_marker()
         return child
@@ -292,13 +296,15 @@ def launch_to_the_last_line(monkeypatch, capsys, url, root, child, *flags, faile
 
 
 STILL_ANSWERS = "ComfyUI still answers at {url} after this launcher tried to stop it, so stop it by hand."
+CLOSED_BUT_ANSWERS = "ComfyUI's window has closed and something still answers at {url}. This launcher sent it no kill, so stop it by hand if it should not be running."
 
 
 @pytest.mark.parametrize(
     "flags, exit_code, failed, port, last",
     [
         ([STOP], None, False, "open", STILL_ANSWERS),
-        ([STOP], 3, False, "open", STILL_ANSWERS),
+        ([STOP], 3, False, "open", CLOSED_BUT_ANSWERS),
+        ([], 3, False, "open", CLOSED_BUT_ANSWERS),
         ([STOP], 3, False, "closed", "ComfyUI's window had already closed, so there was nothing to stop."),
         # The kill closes the window and frees the port, so reading either one on the wrong side of it gets this line wrong.
         ([STOP], None, False, "until the kill", "ComfyUI stopped, because this launcher started it and --stop-comfyui-on-exit asked."),
@@ -307,7 +313,7 @@ STILL_ANSWERS = "ComfyUI still answers at {url} after this launcher tried to sto
         ([], None, False, "closed", "ComfyUI keeps running in its own window and has not answered at {url}. Its log will say why."),
         ([], None, False, "open", "ComfyUI keeps running in its own window. Close that window to stop it."),
     ],
-    ids=["port still open", "closed and the port still open", "already closed", "stopped", "closed without the flag", "marker", "port closed", "all well"],
+    ids=["port still open", "closed and the port still open", "closed, no flag, the port still open", "already closed", "stopped", "closed without the flag", "marker", "port closed", "all well"],
 )
 def test_the_last_line_says_what_it_read(monkeypatch, capsys, closed_url, root, flags, exit_code, failed, port, last):
     child = Child(code=exit_code)
@@ -316,6 +322,38 @@ def test_the_last_line_says_what_it_read(monkeypatch, capsys, closed_url, root, 
     assert lines[-1] == last.format(url=closed_url)
     assert kills == ([child] if flags and exit_code is None else [])  # a closed window's pid can already be something else's
     assert len(port_reads) <= 1
+
+
+def test_the_stop_flag_keeps_the_failed_window_the_error_line_points_at(monkeypatch, capsys, closed_url, root):
+    # That window holds the only log of the failure. --timeout 30 reaches the marker's error, not the timeout's.
+    child = Child()
+    _, lines, err, kills, _ = launch_to_the_last_line(monkeypatch, capsys, closed_url, root, child, STOP, "--timeout", "30", failed=True)
+    assert "which stays open so its log can be read" in err
+    assert kills == []
+    assert lines[-1] == "ComfyUI failed and its window stays open at its error. Close it after reading its log."
+
+
+def test_the_urls_port_reaches_the_start(monkeypatch, capsys, closed_url, root):
+    child = Child()
+    launch_to_the_last_line(monkeypatch, capsys, closed_url, root, child)
+    assert child.port == int(closed_url.rsplit(":", 1)[1])
+
+
+@pytest.mark.parametrize("url", ["http://192.0.2.1:8188", "https://127.0.0.1:8188"], ids=["another host", "https"])
+def test_a_url_this_machine_cannot_serve_starts_nothing(root, monkeypatch, url):
+    monkeypatch.setattr(live, "comfyui_stats", lambda checked: None)
+    with pytest.raises(live.LaunchError, match="only at an http URL on this machine"):
+        live.ensure_comfyui(url, root, start=refuse_to_start, say=quiet)
+    assert not lock_file().exists()
+    monkeypatch.setattr(live, "comfyui_stats", lambda checked: STATS)  # one that already answers there is still a use of --url
+    assert live.ensure_comfyui(url, root, start=refuse_to_start, say=quiet) is STATS
+
+
+def test_a_relative_root_is_made_absolute_before_the_window_starts_inside_it(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert live.parse_args(["--comfyui-root", "rel_root"]).comfyui_root == Path.cwd() / "rel_root"
+    if WINDOWS:  # the default names a drive, which is a relative path anywhere else
+        assert live.parse_args([]).comfyui_root == live.COMFYUI_ROOT
 
 
 def settling_port(monkeypatch, answers):
@@ -668,6 +706,31 @@ def test_core_is_stale_when_missing_or_older_than_any_crate_file(tmp_path):
     assert not live.core_is_stale(tmp_path)
     os.utime(source, (3000, 3000))
     assert live.core_is_stale(tmp_path)
+    os.utime(source, (1000, 1000))
+    workspace = tmp_path / "Cargo.toml"
+    workspace.write_text("", encoding="utf-8")
+    os.utime(workspace, (3000, 3000))
+    assert live.core_is_stale(tmp_path)  # a release profile there changes what cargo builds
+
+
+@pytest.mark.parametrize("exit_code", [0, 3])
+def test_only_a_build_that_worked_leaves_the_core_matching_the_crates(tmp_path, monkeypatch, exit_code):
+    # Cargo finds nothing to do for a crate file with a new time and the same bytes, and build_core's copy keeps the
+    # library's old time, so without this the core reads as stale on every launch.
+    built = live.core_file(tmp_path)
+    built.parent.mkdir()
+    built.write_text("", encoding="utf-8")
+    source = tmp_path / "Cargo.lock"
+    source.write_text("", encoding="utf-8")
+    os.utime(built, (1000, 1000))
+    os.utime(source, (2000, 2000))
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, exit_code))
+    if exit_code:
+        with pytest.raises(live.LaunchError, match="did not build"):
+            live.build_core(tmp_path, say=quiet)
+    else:
+        live.build_core(tmp_path, say=quiet)
+    assert live.core_is_stale(tmp_path) is bool(exit_code)
 
 
 def test_a_lock_with_a_dead_or_unreadable_pid_is_not_a_live_run(tmp_path):

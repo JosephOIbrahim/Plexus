@@ -18,7 +18,7 @@ from harness.plexus_loop.__main__ import main as cli_main
 from harness.plexus_loop.loop import WORKER_DOWN
 from harness.plexus_loop.mission import WorkerSpec, mission_from_dict
 from harness.plexus_loop.profile import Profile
-from harness.plexus_loop.workers import READY_TIMEOUT_S, OllamaWorker, WorkerResult
+from harness.plexus_loop.workers import HTTP_ERROR_BODY_CHARS, READY_TIMEOUT_S, OllamaWorker, WorkerResult
 
 PY = sys.executable
 CPU = Profile(device="cpu", houdini="running", ollama_options={"num_gpu": 0, "num_thread": 2})
@@ -78,6 +78,7 @@ HTTP500 = urllib.error.HTTPError("u", 500, "Internal Server Error", {}, io.Bytes
     (http.client.RemoteDisconnected("closed"), True, "RemoteDisconnected"),
     (ConnectionResetError("reset"), True, "ConnectionResetError"),
     (HTTP500, True, "llama-server binary not found"),
+    (http.client.IncompleteRead(b""), True, "IncompleteRead"),  # the server died in the middle of its reply
     (TimeoutError("timed out"), False, "TimeoutError"),  # the model had its 4800 s: a real attempt
     (ValueError("bad json"), False, "ValueError"),
 ])
@@ -86,6 +87,24 @@ def test_only_a_call_no_model_could_answer_is_unreachable(tmp_path, monkeypatch,
     res = OllamaWorker(WorkerSpec()).attempt(tmp_path, "prompt", CPU)
     assert not res.ok and res.unreachable is unreachable and says in res.note
     assert res.note.startswith("ollama call failed: ")  # report_stats and test_tools read this prefix
+
+
+class _BodyGone(io.BytesIO):
+    def read(self, *a):
+        raise http.client.IncompleteRead(b"")
+
+
+@pytest.mark.parametrize("fp, tail", [
+    (io.BytesIO(b'{"error":\n "out of\r\n memory"}\n'), ': {"error": "out of memory"}'),
+    (io.BytesIO(b"x" * 5000), ": " + "x" * HTTP_ERROR_BODY_CHARS),
+    (_BodyGone(), ""),
+], ids=["on several lines", "past the limit", "cut off by the server"])
+def test_an_http_errors_body_leaves_one_short_line_and_never_raises(tmp_path, monkeypatch, fp, tail):
+    # The note becomes a ledger reason, a row of REVIEW.md's table and the stop line. IncompleteRead is no OSError, so
+    # raised from here it would pass the loop's own except and end the run.
+    monkeypatch.setattr("urllib.request.urlopen", _raises(urllib.error.HTTPError("u", 500, "Internal Server Error", {}, fp)))
+    res = OllamaWorker(WorkerSpec()).attempt(tmp_path, "prompt", CPU)
+    assert res.unreachable and res.note == f"ollama call failed: HTTPError: HTTP Error 500: Internal Server Error{tail}"
 
 
 def test_an_outage_stops_the_run_on_its_second_row(tmp_path):
@@ -112,6 +131,15 @@ def test_one_dropped_connection_costs_its_attempt_and_the_run_goes_on(tmp_path):
     w = Worker(WorkerResult(False, "ollama call failed: RemoteDisconnected: closed", unreachable=True), _score(4))
     rep = MissionRun(_mission(attempts=2), r, worker=w, profile_fn=lambda: CPU, log=lambda s: None).run()
     assert [a.kept for a in rep.attempts] == [False, True] and "attempt budget" in rep.stop_reason
+
+
+def test_two_outage_rows_apart_do_not_stop_the_run(tmp_path):
+    # In a row is the rule: a server that answered between two dropped calls can answer the next one.
+    down = WorkerResult(False, "ollama call failed: RemoteDisconnected: closed", unreachable=True)
+    other = WorkerResult(False, "model reply held no unified diff and no file block")
+    w = Worker(down, other, down)
+    rep = MissionRun(_mission(attempts=3), _repo(tmp_path), worker=w, profile_fn=lambda: CPU, log=lambda s: None).run()
+    assert w.calls == 3 and "attempt budget" in rep.stop_reason
 
 
 def test_an_ordinary_worker_failure_still_goes_on(tmp_path):
