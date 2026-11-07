@@ -162,7 +162,15 @@ class NeuronRuntime:
                 self.edit_layer.Save()
             except Exception:
                 # If saving fails, we still want to proceed
-                traceback.print_exc()
+                self._save_refused(record)
+
+    def _save_refused(self, record):
+        # A refused Save reports as a flag on the neuron prim and never prints: this runs on the dispatcher, where a print can wait for ever or raise.
+        try:
+            with Sdf.ChangeBlock():
+                _set_attr(self.edit_layer.GetPrimAtPath(record.handle.prim_path), 'plexus:flag:saveRefused', f"Save refused: {self.edit_layer.realPath} did not take this write, so the stage is ahead of the file until a Save lands.", Sdf.ValueTypeNames.String)
+        except Exception:
+            pass
 
     def _values(self, record):
         values = {}
@@ -202,7 +210,7 @@ class NeuronRuntime:
                             self.edit_layer.Save()
                         except Exception:
                             # If saving fails, we still want to proceed with the next neuron
-                            traceback.print_exc()
+                            self._save_refused(record)
                     continue
 
                 # Check global budget
