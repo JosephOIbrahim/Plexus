@@ -201,6 +201,35 @@ files = ["plexus/core/neuron.py"]
 text = """The truth on disk, plexus/core/neuron.py only, no Rust change. Send the file whole, not as a diff: start from the copy under Files and change only what this step names. Add from datetime import datetime. Saving: in _author_on_neuron wrap self.edit_layer.Save() in try: ... except Exception: traceback.print_exc(), so a refused Save leaves the opinion on the stage and costs no wake; frozen test_mute_isolation.py makes the file read-only while another neuron wakes, and an unguarded Save there leaves self._running up and the runtime never idle. State: plexus:state is a Token. In _on_event, right after record.handle.state = 'awake', call self._author_on_neuron(record, 'plexus:state', 'awake', Sdf.ValueTypeNames.Token). In _run_action, inside the existing if record.handle.state == 'awake': guard, right after record.handle.state = 'dormant', call self._author_on_neuron(record, 'plexus:state', 'dormant', Sdf.ValueTypeNames.Token) and self._author_on_neuron(record, 'plexus:lastWake', datetime.now().astimezone().isoformat(timespec='seconds'), Sdf.ValueTypeNames.String). Both stay inside that guard, so a mute outlives the action, and both come before self._running -= 1. Register: register() may find these specs already in the layer after a restart, and a bare Sdf.AttributeSpec raises on a name that exists, so every attr = Sdf.AttributeSpec(...) with its attr.default = ... line in register() becomes one _set_attr(neuron_prim, name, value, type_name) call. After them, still before self.edit_layer.Save(), add _set_attr(neuron_prim, 'plexus:state', 'dormant', Sdf.ValueTypeNames.Token), so a restart releases a mute. The flags: the deny flag's name becomes plexus:flag:publicationGate and its value becomes f"Write dropped at the membrane: {path} is outside {rt._participant_id}'s allowlist, so nothing landed. {rt._participant_id} writes only under {allowed}." with allowed = ', '.join(str(p) for p in rt._allowlist) on the line above. In the mute block the flag's name becomes plexus:flag:budgetGate and its value becomes f"Neuron muted: 3 wakes in a row refused (budget {record.budget_wakes} per {record.budget_window:g} s). Restart the neuron runtime to unmute it." Those two sentences go in exactly as written. Keep the budget check, the mute's one ChangeBlock and one Save, the try around them, the S5 lines and everything else as they are."""
 
 [[steps]]
+id = "S8b"
+after = ["S8"]
+targets = ["tests/acceptance/phase1/test_refused_save_stops_no_neuron.py"]
+files = ["plexus/core/neuron.py"]
+text = """A refused Save stops no neuron, plexus/core/neuron.py only, no Rust change. Send the file whole, not as a diff: start from the copy under Files and change only what this step names. Write no new tests. Frozen test_refused_save_stops_no_neuron.py fails because both guards answer a refused Save with traceback.print_exc() on the dispatcher, under self._lock: with a stderr nobody reads the print waits for ever once the pipe is full, with a closed stderr it raises and the dispatcher dies, and every neuron stops either way. Moving the print out of the lock changes nothing, because the dispatcher is still the thread printing. So a refused Save prints nothing and leaves a flag on the neuron prim. Add this method to NeuronRuntime, right after _author_on_neuron, exactly as written:
+
+    def _save_refused(self, record):
+        # A refused Save reports as a flag on the neuron prim and never prints: this runs on the dispatcher, where a print can wait for ever or raise.
+        try:
+            with Sdf.ChangeBlock():
+                _set_attr(self.edit_layer.GetPrimAtPath(record.handle.prim_path), 'plexus:flag:saveRefused', f"Save refused: {self.edit_layer.realPath} did not take this write, so the stage is ahead of the file until a Save lands.", Sdf.ValueTypeNames.String)
+        except Exception:
+            pass
+
+Then change two lines and no others. In _author_on_neuron the guard becomes:
+
+            except Exception:
+                # If saving fails, we still want to proceed
+                self._save_refused(record)
+
+In the mute block of _on_event the guard becomes:
+
+                        except Exception:
+                            # If saving fails, we still want to proceed with the next neuron
+                            self._save_refused(record)
+
+Keep import traceback and the traceback.print_exc() in _run_action: that one reports an action's own failure, and this step leaves it alone. Keep the budget check, the mute's one ChangeBlock and one Save, the state writes, the S5 lines and everything else as they are. The reply must differ from the file in Files in those lines."""
+
+[[steps]]
 id = "S9"
 after = ["S7c"]
 targets = ["tests/acceptance/phase1/test_window_burst.py"]
