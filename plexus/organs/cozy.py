@@ -80,6 +80,16 @@ class CozyOrgan(Organ):
             req.add_header('Content-Type', 'application/json')
             with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as response:
                 result = json.loads(response.read().decode())
+        except urllib.error.HTTPError as e:
+            # For 4xx errors, include the body in the error message
+            if 400 <= e.code < 500:
+                try:
+                    error_body = json.loads(e.read().decode('utf-8'))
+                    raise OrganError(f"Failed to submit job to {self._endpoint}/prompt: {error_body}")
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    raise OrganError(f"Failed to submit job to {self._endpoint}/prompt: HTTP Error {e.code}: Bad Request")
+            else:
+                raise OrganError(f"Failed to submit job to {self._endpoint}/prompt: HTTP Error {e.code}: {str(e)}")
         except (urllib.error.URLError, OSError) as e:
             raise OrganError(f"Failed to submit job to {self._endpoint}/prompt: {str(e)}")
 
@@ -173,10 +183,14 @@ class CozyOrgan(Organ):
             if 500 <= e.code:
                 # 5xx error, treat as not yet
                 return None
+            elif e.code == 404:
+                # 404 means the history entry doesn't exist yet
+                return None
             else:
-                raise OrganError(f"Failed to GET {self._endpoint}/history/{prompt_id}: {str(e)}")
+                raise OrganError(f"Failed to GET /history/{prompt_id}: {str(e)}")
         except (urllib.error.URLError, OSError) as e:
-            raise OrganError(f"Failed to GET {self._endpoint}/history/{prompt_id}: {str(e)}")
+            # URLError or OSError means no connection or timeout
+            return None
 
     def _fetch_file(self, image: dict) -> Path:
         """GET /view for one output and write it under output_dir. Returns the path of the file on disk."""
