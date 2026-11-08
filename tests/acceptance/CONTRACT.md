@@ -4,7 +4,7 @@ These tests turn Engineering Spec v2.1 §3, §9 and §10 (T1 to T8) into code. T
 
 The spec names modules (§2) but not functions. To test behaviour, the tests need a small Python surface, and this file is that surface. Everything below it is free: Python, Rust through `plexus._core`, or both. The tests only ever call what is listed here, read composed values back through plain `pxr`, and author "project A" opinions with plain `Sdf`, so any USD writer counts as a participant.
 
-`phase1/` is the slice (the §3 schema gate and T1 to T6). It is the first harness mission. `phase2/` is T7 and T8, for the mission after it. `pending/` holds T1b, the two-process version of T1. It stays skipped and uncounted until the event transport is decided.
+`phase1/` is the slice (the §3 schema gate and T1 to T6). It is the first harness mission. `phase2/` is T7, T8 and `test_organ_surface.py`, which reads what the organ contract promises and those two leave unread, for the mission after it. `pending/` holds T1b, the two-process version of T1. It stays skipped and uncounted until the event transport is decided.
 
 ## `plexus.schema`
 
@@ -34,6 +34,7 @@ The spec names modules (§2) but not functions. To test behaviour, the tests nee
   - `start()`, `stop()`, and `wait_idle(timeout: float) -> bool` (true once no event is pending, no debounce window is open and no action is running).
 - `NeuronHandle` — `.name`, `.prim_path` (an `Sdf.Path`), `.wakes` (an int count), `.state` (`"dormant"`, `"awake"` or `"muted"`).
 - An action is `action(ctx) -> None`. `ctx.author(prim_path, attr_name, value, type_name)` authors one attribute through the publication gate (§7.3) into the edit layer and stamps `plexus:sourceLayer` on that prim with the edit layer's identifier. `type_name` is an `Sdf.ValueTypeNames` member. A write outside the allowlist is dropped, and the neuron prim gets an attribute whose name starts with `plexus:flag`. `ctx.author_asset(prim_path, record)` authors an `AssetRecord` as a `PlexusAssetAPI` prim the same way. Both define (`def`, not `over`) any missing ancestor of the target prim in the edit layer, so the opinion shows up in ordinary stage traversal (T6 dumps with `Usd.PrimRange`).
+- `ctx.author_asset` reads `record.path`, `record.sha256` and `record.metadata`, and imports nothing from `plexus.organs`. It authors the thirteen `PlexusAssetAPI` attributes of §3 with the record's values, `plexus:retryOf` empty and `plexus:retryReason` `none`, and authors `plexus:seed`, `plexus:colorspace` and `plexus:createdAt` only when their keys are in `metadata`. A value that cannot land raises on the action's thread with nothing authored.
 
 ## `plexus.core.predicate` (§4)
 
@@ -45,6 +46,12 @@ The spec names modules (§2) but not functions. To test behaviour, the tests nee
 - `plexus.organs.protocol.AssetRecord` with `.path` (Path), `.sha256` (str) and `.metadata` (dict holding at least `engine`, `engineJobId`, `envFingerprint`, `organVersion`, `modelHashes`).
 - `plexus.organs.cozy.CozyOrgan(endpoint: str, output_dir: Path)` implementing `profile()`, `capabilities()`, `submit(job) -> JobHandle`, `stream(handle)` and `result(handle) -> AssetRecord`.
 - `JobHandle.correlation_id` is the job's own `correlation_id`. The handle carries nothing engine-side that core reads (Patch 01-C): no engine job id leaves the organ except as `AssetRecord.metadata["engineJobId"]`.
+- `plexus.organs.protocol.OrganError` is the one error core sees from an organ. `capabilities()`, `submit()`, `stream()` and `result()` raise it when the engine refuses a job, fails it, cannot be reached or runs past the deadline, when `submit()` meets a class the engine lacks, a seed `plexus:seed` cannot hold or a colorspace §3 does not allow, and when a handle names a job the organ does not hold.
+- `plexus.organs.cozy.CozyOrgan` also takes the keyword arguments `poll_s: float = 0.2` and `deadline_s: float = 3600.0`. `stream()` and `result()` read the engine's history every `poll_s`, and past `deadline_s` they raise `OrganError`, because a timeout voids a job rather than hanging it.
+- `plexus.organs.protocol.JobHandle(correlation_id: str)`. A test builds one by hand to ask about a job the organ never saw.
+- `plexus.organs.protocol.Progress` with `.correlation_id` and `.state`, one of `"queued"`, `"done"` or `"failed"`. `stream(handle)` yields `"queued"` on each poll while history lacks the job, then `"done"` or `"failed"` once.
+- `plexus.organs.protocol.OrganProfile` with `.organ_id`, `.kind`, `.endpoint`, `.capabilities` and `.cost_hint`, the `PlexusOrganAPI` fields of §3. `capabilities()` names each class in the engine's `/object_info`.
+- `plexus.organs.protocol.AssetRecord(path: Path, sha256: str, metadata: dict)` is also how a test builds a record by hand. From the organ, `metadata["engine"]` is the organ id, `metadata["modelHashes"]` holds no hash without a source, and `metadata` also holds `colorspace`, `createdAt`, an ISO-8601 time, and `seed` only when the organ wrote a seed into the graph.
 - `result()` returns only once the engine's history has the job and the file is on disk. `AssetRecord.path` is a local file whose SHA-256 is `.sha256`. `metadata["envFingerprint"]` is non-empty and changes when the engine's environment does.
 
 ## Proof that the tests are passable
@@ -54,3 +61,5 @@ On Nov 1 a throwaway Python prototype (about 350 lines, not committed) passed al
 ## What the tests deliberately leave open
 
 How events cross processes, how the predicate is compiled, where the scheduler runs, and whether any of it is Rust. Spec v2.1 and Blueprint v5.2 decide those, not the tests.
+
+`test_organ_surface.py` leaves open which asset wins when a second lands on one prim, and what a second job under one correlation id gets, past the first handle keeping its own job. Both wait for the retry mission under Patch 01-D.
