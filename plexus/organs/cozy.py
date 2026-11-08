@@ -185,9 +185,9 @@ class CozyOrgan(Organ):
                 return None
             elif e.code == 404:
                 # 404 means the history entry doesn't exist yet
-                return None
+                raise OrganError(f"Failed to GET /history/{prompt_id}: HTTP Error {e.code}: Not Found")
             else:
-                raise OrganError(f"Failed to GET /history/{prompt_id}: {str(e)}")
+                raise OrganError(f"Failed to GET /history/{prompt_id}: HTTP Error {e.code}: {str(e)}")
         except (urllib.error.URLError, OSError) as e:
             # URLError or OSError means no connection or timeout
             return None
