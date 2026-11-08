@@ -65,6 +65,51 @@ class _Ctx:
                 _set_attr(spec, "plexus:sourceLayer", layer.identifier, Sdf.ValueTypeNames.String)
             layer.Save()
 
+    def author_asset(self, prim_path, record):
+        rt = self._runtime
+        path = Sdf.Path(prim_path)
+        if not check_allowlist(path, rt._allowlist):
+            rt._author_on_neuron(self._record, "plexus:flag:publicationGate", f"Write dropped at the membrane: {path} is outside {rt._participant_id}'s allowlist, so nothing landed. {rt._participant_id} writes only under {', '.join(str(p) for p in rt._allowlist)}.", Sdf.ValueTypeNames.String)
+            return
+        layer = rt.edit_layer
+        meta = record.metadata
+        
+        # Build values list with proper type checking
+        values = []
+        
+        # Required attributes
+        values.append(("plexus:assetPath", Sdf.AssetPath(str(record.path)), Sdf.ValueTypeNames.Asset))
+        values.append(("plexus:sha256", record.sha256, Sdf.ValueTypeNames.String))
+        values.append(("plexus:envFingerprint", meta['envFingerprint'], Sdf.ValueTypeNames.String))
+        values.append(("plexus:sourceLayer", layer.identifier, Sdf.ValueTypeNames.String))
+        values.append(("plexus:engine", meta['engine'], Sdf.ValueTypeNames.String))
+        values.append(("plexus:engineJobId", meta['engineJobId'], Sdf.ValueTypeNames.String))
+        values.append(("plexus:organVersion", meta['organVersion'], Sdf.ValueTypeNames.String))
+        values.append(("plexus:modelHashes", list(meta['modelHashes']), Sdf.ValueTypeNames.StringArray))
+        values.append(("plexus:retryOf", "", Sdf.ValueTypeNames.String))
+        values.append(("plexus:retryReason", "none", Sdf.ValueTypeNames.Token))
+        
+        # Optional attributes
+        if 'seed' in meta:
+            seed = meta['seed']
+            if not (-(2**63) <= seed <= 2**63 - 1):
+                raise ValueError(f"Seed {seed} is outside the range [{-(2**63)}, {2**63 - 1}]")
+            values.append(("plexus:seed", seed, Sdf.ValueTypeNames.Int64))
+        if 'colorspace' in meta:
+            values.append(("plexus:colorspace", meta['colorspace'], Sdf.ValueTypeNames.Token))
+        if 'createdAt' in meta:
+            values.append(("plexus:createdAt", meta['createdAt'], Sdf.ValueTypeNames.String))
+
+        with rt._lock:
+            with Sdf.ChangeBlock():
+                spec = Sdf.CreatePrimInLayer(layer, path)
+                for prefix in path.GetPrefixes():
+                    layer.GetPrimAtPath(prefix).specifier = Sdf.SpecifierDef
+                spec.SetInfo("apiSchemas", Sdf.TokenListOp.Create(prependedItems=["PlexusAssetAPI"]))
+                for name, value, type_name in values:
+                    _set_attr(spec, name, value, type_name)
+            layer.Save()
+
 
 class NeuronRuntime:
     def __init__(self, exchange: Path, participant_id: str, *, clock=time.monotonic, global_wakes_per_min: int = 60):
