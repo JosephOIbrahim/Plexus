@@ -30,7 +30,7 @@ CORE_SRC = REPO / "crates" / "plexus-core" / "src"
 # Rank 0/1 modules and package __init__ files stay free of pxr, so `import plexus` is light.
 NO_PXR = {
     "plexus", "plexus._core", "plexus.schema", "plexus.core", "plexus.membrane",
-    "plexus.organs", "plexus.organs.protocol", "plexus.core.predicate", "plexus.core.ports",
+    "plexus.organs", "plexus.organs.protocol", "plexus.organs.cozy", "plexus.core.predicate", "plexus.core.ports",
 }
 RUST_RANK = {"error": 0, "outcome": 1, "predicate": 2, "budget": 2, "canon": 2, "graph": 2,
              "composer": 3, "py": 4}
