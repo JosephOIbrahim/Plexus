@@ -107,16 +107,15 @@ class CozyOrgan(Organ):
             if time.monotonic() > deadline:
                 raise OrganError("Job timed out")
             if entry is None:
+                yield Progress(handle.correlation_id, 'queued')
                 time.sleep(self._poll_s)
                 continue
             status = entry.get('status', {}).get('status_str')
             if status == 'error':
                 yield Progress(handle.correlation_id, 'failed')
                 return
-            state = 'done' if status == 'success' else 'queued'
-            yield Progress(handle.correlation_id, state)
-            if state == 'done':
-                break
+            yield Progress(handle.correlation_id, 'done')
+            return
 
     def result(self, handle: JobHandle) -> AssetRecord:
         job = self._jobs.get(handle.correlation_id)
@@ -132,7 +131,7 @@ class CozyOrgan(Organ):
                 continue
             status = entry.get('status', {}).get('status_str')
             if status == 'error':
-                raise OrganError(f"Job failed with error status: {entry}")
+                raise OrganError("the engine failed this job")
             break
 
         # Find the first image with type 'output'
@@ -185,9 +184,9 @@ class CozyOrgan(Organ):
                 return None
             elif e.code == 404:
                 # 404 means the history entry doesn't exist yet
-                raise OrganError(f"Failed to GET /history/{prompt_id}: HTTP Error {e.code}: Not Found")
+                raise OrganError(f"/history: {e}")
             else:
-                raise OrganError(f"Failed to GET /history/{prompt_id}: HTTP Error {e.code}: {str(e)}")
+                raise OrganError(f"/history: {e}")
         except (urllib.error.URLError, OSError) as e:
             # URLError or OSError means no connection or timeout
             return None
