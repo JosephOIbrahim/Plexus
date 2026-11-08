@@ -1,0 +1,248 @@
+# Second Plexus mission: Blueprint v5.3 section 11 Phase 2, Spec v2.1 section 10. It scores the frozen phase 2
+# acceptance tests, T7, T8 and test_organ_surface.py, and refuses to start until Joe has placed that last file. Claude writes and revises
+# mission files; the local worker only makes attempts inside one. Plan: missions/organ.plan.md.
+# DRAFT, nothing below has run on the real repo. Joe's answers of Nov 5 are in, and organ.plan.md section 8 marks each with his words.
+
+[mission]
+name = "organ"
+goal = "Make the frozen Plexus phase 2 acceptance tests in tests/acceptance/phase2, T7 and T8 from PLEXUS_SPEC.md and test_organ_surface.py, pass, one honest step at a time, without breaking phase 1. tests/acceptance/CONTRACT.md is the Python surface they call; harness/plexus_loop/missions/organ.worker.md says how the work is split and what the gates enforce."
+requires = ["tests/acceptance/phase2/test_t7_round_trip.py", "tests/acceptance/phase2/test_organ_surface.py", "tests/acceptance/phase1", "PLEXUS_SPEC.md"]
+# Only what the organ needs: its own package, and the one file that gains ctx.author_asset. crates/**, Cargo.toml and
+# the rest of plexus/ are out, so a Rust reply or an edit to the axon drops before anything runs. T8's scan of plexus/
+# and crates/ still covers all of it.
+focus = ["plexus/organs/**", "plexus/core/neuron.py"]
+frozen = ["tests/acceptance/**", "harness/**", "docs/plexus/**", "PLEXUS_SPEC.md", ".github/**", "pyproject.toml"]
+# PLEXUS_SPEC.md is out of context on purpose: the brief carries the rows of sections 3 and 8 that this mission
+# reads, and the worker's reading time is its largest cost after writing. Phase 1's tests are out too, and a read of the
+# whole phase by hand on each keep speaks for them. test_organ_surface.py is out too: the step texts spell out every body,
+# and a failure's own text reaches the next prompt. The plan's section 10 logs that choice with both measures.
+context = [
+  "harness/plexus_loop/missions/organ.worker.md",
+  "tests/acceptance/CONTRACT.md",
+  "tests/acceptance/_support.py",
+  "tests/acceptance/conftest.py",
+  "tests/acceptance/phase2/test_t7_round_trip.py",
+  "tests/acceptance/phase2/test_t8_blindness.py",
+]
+
+[metric]
+kind = "pytest_failures"
+target = "tests/acceptance/phase2"
+direction = "lower"
+min_delta = 1
+# The default of 1800 lets one quoted word in the history read hang a whole attempt for 30 minutes more, because T7 builds the organ with its 3600 s deadline. A timed-out metric leaves an empty tail and no known fix can
+# fire on it, so the brief carries the line that explains it. The plan's section 5 has the phase's time on a right reply and on its worst wrong replies on a busy machine, against this limit.
+timeout_s = 300
+
+# Gates run in this order before the metric. Cheapest and most structural first.
+[[gates]]
+name = "layers"
+cmd = ["python", "-m", "pytest", "-q", "harness/plexus_loop/guards"]
+timeout_s = 600
+
+# Why this gate: step O2 sends plexus/core/neuron.py whole, and many of its lines are read by no frozen test: ctx.author's lock, the global budget's check, the scope filter, plexus:tools, an action's printed
+# error. A reply that loses one could still keep. This reads the parsed code against the last kept commit: every statement stands, and the file gains _Ctx.author_asset alone. It takes under a second.
+# It is scaffolding, so the file lands in Claude's own commit on Joe's word before the first run.
+[[gates]]
+name = "neuron_unchanged"
+cmd = ["python", "-I", "harness/plexus_loop/neuron_unchanged.py"]
+timeout_s = 120
+
+[[gates]]
+name = "core"
+cmd = ["python", "harness/plexus_loop/build_core.py"]
+timeout_s = 1800
+
+[[gates]]
+name = "predicate_smoke"
+cmd = ["python", "-I", "harness/plexus_loop/predicate_smoke.py"]
+timeout_s = 120
+
+[[gates]]
+name = "cargo"
+cmd = ["cargo", "test", "--workspace", "--quiet"]
+timeout_s = 1800
+
+# The same narrowed set as mission acceptance, Joe's word of Nov 1. None of it can see plexus/organs or neuron.py: only the
+# harness's own tests and two repo scans of agent/ and cognitive/. Kept so the gates match; dropping it is Joe's call.
+[[gates]]
+name = "unit"
+cmd = ["python", "-m", "pytest", "-q", "-x", "-m", "not integration",
+       "tests/harness_plexus_loop", "tests/test_portability_guards.py",
+       "tests/test_workflow_patch_engine_live.py"]
+timeout_s = 1800
+
+[worker]
+kind = "ollama"
+model = "qwen3-coder:30b"
+host = "http://127.0.0.1:11434"
+# The value mission acceptance runs with since Joe's go of Nov 4. Worst case for this mission, at the worst rates on record, 23.2 tokens a second reading on row 85 and 1.54 writing on row 82,
+# and with the worst prompt below: O1 after a full drop reads 24,384 tokens in 1,051 s and writes neuron.py whole, about 3,634 tokens, in 2,360 s, so 3,411 s. 3600 would hold too; 4800 costs nothing unless the model hangs.
+timeout_s = 4800
+# Measured with the harness's own build_prompt on the top rung of the scratch ladder, worst case of every state: the largest floor with nothing left out is 91,354 characters, O1 after a full drop.
+# 95000 leaves about 3,646 characters of room, measured on S8 and S8b's neuron.py at 3414e36. The budget caps the files only, so the real prompt stays at its own size: at most 24,384 tokens,
+# which leaves 24,768 of num_ctx for the reply against the 3,634 tokens neuron.py needs.  (Remeasured Nov 8 on 3414e36.)
+context_chars = 95000
+num_ctx = 49152
+
+# The steps form a chain, so one step is ready at a time and no router call ever happens. "first" says that plainly, and
+# no key is needed.
+[router]
+kind = "first"
+
+[[steps]]
+id = "O1"
+targets = ["tests/acceptance/phase2/test_t7_round_trip.py::test_link_arrays_survive_the_organ_byte_for_byte",
+           "tests/acceptance/phase2/test_t7_round_trip.py::test_result_waits_for_history_and_a_real_file",
+           "tests/acceptance/phase2/test_t7_round_trip.py::test_env_fingerprint_tracks_the_engine_environment",
+           "tests/acceptance/phase2/test_t8_blindness.py",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_relative_output_dir_gives_an_absolute_path",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_dead_engine_is_an_organ_error",
+           "tests/acceptance/phase2/test_organ_surface.py::test_seed_lands_in_the_seed_input_and_nowhere_else",
+           "tests/acceptance/phase2/test_organ_surface.py::test_submit_leaves_the_jobs_own_graph_alone",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_seed_wired_from_a_link_survives",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_seed_that_never_reached_the_engine_is_not_recorded",
+           "tests/acceptance/phase2/test_organ_surface.py::test_noise_seed_is_written",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_class_the_engine_lacks_stops_before_the_post",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_seed_past_int64_is_refused_before_the_post",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_colorspace_outside_the_schema_is_refused_before_the_post",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_second_job_under_one_id_never_takes_the_first_handle",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_refused_graph_carries_the_engines_words",
+           "tests/acceptance/phase2/test_organ_surface.py::test_submit_returns_before_the_job_is_done",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_handle_carries_no_engine_id",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_engine_id_leaves_only_as_metadata",
+           "tests/acceptance/phase2/test_organ_surface.py::test_no_error_core_sees_holds_the_engine_id",
+           "tests/acceptance/phase2/test_organ_surface.py::test_result_stops_at_the_deadline",
+           "tests/acceptance/phase2/test_organ_surface.py::test_one_refused_history_read_leaves_the_job_running",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_dead_engine_during_a_poll_waits_out_the_deadline_and_voids_the_job",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_wrong_history_route_fails_at_once",
+           "tests/acceptance/phase2/test_organ_surface.py::test_an_unknown_handle_is_an_organ_error",
+           "tests/acceptance/phase2/test_organ_surface.py::test_two_open_jobs_collect_out_of_order",
+           "tests/acceptance/phase2/test_organ_surface.py::test_an_error_entry_raises",
+           "tests/acceptance/phase2/test_organ_surface.py::test_an_entry_without_images_raises",
+           "tests/acceptance/phase2/test_organ_surface.py::test_an_entry_with_only_a_preview_raises",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_first_output_image_is_found_past_a_node_without_images",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_saved_output_wins_over_a_preview",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_view_query_carries_subfolder_and_type",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_file_on_disk_holds_the_engines_bytes",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_file_lands_under_output_dir",
+           "tests/acceptance/phase2/test_organ_surface.py::test_two_jobs_with_one_engine_filename_keep_two_files",
+           "tests/acceptance/phase2/test_organ_surface.py::test_model_hashes_are_empty_and_engine_is_the_organ_id",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_record_holds_the_seed_the_colorspace_and_when",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_fingerprint_stands_still_when_only_free_memory_moves",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_fingerprint_moves_with_every_field_of_the_environment",
+           "tests/acceptance/phase2/test_organ_surface.py::test_capabilities_name_the_engines_node_classes",
+           "tests/acceptance/phase2/test_organ_surface.py::test_profile_holds_the_organ_api_fields",
+           "tests/acceptance/phase2/test_organ_surface.py::test_stream_says_queued_then_done",
+           "tests/acceptance/phase2/test_organ_surface.py::test_stream_stops_at_the_deadline",
+           "tests/acceptance/phase2/test_organ_surface.py::test_stream_says_failed_on_an_error_entry",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_organ_imports_the_standard_library_and_the_contract_only"]
+files = ["plexus/organs/__init__.py", "plexus/organs/protocol.py", "plexus/organs/cozy.py"]
+text = """The organ, three new files, no Rust change, no new Rust test and no test of your own. All of this step is required: the rule above about the smallest change means the smallest change that does all of this step. Before this step lands, all five T7 tests fail with No module named 'plexus.organs', and so does nearly every test of frozen test_organ_surface.py. If plexus/organs/cozy.py is already under Files, an attempt has kept: start from that copy and not the skeleton, send all three files again, and aim at this step's targets that the latest metric output lists as FAILED. Each test's name says the clause it reads, and a failure this step does not aim at belongs to a later step. plexus/organs/__init__.py is one docstring line and nothing else. plexus/organs/protocol.py is the brief's protocol block, copied exactly; frozen T8 reads that file line by line, so it must never name prompt_id, class_type, cfg or a node class, in code, comments or strings. plexus/organs/cozy.py starts from the brief's skeleton: every import, constant and signature stays as written, and each raise NotImplementedError becomes its body. These are the bodies. __init__ stores endpoint.rstrip('/') as self._endpoint, Path(output_dir).resolve() as self._output_dir with mkdir(parents=True, exist_ok=True), poll_s, deadline_s, self._jobs = {} and self._nodes = None. _get_json opens self._endpoint + route with urllib.request.urlopen and HTTP_TIMEOUT_S and returns json.loads of the body; urllib.error.URLError and OSError become OrganError with the route and the error's text. _history_entry does not go through _get_json: it opens self._endpoint + f'/history/{prompt_id}' the same way and returns .get(prompt_id) of the json.loads of the body, reading the variable prompt_id and not the quoted word. An urllib.error.HTTPError with code 500 or above, a URLError or an OSError returns None, which means not yet; any other HTTPError raises OrganError with '/history' and the error's text, never the id. Scored by test_link_arrays_survive_the_organ_byte_for_byte, submit does this: first it raises OrganError, before anything is sent, when self._jobs already holds job.correlation_id, when job.colorspace is not in COLORSPACES, or when job.seed is outside INT64_MIN to INT64_MAX, the range of plexus:seed. Then graph = copy.deepcopy(job.graph); for each node in graph.values(), for each name in SEED_INPUTS, if isinstance(node['inputs'].get(name), int), node['inputs'][name] = job.seed, and remember that a seed was written. Nothing else in the graph changes, because the test compares every link and every class_type with the graph it gave you. Then it checks every node['class_type'] against self.capabilities() and raises OrganError naming any that is missing, then POSTs json.dumps({'prompt': graph}).encode('utf-8') to self._endpoint + '/prompt' exactly once with Content-Type application/json; urllib.error.HTTPError becomes OrganError holding the reply's body text, because a real engine explains a refused graph there, and URLError and OSError become OrganError as in _get_json. It reads prompt_id from the reply, sets self._jobs[job.correlation_id] = _Submitted(prompt_id, job.seed if a seed was written else None, job.colorspace), and returns JobHandle(job.correlation_id), which carries the correlation id and nothing else. Scored by test_result_waits_for_history_and_a_real_file, result does this: look up self._jobs[handle.correlation_id], raising OrganError when it is missing; call self._history_entry every poll_s until it is not None, and raise OrganError past deadline_s, so a timeout voids the job instead of hanging it; the first reads come back empty and the test counts them, so nothing but that entry ever means done. An entry whose entry.get('status', {}).get('status_str') == 'error' raises OrganError. Take the first image whose type is 'output' across the images lists in entry['outputs'].values(), and raise OrganError when there is none, because a preview node's image has type 'temp' and is not the asset. _fetch_file reads /view with urllib.parse.urlencode of that item's filename, subfolder and type, with URLError and OSError becoming OrganError as in _get_json, and writes the bytes to self._output_dir / f"{uuid.uuid4().hex}_{Path(filename).name}", so a later job with the same engine filename never overwrites this file and the engine's id stays off the path. sha256 is hashlib.sha256(path.read_bytes()).hexdigest(), read back from the file. Return AssetRecord(path, sha256, metadata) with metadata holding engine = ORGAN_ID, engineJobId = prompt_id, envFingerprint = self._env_fingerprint(), organVersion = ORGAN_VERSION, modelHashes = [], colorspace and createdAt = datetime.now(timezone.utc).isoformat(timespec='seconds'), and seed only when a seed was written. Scored by test_env_fingerprint_tracks_the_engine_environment, _env_fingerprint reads /system_stats and /object_info through _get_json at that moment and hashes only what the brief lists. capabilities returns sorted(self._nodes), reading /object_info into self._nodes the first time. profile returns OrganProfile(ORGAN_ID, 'comfyui', self._endpoint, self.capabilities(), 'free'). stream yields Progress(handle.correlation_id, 'queued') on each poll while _history_entry is None, then one Progress with 'done' or 'failed', then stops, with the same lookup, poll_s and deadline_s as result and OrganError past the deadline. Frozen test_organ_surface.py reads nearly every clause T7 and T8 do not, and the few it leaves unread are required all the same. job.inputs is not used in this mission."""
+
+[[steps]]
+id = "O2"
+after = ["O1"]
+targets = ["tests/acceptance/phase2/test_t7_round_trip.py::test_neuron_round_trip_composes_into_both_projects",
+           "tests/acceptance/phase2/test_t8_blindness.py",
+           "tests/acceptance/phase2/test_organ_surface.py::test_neuron_imports_nothing_from_organs",
+           "tests/acceptance/phase2/test_organ_surface.py::test_every_asset_attribute_lands_with_the_schemas_type_and_on_disk",
+           "tests/acceptance/phase2/test_organ_surface.py::test_each_asset_attribute_holds_the_records_value",
+           "tests/acceptance/phase2/test_organ_surface.py::test_an_asset_outside_the_allowlist_is_dropped_and_flagged",
+           "tests/acceptance/phase2/test_organ_surface.py::test_the_deny_flag_says_what_ctx_author_says",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_record_with_only_the_contracts_five_keys_still_lands",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_value_that_cannot_land_leaves_nothing_in_the_file",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_second_asset_on_one_prim_does_not_raise",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_changed_predicate_does_not_rewake_on_its_own_asset",
+           "tests/acceptance/phase2/test_organ_surface.py::test_two_neurons_on_one_write_both_publish",
+           "tests/acceptance/phase2/test_organ_surface.py::test_a_second_process_reads_the_asset_from_the_file"]
+files = ["plexus/core/neuron.py"]
+text = """ctx.author_asset, plexus/core/neuron.py only, no Rust change, no new Rust test and no test of your own. Send the file whole, not as a diff: start from the one copy of neuron.py in this prompt, under Files or under Your last attempt's files, and change only what this step names; every other line stays, _on_event, _run_action, register, _author_on_neuron, _save_refused and _Ctx.author above all, because the neuron_unchanged gate compares your file's code with the last kept commit and drops any other change, a new import or a new helper included. neuron.py must never name prompt_id, class_type, cfg or a node class, because frozen T8 reads it line by line, and it never imports plexus.organs, even for a type hint. One T7 test is left, test_neuron_round_trip_composes_into_both_projects, and so are the author_asset tests of frozen test_organ_surface.py. T7's fails with AssertionError: projectA.usda, because _Ctx has no author_asset: the action raises AttributeError on its own thread, _run_action prints it, and the asset prim never lands. The others name that AttributeError. The change: add one method to class _Ctx, right after author and at the same indent, def author_asset(self, prim_path, record). It opens with the same lines author opens with: rt = self._runtime, path = Sdf.Path(prim_path), and the same if not check_allowlist(path, rt._allowlist): branch, every line of it, with its rt._author_on_neuron call with name plexus:flag:publicationGate and the same two-sentence value, and its return, because CONTRACT.md says the same gate covers both and test_the_deny_flag_says_what_ctx_author_says compares the two flags. Then layer = rt.edit_layer and meta = record.metadata. Then, before any lock, build one list named values of (name, value, type_name) triples, every type a member of Sdf.ValueTypeNames, so a key that is missing or a value that cannot land raises with nothing authored. Spec section 3 lists all thirteen: plexus:assetPath with Sdf.AssetPath(str(record.path)) as Asset; plexus:sha256 with record.sha256 as String; plexus:envFingerprint with meta['envFingerprint'] as String; plexus:sourceLayer with layer.identifier as String; plexus:engine with meta['engine'] as String; plexus:engineJobId with meta['engineJobId'] as String; plexus:organVersion with meta['organVersion'] as String; plexus:modelHashes with list(meta['modelHashes']) as StringArray; plexus:retryOf with '' as String; plexus:retryReason with 'none' as Token; and, each only when its key is in meta, because CONTRACT.md promises only the five keys above, plexus:seed with meta['seed'] as Int64, raising ValueError first when it does not fit 64 bits, plexus:colorspace with meta['colorspace'] as Token and plexus:createdAt with meta['createdAt'] as String. Then with rt._lock: then with Sdf.ChangeBlock(): then spec = Sdf.CreatePrimInLayer(layer, path), the same for prefix in path.GetPrefixes() loop that author has, setting each specifier to Sdf.SpecifierDef, which CONTRACT.md requires, then spec.SetInfo('apiSchemas', Sdf.TokenListOp.Create(prependedItems=['PlexusAssetAPI'])), then one _set_attr(spec, name, value, type_name) call for each item of values, never a bare Sdf.AttributeSpec, because a second wake would raise. After the ChangeBlock, still inside with rt._lock, call layer.Save(), because CONTRACT.md says saved as it lands and a frozen test reads the file before the quiesce's own Save can flush it. Two neurons woken by one project write kill the interpreter without the lock, and a frozen test runs that in a child process. The reply must differ from that copy of neuron.py in those lines and in no others."""
+
+# A day run. At 30 to 40 minutes an attempt, 8 attempts take at most about 5.3 hours, and the run stops as soon as every target test passes. Decision 6 has the odds behind 8 against the 5 mission acceptance names.
+[budget]
+attempts = 8
+hours = 6
+max_consecutive_failures = 8
+
+[houdini]
+cpu_threads = 8
+cargo_jobs = 4
+
+# The failure router is off for this mission, so nothing leaves the machine. Its floor was judged on run 19's brief and
+# jev-1.14.0, and this brief is new. Known fixes below still quote lines from the local brief. Turning it on sends TypeSafe
+# the failure output, the step's id and text, and the brief's prose lines on every full drop; that is Joe's call.
+[fix_router]
+kind = "none"
+
+# Recognised failures and the brief line that fixes each. The harness quotes the line under the target failure, or under a
+# failing gate's output when there are no target failures. Each anchor appears once in the brief; the proof checks it.
+[[known_fixes]]
+match = "engine vocabulary leaked into the core"
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "T8 reads every line of every"
+
+[[known_fixes]]
+match = "these modules must stay free of pxr"
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "never import `pxr`, or the `layers` gate fails"
+
+[[known_fixes]]
+match = "package __init__.py files hold a docstring only"
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "holds one docstring and nothing else"
+
+[[known_fixes]]
+match = 'plexus\.core\.neuron imports plexus\.organs'
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "never imports `plexus.organs.cozy`, at any scope"
+
+[[known_fixes]]
+match = "mutable default <class 'dict'>"
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "A dict default must be `field(default_factory=dict)`"
+
+[[known_fixes]]
+match = "Can't instantiate abstract class CozyOrgan"
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "`CozyOrgan` stays a subclass of `Organ`"
+
+[[known_fixes]]
+match = "result\\(\\) returned before /history had the job|history_reads > comfy\\.history_delay_reads"
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "`/history/<prompt_id>` is the truth"
+
+[[known_fixes]]
+match = '>\s+assert links\(sent\) == links\(GRAPH\)|>\s+assert \{k: v\["class_type"\]|link-array invariant'
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "Copy the graph with `copy.deepcopy`"
+
+[[known_fixes]]
+match = '>\s+assert len\(comfy\.prompts\) == 1|submit\(\) posted [2-9]\d* times'
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "Post once per `submit`"
+
+[[known_fixes]]
+match = "envFingerprint is the drift key"
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "The fingerprint hashes"
+
+[[known_fixes]]
+match = "AssertionError: project[AB]\\.usda|'_Ctx' object has no attribute 'author_asset'"
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "`author_asset` is a method of `_Ctx`"
+
+[[known_fixes]]
+match = "O2 adds _Ctx.author_asset and changes nothing else"
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "The `neuron_unchanged` gate compares"
+
+[[known_fixes]]
+match = "'NoneType' object has no attribute 'resolvedPath'|Use keyword arguments"
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "The asset path is `Sdf.AssetPath(str(record.path))`"
+
+[[known_fixes]]
+match = 'plexus\.organs\.protocol\.OrganError'
+file = "harness/plexus_loop/missions/organ.worker.md"
+anchor = "`FakeComfy` never refuses or fails a job"
