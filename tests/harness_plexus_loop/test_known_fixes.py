@@ -163,6 +163,15 @@ def test_every_acceptance_known_fix_resolves_to_one_brief_line():
         re.compile(k.match)
 
 
+def test_every_organ_known_fix_resolves_to_one_brief_line():
+    m = load_mission(REPO / "harness" / "plexus_loop" / "missions" / "organ.toml")
+    assert m.known_fixes
+    for k in m.known_fixes:
+        lines = (REPO / k.file).read_text(encoding="utf-8").splitlines()
+        assert sum(k.anchor in ln for ln in lines) == 1, k.anchor
+        re.compile(k.match)
+
+
 def test_runtime_did_not_go_idle_quotes_no_known_fix():
     # Retired Nov 4: the kept axon is right, and on row 86 the cause was a reply that dropped _run_action.
     m = load_mission(REPO / "harness" / "plexus_loop" / "missions" / "acceptance.toml")
