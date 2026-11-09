@@ -66,7 +66,7 @@ def swatch_graph(value: float) -> dict:
 def load_workflow(path: Path) -> dict:
     """An API-format graph from a file: a dict of node id to a node with class_type and inputs."""
     graph = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(graph, dict) or not graph or not all(isinstance(n, dict) and "class_type" in n and "inputs" in n for n in graph.values()):
+    if not isinstance(graph, dict) or not graph or not all(isinstance(n, dict) and "class_type" in n and isinstance(n.get("inputs"), dict) for n in graph.values()):
         raise ValueError(f"{path} is not a ComfyUI API-format graph: export it with Save (API) in ComfyUI.")
     return graph
 
@@ -100,7 +100,8 @@ class Session:
 
     def _act(self, ctx) -> None:
         """The neuron's action: the hint first, then one job through the organ, and the result as an asset in its own layer.
-        A failed job lands as a line on the stage, not a traceback, so project B and status both see it."""
+        Each wake first marks its render pending, so the render line never reports an earlier wake. Whatever goes wrong,
+        an OrganError or anything else, lands as a failed line on the stage, not a traceback, so project B and status see it."""
         value = self.runtime.stage.GetAttributeAtPath(TEMP).Get()
         string = self._sdf.ValueTypeNames.String
         ctx.author(HINTS, "grade_hint", "warmer" if value > START_TEMPERATURE else "cooler", string)
@@ -108,15 +109,16 @@ class Session:
             return
         from plexus.organs.protocol import Job, OrganError
 
+        ctx.author(HINTS, "render", f"pending: wake {self.neuron.wakes}", string)
         graph = self.graph if self.graph is not None else swatch_graph(value)
-        job = Job(graph=json.loads(json.dumps(graph)), seed=max(1, self.neuron.wakes), colorspace="srgb", correlation_id=f"look-{uuid.uuid4().hex}")
         try:
+            job = Job(graph=json.loads(json.dumps(graph)), seed=self.neuron.wakes, colorspace="srgb", correlation_id=f"look-{uuid.uuid4().hex}")
             record = self.organ.result(self.organ.submit(job))
-        except OrganError as e:
-            self.last_error = str(e)
-            ctx.author(HINTS, "render", f"failed: {e}", string)
+            ctx.author_asset(ASSET, record)
+        except Exception as e:  # noqa: BLE001 - an OrganError is the contract, and anything else must not leave the last wake's line standing
+            self.last_error = str(e) if isinstance(e, OrganError) else f"{type(e).__name__}: {e}"
+            ctx.author(HINTS, "render", f"failed: {self.last_error}", string)
             return
-        ctx.author_asset(ASSET, record)
         self.last_record, self.last_error = record, None
         ctx.author(HINTS, "render", f"landed {Path(record.path).name}", string)
 

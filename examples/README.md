@@ -50,7 +50,8 @@ Run it without the prompt: `python examples/plexus_live.py --script "temp 1.5; s
 ## What it does not do yet
 
 - **The organ is not on the stage.** Project B sees each asset and the layer it came from, but not which organs exist or what they can do. Authoring a `PlexusOrganAPI` prim needs a runtime call that does not exist yet.
-- **One neuron, one organ, one job at a time.** A wake waits for its job before the neuron is dormant again.
+- **One neuron, one organ, one job at a time.** `temp` waits for the wake's job, up to its 600 s deadline, before the prompt comes back, so a slow job holds the prompt. Ctrl+C stops the session.
+- **One asset prim.** Each wake writes `/Exchange/lookNeuron/Assets/swatch` again, so the stage holds the latest job's record; earlier files stay in the session's `assets` folder. After a failed wake, the asset is still the last good one and the `render` line says `failed`.
 
 ## Why it does not use comfyui_launcher.bat
 

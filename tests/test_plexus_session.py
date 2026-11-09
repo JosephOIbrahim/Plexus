@@ -95,6 +95,42 @@ def test_a_comfyui_that_is_not_there_lands_as_a_line_on_the_stage(tmp_path, clos
         s.close()
 
 
+def test_two_wakes_send_two_jobs_and_the_stage_follows_the_second(tmp_path, fake):
+    s = session(tmp_path, organ_url=fake.url, graph=GRAPH)
+    try:
+        s.set_temperature(1.5)
+        first = s.last_record
+        s.set_temperature(0.5)
+        second = s.last_record
+        assert len(fake.prompts) == 2 and first.path != second.path
+        sent = fake.prompts[1]["prompt"] if "prompt" in fake.prompts[1] else fake.prompts[1]
+        assert [n["inputs"]["seed"] for n in sent.values() if "seed" in n.get("inputs", {})] == [2], "The second wake's seed is 2"
+        prim = s.project_b.GetPrimAtPath(ps.ASSET)
+        assert prim.GetAttribute("plexus:sha256").Get() == second.sha256
+        assert s._read(ps.HINTS + ".render") == f"landed {Path(second.path).name}"
+    finally:
+        s.close()
+
+
+def test_an_error_that_is_not_an_organ_error_still_lands_as_this_wakes_line(tmp_path, fake, monkeypatch):
+    s = session(tmp_path, organ_url=fake.url, graph=GRAPH)
+    try:
+        s.set_temperature(1.5)
+        assert s._read(ps.HINTS + ".render").startswith("landed")
+
+        def broken(handle):
+            raise KeyError("outputs")
+
+        monkeypatch.setattr(s.organ, "result", broken)
+        line = s.set_temperature(0.5)
+        render = s._read(ps.HINTS + ".render")
+        assert render == "failed: KeyError: 'outputs'", f"The second wake's line must be its own, and it reads {render!r}"
+        assert "failed" in line and "landed" not in line, line
+        assert s.runtime.wait_idle(5.0)
+    finally:
+        s.close()
+
+
 def test_no_organ_keeps_the_hint_alone(tmp_path):
     s = session(tmp_path)
     try:
@@ -111,6 +147,10 @@ def test_a_ui_format_workflow_is_refused_with_how_to_export_one(tmp_path):
     ui.write_text(json.dumps({"nodes": [{"id": 1, "type": "KSampler"}], "links": []}), encoding="utf-8")
     with pytest.raises(ValueError, match="Save \\(API\\)"):
         ps.load_workflow(ui)
+    listed = tmp_path / "listed.json"
+    listed.write_text(json.dumps({"1": {"class_type": "SaveImage", "inputs": ["images"]}}), encoding="utf-8")
+    with pytest.raises(ValueError):
+        ps.load_workflow(listed)
     api = tmp_path / "api.json"
     api.write_text(json.dumps(GRAPH), encoding="utf-8")
     assert ps.load_workflow(api) == GRAPH
