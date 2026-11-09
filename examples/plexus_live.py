@@ -333,6 +333,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--stop-comfyui-on-exit", action="store_true", help="stop ComfyUI when the session ends, only if this launcher started it")
     p.add_argument("--script", help="session commands separated by semicolons, instead of the prompt")
     p.add_argument("--sessions-root", type=Path, help="where the session folder goes")
+    p.add_argument("--workflow", type=Path, help="a ComfyUI API-format graph the neuron sends on each wake, instead of the swatch")
+    p.add_argument("--no-organ", action="store_true", help="the neuron writes its grade hint only and sends ComfyUI nothing")
     args = p.parse_args(argv)
     if not _url_is_usable(args.url):  # without a scheme it reads as nothing listening, and ComfyUI would start beside one already up
         raise SystemExit(f"Plexus did not start: --url needs http or https, a host and a port, such as {COMFYUI_URL}. It got {args.url}.")
@@ -398,6 +400,10 @@ def main(argv=None) -> int:
             session_args += ["--script", args.script]
         if args.sessions_root:
             session_args += ["--sessions-root", str(args.sessions_root)]
+        if args.workflow:
+            session_args += ["--workflow", str(args.workflow.absolute())]
+        if args.no_organ:
+            session_args += ["--no-organ"]
         code = plexus_session.main(session_args)
     except LaunchError as e:
         print(f"\nPlexus did not start: {e}", file=sys.stderr)

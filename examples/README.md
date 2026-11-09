@@ -17,12 +17,31 @@ Or double-click `Plexus Live` on the desktop.
 
 ## The session
 
-Two projects, one exchange, one neuron watching `/Exchange/LookState.temperature`.
+Two projects, one exchange, one neuron watching `/Exchange/LookState.temperature`, and one organ: ComfyUI.
+
+**The loop, end to end.** Project A writes the temperature. A move over 0.2 wakes the neuron. It writes a grade hint, sends ComfyUI a job through the Cozy organ, and authors the file that comes back as a `PlexusAssetAPI` asset at `/Exchange/lookNeuron/Assets/swatch`, in its own layer. Project B composes the hint, the asset and the layer it came from.
+
+```mermaid
+sequenceDiagram
+    participant A as Project A
+    participant N as Neuron
+    participant O as Cozy organ
+    participant C as ComfyUI
+    participant B as Project B
+    A->>N: temperature moved over 0.2
+    N->>O: submit the swatch job
+    O->>C: POST /prompt
+    C-->>O: /history done, PNG on disk
+    O-->>N: AssetRecord
+    N->>B: asset composes, stamped with its layer
+```
+
+**The job is a swatch by default:** a 256 by 256 square whose colour follows the temperature, cool blue at 0 to warm orange at 3. It needs no model, so it runs in about 10 s even with ComfyUI on the CPU. `--workflow graph.json` sends any graph exported with ComfyUI's Save (API) instead, with the neuron's wake count as its seed. A job that fails lands as a `render` line on the stage, `failed: …`, and the neuron goes back to dormant.
 
 | Command | What it does |
 |---|---|
-| `temp 1.5` | Project A writes the temperature, and the neuron wakes if it moved more than 0.2 |
-| `status` | ComfyUI, the neuron and what project B reads |
+| `temp 1.5` | Project A writes the temperature; over 0.2 the neuron wakes and ComfyUI renders |
+| `status` | ComfyUI, the organ, the neuron, and what project B reads: the hint, the render line and the asset |
 | `help` | The list |
 | `quit` | Stops the neuron and leaves ComfyUI running |
 
@@ -30,7 +49,8 @@ Run it without the prompt: `python examples/plexus_live.py --script "temp 1.5; s
 
 ## What it does not do yet
 
-It never queues a ComfyUI job, because the organ does not exist until phase 2. The neuron's action is a grade hint for now, and the organ joins here when phase 2 has one.
+- **The organ is not on the stage.** Project B sees each asset and the layer it came from, but not which organs exist or what they can do. Authoring a `PlexusOrganAPI` prim needs a runtime call that does not exist yet.
+- **One neuron, one organ, one job at a time.** A wake waits for its job before the neuron is dormant again.
 
 ## Why it does not use comfyui_launcher.bat
 
@@ -43,5 +63,7 @@ That file's countdown calls `choice /c " qo"`. Windows rejects the space with "I
 | `--minimized` | ComfyUI's window starts minimized and never takes the focus |
 | `--stop-comfyui-on-exit` | Stops ComfyUI when the session ends, only if this launcher started it. A window that failed stays open, so its log can be read. |
 | `--script "a; b"` | Runs commands instead of the prompt |
+| `--workflow graph.json` | Sends this ComfyUI API-format graph on each wake, instead of the swatch |
+| `--no-organ` | The neuron writes its grade hint only, and sends ComfyUI nothing |
 | `--timeout 300` | Seconds to wait for ComfyUI to answer |
 | `--comfyui-root`, `--models-root`, `--url`, `--sessions-root` | Point it somewhere else. `--url` needs http or https, a host and a port. If nothing answers there, the launcher starts ComfyUI on that port, and only at an http URL on this machine. |
