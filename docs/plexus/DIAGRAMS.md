@@ -19,23 +19,24 @@ GitHub draws these directly. In other viewers, paste a block into [mermaid.live]
 
 ## 1 · Roadmap: you are here
 
-**Phase 0 is partly done** (the seed, the frozen tests, the harness and the `plexus/` + `crates/` scaffold exist; the four contracts don't yet). **Phase 1 is in progress.** The thicker the outline, the nearer the work; green is kept for done, and nothing here is done yet.
+**Phases 1 and 2 are done; Phase 0 is partly done** (the seed, the frozen tests, the harness and the `plexus/` + `crates/` code exist; the four contracts don't yet). **Phase 3 is next.** Green is kept for done; the thick outline is the next phase.
 
 <!-- plexus:status -->
-**Phase 1 · 2 of 11 frozen tests pass** (T0, the schema gate; T1, propagation) · Nov 3, 2026
+**Phase 1 · 30 of 30 frozen tests pass · Phase 2 · 69 of 69** · `plexus-0.1.0-alpha.6` · Nov 9, 2026
 <!-- /plexus:status -->
 
 ```mermaid
 flowchart LR
     P0["Phase 0<br/>Seed + contracts<br/>(partly done)"]:::partial
-    P1["Phase 1<br/>The slice<br/>tests T0 to T6<br/>(in progress)"]:::next
-    P2["Phase 2<br/>Projection +<br/>ComfyUI organ<br/>tests T7, T8"]
-    P3["Phase 3<br/>Safety"]
+    P1["Phase 1<br/>The slice<br/>tests T0 to T6<br/>(done)"]:::done
+    P2["Phase 2<br/>The first organ<br/>tests T7, T8<br/>(done)"]:::done
+    P3["Phase 3<br/>Safety<br/>(next)"]:::next
     P4["Phase 4<br/>Triage +<br/>foresight"]
     P5["Phase 5<br/>Simultaneity"]
     P0 --> P1 --> P2 --> P3 --> P4 --> P5
     classDef partial fill:#ececec,stroke:#6b6b6b,stroke-width:1.5px,color:#111
     classDef next fill:#f6f6f6,stroke:#1b1b1b,stroke-width:3px,color:#111
+    classDef done fill:#e8f5e9,stroke:#2e7d32,stroke-width:1.5px,color:#111
 ```
 
 ---

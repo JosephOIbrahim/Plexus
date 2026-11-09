@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-labelledby="t">
+  <title id="t">Plexus</title>
+  <defs><clipPath id="band"><rect x="0" y="120" width="1200" height="120"/></clipPath></defs>
+  <g fill="none" stroke="#EDEBE6" stroke-width="2">
+    <path d="M483.00,0 L795.00,360"/>
+    <path d="M795.00,0 L483.00,360"/>
+  </g>
+  <g fill="none" stroke="#EDEBE6" stroke-width="15" stroke-linecap="butt" stroke-linejoin="miter">
+    <path d="M266.5,120 V240 M266.5,127.5 H301.25 A34.25,34.25 0 0 1 301.25,196 H266.5"/>
+    <path d="M388.5,120 V232.5 H449.0"/>
+    <path d="M543.0,127.5 H480.5 V232.5 H543.0 M480.5,180.0 H535.0"/>
+    <path d="M742.5,120 V196.0 A36.5,36.5 0 0 0 815.5,196.0 V120"/>
+    <path d="M929.70,141.43 A32.5,26.25 0 1 0 901.0,180.0 A32.5,26.25 0 1 1 872.30,218.57"/>
+    <g clip-path="url(#band)">
+      <path d="M483.00,0 L795.00,360"/>
+      <path d="M795.00,0 L483.00,360"/>
+    </g>
+  </g>
+  <circle cx="639.00" cy="180.0" r="11" fill="#E8452C"/>
+</svg>
