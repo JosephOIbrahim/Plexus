@@ -24,6 +24,20 @@ COLORSPACES = ("acescg", "srgb", "linear", "raw")
 INT64_MIN = -(2**63)
 INT64_MAX = 2**63 - 1
 HTTP_TIMEOUT_S = 60.0
+MIN_CALL_S = 0.5
+
+
+def _json(data: bytes, route: str) -> dict:
+    try:
+        return json.loads(data.decode('utf-8'))
+    except ValueError as e:
+        raise OrganError(f"{route}: the engine's reply is not JSON") from e
+
+
+def _call_timeout(deadline: float | None) -> float:
+    if deadline is None:
+        return HTTP_TIMEOUT_S
+    return max(MIN_CALL_S, min(HTTP_TIMEOUT_S, deadline - time.monotonic()))
 
 
 @dataclass(frozen=True)
@@ -57,6 +71,8 @@ class CozyOrgan(Organ):
     def submit(self, job: Job) -> JobHandle:
         if job.correlation_id in self._jobs:
             raise OrganError(f"Job with correlation id {job.correlation_id} already submitted")
+        if type(job.seed) is not int:
+            raise OrganError(f"Seed {job.seed!r} is not an int")
         if job.colorspace not in COLORSPACES:
             raise OrganError(f"Colorspace {job.colorspace} is not in {COLORSPACES}")
         if not (INT64_MIN <= job.seed <= INT64_MAX):
@@ -64,7 +80,9 @@ class CozyOrgan(Organ):
 
         graph = copy.deepcopy(job.graph)
         seed_written = False
-        for node in graph.values():
+        for node_id, node in graph.items():
+            if not isinstance(node, dict) or not isinstance(node.get('inputs'), dict) or 'class_type' not in node:
+                raise OrganError(f"Node {node_id} has no inputs or no class_type")
             for name in SEED_INPUTS:
                 if isinstance(node['inputs'].get(name), int):
                     node['inputs'][name] = job.seed
@@ -79,21 +97,15 @@ class CozyOrgan(Organ):
             req = urllib.request.Request(self._endpoint + '/prompt', data=body)
             req.add_header('Content-Type', 'application/json')
             with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as response:
-                result = json.loads(response.read().decode())
+                result = _json(response.read(), '/prompt')
         except urllib.error.HTTPError as e:
-            # For 4xx errors, include the body in the error message
-            if 400 <= e.code < 500:
-                try:
-                    error_body = json.loads(e.read().decode('utf-8'))
-                    raise OrganError(f"Failed to submit job to {self._endpoint}/prompt: {error_body}")
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    raise OrganError(f"Failed to submit job to {self._endpoint}/prompt: HTTP Error {e.code}: Bad Request")
-            else:
-                raise OrganError(f"Failed to submit job to {self._endpoint}/prompt: HTTP Error {e.code}: {str(e)}")
+            raise OrganError(f"/prompt refused the graph ({e.code}): {e.read().decode('utf-8', 'replace')}") from e
         except (urllib.error.URLError, OSError) as e:
             raise OrganError(f"Failed to submit job to {self._endpoint}/prompt: {str(e)}")
 
-        prompt_id = result['prompt_id']
+        prompt_id = result.get('prompt_id') if isinstance(result, dict) else None
+        if not prompt_id:
+            raise OrganError("/prompt: the engine's reply holds no prompt_id")
         self._jobs[job.correlation_id] = _Submitted(prompt_id, job.seed if seed_written else None, job.colorspace)
         return JobHandle(job.correlation_id)
 
@@ -103,7 +115,7 @@ class CozyOrgan(Organ):
             raise OrganError(f"Unknown job handle with correlation id {handle.correlation_id}")
         deadline = time.monotonic() + self._deadline_s
         while True:
-            entry = self._history_entry(job.prompt_id)
+            entry = self._history_entry(job.prompt_id, deadline)
             if time.monotonic() > deadline:
                 raise OrganError("Job timed out")
             if entry is None:
@@ -123,7 +135,7 @@ class CozyOrgan(Organ):
             raise OrganError(f"Unknown job handle with correlation id {handle.correlation_id}")
         deadline = time.monotonic() + self._deadline_s
         while True:
-            entry = self._history_entry(job.prompt_id)
+            entry = self._history_entry(job.prompt_id, deadline)
             if time.monotonic() > deadline:
                 raise OrganError("Job timed out")
             if entry is None:
@@ -136,7 +148,10 @@ class CozyOrgan(Organ):
 
         # Find the first image with type 'output'
         output_image = None
-        for node_outputs in entry['outputs'].values():
+        outputs = entry.get('outputs')
+        if not isinstance(outputs, dict):
+            raise OrganError("the engine's history entry holds no outputs")
+        for node_outputs in outputs.values():
             for img in node_outputs.get('images', []):
                 if img.get('type') == 'output':
                     output_image = img
@@ -167,17 +182,17 @@ class CozyOrgan(Organ):
     def _get_json(self, route: str) -> dict:
         """GET the endpoint plus route, as JSON. A URL or HTTP failure is an OrganError."""
         try:
-            with urllib.request.urlopen(self._endpoint + route, timeout=HTTP_TIMEOUT_S) as response:
-                return json.loads(response.read().decode())
+            with urllib.request.urlopen(self._endpoint + route, timeout=_call_timeout(None)) as response:
+                return _json(response.read(), route)
         except (urllib.error.URLError, OSError) as e:
             raise OrganError(f"Failed to GET {self._endpoint}{route}: {str(e)}")
 
-    def _history_entry(self, prompt_id: str) -> dict | None:
+    def _history_entry(self, prompt_id: str, deadline: float | None = None) -> dict | None:
         """This job's entry in /history/<prompt_id>, or None while the engine's history does not have it or the engine cannot answer."""
         try:
-            with urllib.request.urlopen(self._endpoint + f'/history/{prompt_id}', timeout=HTTP_TIMEOUT_S) as response:
-                result = json.loads(response.read().decode())
-                return result.get(prompt_id)
+            with urllib.request.urlopen(self._endpoint + f'/history/{prompt_id}', timeout=_call_timeout(deadline)) as response:
+                result = _json(response.read(), '/history')
+                return result.get(prompt_id) if isinstance(result, dict) else None
         except urllib.error.HTTPError as e:
             if 500 <= e.code:
                 # 5xx error, treat as not yet
