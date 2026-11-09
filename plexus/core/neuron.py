@@ -100,6 +100,12 @@ class _Ctx:
         if 'createdAt' in meta:
             values.append(("plexus:createdAt", meta['createdAt'], Sdf.ValueTypeNames.String))
 
+        # PROBE VALUES BEFORE WRITING TO EDIT LAYER
+        scratch = Sdf.Layer.CreateAnonymous()
+        probe = Sdf.CreatePrimInLayer(scratch, path)
+        for name, value, type_name in values:
+            _set_attr(probe, name, value, type_name)
+
         with rt._lock:
             with Sdf.ChangeBlock():
                 spec = Sdf.CreatePrimInLayer(layer, path)
