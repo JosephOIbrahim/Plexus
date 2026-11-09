@@ -776,7 +776,7 @@ def run_session(sessions_root, closed_url, script, *more):
 
 
 def test_a_real_session_wakes_the_neuron_and_project_b_reads_the_hint(core_loads, tmp_path, closed_url):
-    r = run_session(tmp_path, closed_url, "temp 1.05; temp 1.5; status; temp 0.5; status; bogus; temp x; quit; temp 9")
+    r = run_session(tmp_path, closed_url, "temp 1.05; temp 1.5; status; temp 0.5; status; bogus; temp x; quit; temp 9", "--no-organ")
     assert r.returncode == 0, r.stderr
     out = r.stdout
     assert "Project A wrote 1.05. The neuron stayed dormant." in out
