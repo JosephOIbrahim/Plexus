@@ -240,3 +240,56 @@ All of it is under `C:\Users\User\AppData\Local\Temp\claude\a1cf58fc35533771\0e8
 - `m2/frozen/` (R1's draft and its ladder driver `pass2.py`)
 - `m2/verify/logs/`
 - `m2/l2/` (R2's draft, its reference, `STEP_R2.md` and `PROOF.md`)
+
+## 7. After run 1: step R2b, and what the reviews found (Nov 9)
+
+**Run 1, on the CPU (`hserver.exe` counts as Houdini):** baseline 90 failing of 173 on `db2884c`.
+- Attempt 1, R1: kept as `baf0c01`, 90 to 51, 25.8 min, prompt read 433 s. Its method is R1's 52 lines exactly.
+- Attempt 2, R2: kept as `8654893`, 51 to 0, all 51 reply-shape cases flipped, nothing newly failing, 18.3 min, prompt read 258.9 s.
+- The run stopped: every target test passes. On the keep's tree, phase 2 reads 173 of 173 and phase 1 30 of 30.
+
+**The reviewer:** R1 keep, nothing hard or soft. R2 keep with a note, fix first:
+- Eight's last sentence was not made: `stream` and `result` still read `entry.get('status', {}).get('status_str')`, so a null status raises AttributeError. The parent raised it too, so it is no regression, but it is Joe's Nov 9 decision left undone.
+- Nine is defeated: `_history_entry`'s not-yet tuple gained `http.client.HTTPException`, against "Nothing else in the file changes", so the branch Nine added is never reached. A /history reply that breaks HTTP is read again until the deadline and reported as "Job timed out", the wrong cause: 600 s in the session, an hour by default. The frozen cases give a 1 s deadline, so they passed on the timeout.
+- A blank line after Two's first try, cosmetic.
+- The likely cause is the brief's line "`http.client.HTTPException`, which covers": "each HTTP call's except tuple names it" reads as that tuple too.
+
+**The adversary** confirmed both and widened them: an empty list, an empty string, 0 and false as the status escape the same way as null, and a prompt_id holding a space takes the timeout path too, through `InvalidURL`.
+
+**Step R2b.** Four lines, which make `cozy.py` the proved reference line for line:
+- In `submit`, the stray blank line goes.
+- In `stream` and `result`, the status reads become `(entry.get('status') or {}).get('status_str')`.
+- In `_history_entry`, `http.client.HTTPException` leaves the not-yet tuple.
+
+Its target is Joe's follow-up, `test_organ_history_reads.py`, 8 cases, sha256 `e1a49689…`, placed with `.plexus_loop/place_organ_history_test.sh`. The proof on `8654893`:
+- 8 of 8 fail on the keep.
+- With only the status reads, 2 pass; with only the tuple, the other 6. Each case reads its own line.
+- With the four lines, 8 of 8 pass and phase 2 reads 181 of 181, ten runs in a row.
+- Its first line credits Joe with the null ruling only; "at once" is R2's own text, Nine, so placing the file is Joe's yes to it.
+
+Mission-file changes, commit C4:
+- R2b is the third step, and its target is required and in context.
+- The brief says three steps and rewords the HTTPException line. It gains a null-status line, and its stale "300 s" metric limit now reads 600.
+- Two known fixes: `history status is null` hits the 2 null cases on the keep, and `again until the deadline` hits the other 6.
+- R2b's prompt, built by the harness's own `build_prompt` against the 95,000-character budget, leaves nothing out:
+  - first: 84,426 characters, about 21,100 tokens;
+  - after a drop that passed every gate, with `cozy.py` handed on: 92,390;
+  - after a drop at a gate: 89,214.
+  When `cozy.py` is handed on it is not in Files, so `neuron.py`, which R2b never touches, would be the first file left out.
+
+**Calls Claude made, by CLAUDE.md's "make the call, write the assumption":**
+1. An empty list, an empty string, 0 or false as the status reads as done, as null does. R2's Eight, `isinstance(entry.get('status') or {}, dict)`, which Joe chose, already lets them past the check, and the reads now agree with it. ComfyUI writes only null or an object. No case pins them. Null-only would change Eight's line, and that is Joe's call.
+2. R2b stays inside R2's own text. The adversary's new findings below are a candidate L3 lane with its own frozen test, Joe's pick when.
+3. The draft's waiting cases poll every 0.5 s, so about a dozen sockets open where a hundred did. While proving, two whole-phase-2 runs failed one test each with Windows' `WinError 10055`, socket buffers exhausted. The adversary's socket-heavy probes were running then, so the cause is not isolated. The ten whole-phase-2 runs since were clean.
+4. The adversary's new findings are in lines R2 did not change, and none is a regression, so Claude read them as nothing new for the merge Joe made conditional (Nov 9: "When the reviews land with nothing new, merge 8654893"). They do not change R2b. They are listed below for a later lane.
+
+**Candidate L3, from the adversary on `8654893`:** none is a regression from R2, and three were spot-checked (3, 4 and 8).
+1. A str prompt_id that is not ASCII raises `UnicodeEncodeError` at the history read; one holding `#` or `?` reads another URL and waits out the deadline.
+2. A JSON reply nested 100,000 deep raises `RecursionError` on every route: `_json` catches only `ValueError`.
+3. A redirect whose Location is `http://[::1` raises `ValueError` on every route.
+4. In `_fetch_file` the urlencode and the file write sit outside the try. A lone surrogate or a NUL in the name escapes, and on Windows so does a name Linux allows, such as `render_12:30:00_00001_.png`, with `OSError` 22.
+5. `/view`, `/system_stats` and `/object_info` reads use a fixed 60 s timeout, so a hung one holds `result()` past `deadline_s`. A /history reply that drips holds it past too, because the timeout is per read.
+6. A graph holding a lock or a generator raises `TypeError` from `copy.deepcopy` before the JSON check.
+7. Soft: a graph nested 3,000 deep, or a graph that is not a dict; the engine's job id on the exception chain (`__context__.url` after a 404, `__cause__.doc` after a non-JSON reply), which the brief's "say from e" invites and CONTRACT's no-id line forbids; a bad node beside a good image refuses the job while `stream()` says done; a /history reply that is JSON but not an object waits out the deadline.
+
+The adversary's probes are in `scratchpad\adv_8654893\`, and the reviewer's are in `scratchpad\review_or\`.
