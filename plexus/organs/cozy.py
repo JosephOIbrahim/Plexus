@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import http.client
 import json
 import time
 import urllib.error
@@ -94,18 +95,26 @@ class CozyOrgan(Organ):
 
         try:
             body = json.dumps({'prompt': graph}).encode('utf-8')
+        except (TypeError, ValueError) as e:
+            raise OrganError(f"The graph holds a value JSON cannot write: {e}") from e
+
+        try:
             req = urllib.request.Request(self._endpoint + '/prompt', data=body)
             req.add_header('Content-Type', 'application/json')
             with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as response:
                 result = _json(response.read(), '/prompt')
         except urllib.error.HTTPError as e:
-            raise OrganError(f"/prompt refused the graph ({e.code}): {e.read().decode('utf-8', 'replace')}") from e
-        except (urllib.error.URLError, OSError) as e:
+            try:
+                words = e.read().decode('utf-8', 'replace')
+            except (OSError, http.client.HTTPException):
+                words = ''
+            raise OrganError(f"/prompt refused the graph ({e.code}): {words}") from e
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
             raise OrganError(f"Failed to submit job to {self._endpoint}/prompt: {str(e)}")
 
         prompt_id = result.get('prompt_id') if isinstance(result, dict) else None
-        if not prompt_id:
-            raise OrganError("/prompt: the engine's reply holds no prompt_id")
+        if not isinstance(prompt_id, str) or not prompt_id:
+            raise OrganError("/prompt: the engine's reply holds no prompt_id that is a string")
         self._jobs[job.correlation_id] = _Submitted(prompt_id, job.seed if seed_written else None, job.colorspace)
         return JobHandle(job.correlation_id)
 
@@ -152,7 +161,10 @@ class CozyOrgan(Organ):
         if not isinstance(outputs, dict):
             raise OrganError("the engine's history entry holds no outputs")
         for node_outputs in outputs.values():
-            for img in node_outputs.get('images', []):
+            images = node_outputs.get('images', []) if isinstance(node_outputs, dict) else None
+            if not isinstance(images, list) or not all(isinstance(img, dict) for img in images):
+                raise OrganError("the engine's history entry holds outputs that are not objects with a list of image objects")
+            for img in images:
                 if img.get('type') == 'output':
                     output_image = img
                     break
@@ -183,16 +195,22 @@ class CozyOrgan(Organ):
         """GET the endpoint plus route, as JSON. A URL or HTTP failure is an OrganError."""
         try:
             with urllib.request.urlopen(self._endpoint + route, timeout=_call_timeout(None)) as response:
-                return _json(response.read(), route)
-        except (urllib.error.URLError, OSError) as e:
+                result = _json(response.read(), route)
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
             raise OrganError(f"Failed to GET {self._endpoint}{route}: {str(e)}")
+        if not isinstance(result, dict):
+            raise OrganError(f"{route}: the engine's reply is not a JSON object")
+        return result
 
     def _history_entry(self, prompt_id: str, deadline: float | None = None) -> dict | None:
         """This job's entry in /history/<prompt_id>, or None while the engine's history does not have it or the engine cannot answer."""
         try:
             with urllib.request.urlopen(self._endpoint + f'/history/{prompt_id}', timeout=_call_timeout(deadline)) as response:
                 result = _json(response.read(), '/history')
-                return result.get(prompt_id) if isinstance(result, dict) else None
+                entry = result.get(prompt_id) if isinstance(result, dict) else None
+                if entry is not None and (not isinstance(entry, dict) or not isinstance(entry.get('status') or {}, dict)):
+                    raise OrganError("/history: the engine's entry for this job, or its status, is not a JSON object")
+                return entry
         except urllib.error.HTTPError as e:
             if 500 <= e.code:
                 # 5xx error, treat as not yet
@@ -202,13 +220,17 @@ class CozyOrgan(Organ):
                 raise OrganError(f"/history: {e}")
             else:
                 raise OrganError(f"/history: {e}")
-        except (urllib.error.URLError, OSError) as e:
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
             # URLError or OSError means no connection or timeout
             return None
+        except http.client.HTTPException as e:
+            raise OrganError(f"/history: the engine's reply is not HTTP the organ can read ({type(e).__name__})") from e
 
     def _fetch_file(self, image: dict) -> Path:
         """GET /view for one output and write it under output_dir. Returns the path of the file on disk."""
-        filename = image['filename']
+        filename = image.get('filename')
+        if not isinstance(filename, str):
+            raise OrganError("the engine's output image names no filename that is a string")
         subfolder = image.get('subfolder', '')
         type_ = image.get('type', 'output')
         query = urllib.parse.urlencode({
@@ -220,7 +242,7 @@ class CozyOrgan(Organ):
         try:
             with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_S) as response:
                 data = response.read()
-        except (urllib.error.URLError, OSError) as e:
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
             raise OrganError(f"Failed to fetch image {filename}: {str(e)}")
 
         # Generate a unique filename to avoid overwrites
@@ -235,18 +257,21 @@ class CozyOrgan(Organ):
         info = self._get_json('/object_info')
 
         # Hash only the required fields
-        fingerprint_data = {
-            'system': {
-                'os': system['system']['os'],
-                'comfyui_version': system['system']['comfyui_version'],
-                'python_version': system['system']['python_version'],
-                'pytorch_version': system['system']['pytorch_version']
-            },
-            'devices': [
-                {'name': d['name'], 'type': d['type']} for d in system['devices']
-            ],
-            'node_classes': sorted(info.keys())
-        }
+        try:
+            fingerprint_data = {
+                'system': {
+                    'os': system['system']['os'],
+                    'comfyui_version': system['system']['comfyui_version'],
+                    'python_version': system['system']['python_version'],
+                    'pytorch_version': system['system']['pytorch_version']
+                },
+                'devices': [
+                    {'name': d['name'], 'type': d['type']} for d in system['devices']
+                ],
+                'node_classes': sorted(info.keys())
+            }
+        except (KeyError, TypeError) as e:
+            raise OrganError(f"/system_stats: the engine's reply lacks a field the fingerprint reads: {e!r}") from e
 
         fingerprint_json = json.dumps(fingerprint_data, sort_keys=True)
         return hashlib.sha256(fingerprint_json.encode()).hexdigest()
