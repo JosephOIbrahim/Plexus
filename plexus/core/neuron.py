@@ -180,6 +180,59 @@ class NeuronRuntime:
         self._neurons[name] = record
         return handle
 
+    def publish_organ(self, profile) -> Sdf.Path:
+        """Author an organ's profile as one prim on this participant's edit layer and return its path.
+
+        The host calls it, usually once at startup with the organ's profile, the way it calls register().
+        Every field is read and checked first, so a profile that cannot land raises with nothing authored.
+        """
+        root = "/Plexus/Organs"
+        organ_id = profile.organ_id
+        kind = profile.kind
+        endpoint = profile.endpoint
+        capabilities = profile.capabilities
+        cost_hint = profile.cost_hint
+        for field, value in (("organ_id", organ_id), ("kind", kind), ("endpoint", endpoint), ("cost_hint", cost_hint)):
+            if not isinstance(value, str):
+                raise TypeError(f"profile.{field} must be a str, got {type(value).__name__}: {value!r}")
+        if not isinstance(capabilities, (list, tuple)):
+            raise TypeError(f"profile.capabilities must be a list or tuple of str, got {type(capabilities).__name__}: {capabilities!r}")
+        for item in capabilities:
+            if not isinstance(item, str):
+                raise TypeError(f"profile.capabilities must hold only str, got {type(item).__name__}: {item!r}")
+        definition = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition("PlexusOrganAPI")
+        if definition is None:
+            raise RuntimeError("USD's schema registry lacks PlexusOrganAPI. Import plexus before anything builds the registry, or set PXR_PLUGINPATH_NAME to plexus.schema.plugin_dir().")
+        for name, value in (("plexus:kind", kind), ("plexus:costHint", cost_hint)):
+            allowed = definition.GetAttributeDefinition(name).GetMetadata("allowedTokens")
+            if value not in allowed:
+                raise ValueError(f"{name} {value!r} is not one of PlexusOrganAPI's allowed tokens: {', '.join(allowed)}")
+        if not Sdf.Path.IsValidIdentifier(organ_id):
+            raise ValueError(f"profile.organ_id {organ_id!r} is not a valid prim name: it must be a USD identifier, a letter or underscore followed by letters, digits or underscores.")
+        path = Sdf.Path(root).AppendChild(organ_id)
+        values = [
+            ("plexus:organId", organ_id, Sdf.ValueTypeNames.String),
+            ("plexus:kind", kind, Sdf.ValueTypeNames.Token),
+            ("plexus:endpoint", endpoint, Sdf.ValueTypeNames.String),
+            ("plexus:capabilities", sorted(capabilities), Sdf.ValueTypeNames.StringArray),
+            ("plexus:costHint", cost_hint, Sdf.ValueTypeNames.Token),
+        ]
+        scratch = Sdf.Layer.CreateAnonymous()
+        probe = Sdf.CreatePrimInLayer(scratch, path)
+        for name, value, type_name in values:
+            _set_attr(probe, name, value, type_name)
+        layer = self.edit_layer
+        with self._lock:
+            with Sdf.ChangeBlock():
+                spec = Sdf.CreatePrimInLayer(layer, path)
+                for prefix in path.GetPrefixes():
+                    layer.GetPrimAtPath(prefix).specifier = Sdf.SpecifierDef
+                spec.SetInfo("apiSchemas", Sdf.TokenListOp.Create(prependedItems=["PlexusOrganAPI"]))
+                for name, value, type_name in values:
+                    _set_attr(spec, name, value, type_name)
+            layer.Save()
+        return path
+
     def start(self) -> None:
         if self._axon is not None:
             return
