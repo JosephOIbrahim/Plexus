@@ -131,7 +131,7 @@ class CozyOrgan(Organ):
                 yield Progress(handle.correlation_id, 'queued')
                 time.sleep(self._poll_s)
                 continue
-            status = entry.get('status', {}).get('status_str')
+            status = (entry.get('status') or {}).get('status_str')
             if status == 'error':
                 yield Progress(handle.correlation_id, 'failed')
                 return
@@ -150,7 +150,7 @@ class CozyOrgan(Organ):
             if entry is None:
                 time.sleep(self._poll_s)
                 continue
-            status = entry.get('status', {}).get('status_str')
+            status = (entry.get('status') or {}).get('status_str')
             if status == 'error':
                 raise OrganError("the engine failed this job")
             break
@@ -220,7 +220,7 @@ class CozyOrgan(Organ):
                 raise OrganError(f"/history: {e}")
             else:
                 raise OrganError(f"/history: {e}")
-        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
+        except (urllib.error.URLError, OSError) as e:
             # URLError or OSError means no connection or timeout
             return None
         except http.client.HTTPException as e:
