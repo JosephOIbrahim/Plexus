@@ -6,7 +6,9 @@
 
 **Blockers:** none. `hserver.exe` keeps attempts on the CPU. <!-- src:0e857ac5 date:2026-11-11 -->
 
-**Energy required:** low to pick; M3.1 is a draft-prove-place-run cycle like M3. Still Joe's: whether `mission/organ-lifecycle` becomes the default branch, and the README's alpha.7 numbers. <!-- src:0e857ac5 date:2026-11-11 -->
+**Energy required:** low to pick; M3.1 is a draft-prove-place-run cycle like M3. <!-- src:0e857ac5 date:2026-11-11 -->
+
+**Housekeeping (Nov 11, on Joe's "take care of housekeeping"):** the README now reads alpha.9 (30 of 30, 215 of 215, five missions, the six new phase 2 files and the live file, the live job test's last pass stated as before alpha.8), and `mission/organ-lifecycle` is the default branch (undo: `gh repo edit --default-branch mission/organ`). Left for Joe: `main` is an ancestor of the mission branch (268 commits behind), so a PR of his would fast-forward it and end the per-mission default moves; `ci.yml` runs only on `main`/`master`, so mission branches get no CI; `docs/plexus/DIAGRAMS.md:25` still reads phase 2 69 of 69 at alpha.6 (his folder); alpha.9's published notes say `mission/organ` is the default, true when published; PRs #2 and #3 (logo branches into `main`) are still open. <!-- src:0e857ac5 date:2026-11-11 -->
 
 ---
 
