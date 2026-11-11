@@ -388,6 +388,7 @@ def test_houdini_state_from_process_list(monkeypatch):
     assert houdini_state(lambda: ["explorer.exe", "houdinifx.exe"]) == "running"
     assert houdini_state(lambda: ["bash", "hython"]) == "running"
     assert houdini_state(lambda: ["bash", "code"]) == "absent"
+    assert houdini_state(lambda: ["bash", "hserver.exe", "sesinetd.exe"]) == "absent"  # licence helpers are not Houdini
     assert houdini_state(list) == "unknown"
 
     def broken():

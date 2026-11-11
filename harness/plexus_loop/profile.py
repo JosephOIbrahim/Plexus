@@ -22,8 +22,11 @@ from .mission import HoudiniPolicy
 # any ".exe" removed.
 HOUDINI_PROCESS_NAMES = frozenset({
     "houdini", "houdinifx", "houdinicore", "happrentice", "hindie",
-    "hython", "hbatch", "husk", "hserver", "houdini-bin", "houdinifx-bin",
+    "hython", "hbatch", "husk", "houdini-bin", "houdinifx-bin",
 })
+# hserver is left out on purpose (Nov 10). It is the licence helper, and on this machine it runs as a
+# Windows service whether or not Houdini is open, so counting it kept every attempt on the CPU.
+# sesinetd, the licence server, was never counted either.
 
 # Lets a test, or Joe, force the answer: "running", "absent" or "unknown".
 OVERRIDE_ENV = "PLEXUS_LOOP_HOUDINI"

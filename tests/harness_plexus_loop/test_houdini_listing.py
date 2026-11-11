@@ -20,11 +20,12 @@ OTHERS = '"System Idle Process","0","Services","0","8 K"\n"explorer.exe","9000",
 
 @pytest.mark.parametrize("listing, state", [
     (OTHERS + '"houdinifx.exe","4242","Console","1","2,048,000 K"\n', "running"),
-    (OTHERS + '"HServer.EXE","4243","Console","1","20,000 K"\n', "running"),
+    (OTHERS + '"HYthon.EXE","4243","Console","1","20,000 K"\n', "running"),
+    (OTHERS + '"hserver.exe","4244","Services","0","20,000 K"\n"sesinetd.exe","4245","Services","0","9,000 K"\n', "absent"),
     (OTHERS, "absent"),
     ("INFO: No tasks are running which match the specified criteria.\n", "unknown"),
     (None, "unknown"),
-], ids=["houdini", "another case, another tool", "clearly absent", "no process lines", "the reader died"])
+], ids=["houdini", "another case, another tool", "the licence helpers alone", "clearly absent", "no process lines", "the reader died"])
 def test_the_listing_is_read_as_tasklist_prints_it(monkeypatch, listing, state):
     with monkeypatch.context() as mp:  # undone here: the shared fixtures' teardown runs later and imports modules
         mp.delenv("PLEXUS_LOOP_HOUDINI", raising=False)
