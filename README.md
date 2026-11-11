@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  OpenUSD runtime &nbsp;·&nbsp; Rust core, Python around it &nbsp;·&nbsp; <code>plexus-0.1.0-alpha.9</code> &nbsp;·&nbsp; <a href="LICENSE">MIT</a>
+  OpenUSD runtime &nbsp;·&nbsp; Rust core, Python around it &nbsp;·&nbsp; <code>plexus-0.1.0-alpha.10</code> &nbsp;·&nbsp; <a href="LICENSE">MIT</a>
 </p>
 
 ---
@@ -23,8 +23,8 @@
 
 | | |
 |---|---|
-| **Where it stands** | As of `plexus-0.1.0-alpha.9`, Phase 1 and Phase 2 are done. Every frozen phase 1 and phase 2 test passes: **30 of 30** and **215 of 215**. Organs sit on the stage, and Plexus can start, stop and measure a ComfyUI through comfy-cli. |
-| **What's next** | Mission M3.1: each ComfyUI that Plexus starts gets its own folders, and the lifecycle's known gaps close. Phase 3, Safety, is still ahead. The latest state is in [`harness/CAPSULE.md`](harness/CAPSULE.md). |
+| **Where it stands** | As of `plexus-0.1.0-alpha.10`, Phase 1 and Phase 2 are done. Every frozen phase 1 and phase 2 test passes on Windows: **30 of 30** and **235 of 235**. Organs sit on the stage, and Plexus can start, stop and measure a ComfyUI through comfy-cli. Given an instance folder, that ComfyUI keeps its own user folder, database, temp folder and output; on Windows its process tree is held in a Job Object. |
+| **What's next** | Mission M3.2, `organ-hardening`: the gaps alpha.10 left open in `CozyLifecycle`. Phase 3, Safety, is still ahead. The latest state is in [`harness/CAPSULE.md`](harness/CAPSULE.md). |
 | **Start here** | [01 · The idea](#01--the-idea) for why, [05 · Run it](#05--run-it) for how. |
 
 *Plexus is a working title.*
@@ -51,7 +51,7 @@
 flowchart LR
     P0["Phase 0<br/>Seed + contracts<br/>partly done"]:::part
     P1["Phase 1<br/>The slice<br/>T0 – T6 · 30 of 30"]:::done
-    P2["Phase 2<br/>The first organ<br/>T7 + T8 · 215 of 215"]:::done
+    P2["Phase 2<br/>The first organ<br/>T7 + T8 · 235 of 235"]:::done
     P3["Phase 3<br/>Safety"]:::next
     P4["Phase 4<br/>Triage + foresight"]
     P5["Phase 5<br/>Simultaneity"]
@@ -64,10 +64,10 @@ flowchart LR
 | Done | Not yet |
 |---|---|
 | **Phase 1:** schemas, propagation in under 250 ms, predicates, budgets, provenance, the publication gate, truth on disk | **The four contracts:** Safety, Memory, Ledger, Composer |
-| **Phase 2:** the ComfyUI organ behind the organ contract, `ctx.author_asset`, organs on the stage (`publish_organ`, `publish_organ_state`), ComfyUI's lifecycle through comfy-cli (`CozyLifecycle`), and a core with no engine words in it | **A real engine on every release:** the frozen tests run against a fake ComfyUI. The live job test (`tests/acceptance/live/`, 5 cases) last passed on the organ from mission `organ-live`, before alpha.8, and has not run since. `CozyLifecycle` ran by hand against the real comfy-cli on Nov 11 |
-| **The build harness**, `harness/plexus_loop/`, with five missions run: `acceptance`, `organ`, `organ-live`, `organ-registry` and `organ-lifecycle` | **Packaging:** nothing is on `main` yet |
+| **Phase 2:** the ComfyUI organ behind the organ contract, `ctx.author_asset`, organs on the stage (`publish_organ`, `publish_organ_state`), ComfyUI's lifecycle through comfy-cli (`CozyLifecycle`), an instance folder per ComfyUI and a Job Object around its process tree, and a core with no engine words in it | **A real engine on every release:** the frozen tests run against a fake ComfyUI. The live job test (`tests/acceptance/live/`, 5 cases) last passed on the organ from mission `organ-live`, before alpha.8, and has not run since. `CozyLifecycle` ran by hand against the real comfy-cli three times on Nov 11, the last on alpha.10's code with an instance folder (11 of 11 checks) |
+| **The build harness**, `harness/plexus_loop/`, with six missions run: `acceptance`, `organ`, `organ-live`, `organ-registry`, `organ-lifecycle` and `organ-isolation` | **Packaging:** nothing is on `main` yet |
 
-**Releases:** pre-releases only, tagged `plexus-*` on the mission branch. The latest is [`plexus-0.1.0-alpha.9`](https://github.com/JosephOIbrahim/Plexus/releases/tag/plexus-0.1.0-alpha.9). Where the last session stopped: [`harness/CAPSULE.md`](harness/CAPSULE.md).
+**Releases:** pre-releases only, tagged `plexus-*` on the mission branch. The latest is [`plexus-0.1.0-alpha.10`](https://github.com/JosephOIbrahim/Plexus/releases/tag/plexus-0.1.0-alpha.10). Where the last session stopped: [`harness/CAPSULE.md`](harness/CAPSULE.md).
 
 ---
 
@@ -174,6 +174,7 @@ More pictures, including the Rust and Python notice path: **[docs/plexus/DIAGRAM
 | `phase2/test_organ_history_reads.py` | 8 cases: a null history status reads as done, and a broken `/history` reply fails at once. |
 | `phase2/test_organ_state.py` | 15 cases: `publish_organ_state` puts an organ's lifecycle on its prim, and a neuron wakes on it. |
 | `phase2/test_organ_lifecycle.py` | 19 cases: `CozyLifecycle` starts, stops and measures ComfyUI through a fake comfy-cli, and never touches port 8188. |
+| `phase2/test_organ_isolation.py` | 20 cases: an instance folder keeps ComfyUI's user folder, database, temp folder and output out of the workspace, and on Windows nothing the lifecycle started outlives `stop()` or its host. |
 | `live/test_organ_live.py` | 5 cases against a real ComfyUI. Marked `integration`, so it runs only by hand. |
 | `CONTRACT.md` | The Python surface every test calls. Everything below it is free. |
 
