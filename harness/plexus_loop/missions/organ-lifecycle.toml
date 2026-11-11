@@ -1,0 +1,354 @@
+# Fifth Plexus mission, M3: ComfyUI's lifecycle through comfy-cli as organ state on the stage. It scores Joe's two frozen files:
+# test_organ_state.py, which reads plexus:lifecycle, the one token NeuronRuntime.publish_organ_state(organ_id, state) authors on the organ prim
+# /Plexus/Organs/<organId> that publish_organ defined (step L1, neuron.py), and test_organ_lifecycle.py, which runs CozyLifecycle against a fake
+# comfy command on ports the operating system hands out and reads every report, the argv, the environment, stdin, the log and the process tree
+# (step L2, cozy.py). The rest of phase 2 stays green. The real comfy-cli and ComfyUI are run by hand only, after the keep, with Joe present
+# (decision D4). Plan: missions/organ-lifecycle.plan.md. Joe's five decisions (plan section 1) are drafted with their recommended options.
+
+[mission]
+name = "organ-lifecycle"
+goal = "Make Joe's frozen tests/acceptance/phase2/test_organ_state.py and test_organ_lifecycle.py pass, one step and one file at a time: step L1 adds NeuronRuntime.publish_organ_state to plexus/core/neuron.py, so a host puts an organ's lifecycle state, stopped, starting, ready or unavailable, on the organ's prim as plexus:lifecycle and a neuron in the same process wakes on it, and step L2 appends CozyLifecycle to plexus/organs/cozy.py, which starts, stops and measures one ComfyUI through comfy-cli in the foreground and hands each measurement to the host's report callback. Break no other phase 2 test and no phase 1 test. tests/acceptance/CONTRACT.md is the Python surface; harness/plexus_loop/missions/organ-lifecycle.worker.md says what each step is."
+# Both targets are Joe's to place (C0), so a run cannot start before they land. T7 is required as in M2. The gate's own test stays required:
+# the gate's --may-add is what lets L1's one new name in.
+requires = ["tests/acceptance/phase2/test_organ_state.py", "tests/acceptance/phase2/test_organ_lifecycle.py", "tests/acceptance/phase2/test_t7_round_trip.py", "tests/acceptance/phase1", "tests/harness_plexus_loop/test_neuron_unchanged.py"]
+# Two files, one per step. The rest of plexus/, crates/** and Cargo.toml are out, so a reply that touches them drops before anything runs.
+focus = ["plexus/core/neuron.py", "plexus/organs/cozy.py"]
+frozen = ["tests/acceptance/**", "harness/**", "docs/plexus/**", "PLEXUS_SPEC.md", ".github/**", "pyproject.toml"]
+# No frozen test file is in context (DESIGN section 5, M2's lesson: the 33,767-character registry test pushed cozy.py out of R2's prompt).
+# Each step's text gives every new line, and every failure text quotes the CONTRACT sentence it reads, so the failures carry the specifics.
+# The plan's section 4 has the measured prompts: nothing is left out on any of the six.
+context = [
+  "harness/plexus_loop/missions/organ-lifecycle.worker.md",
+  "tests/acceptance/CONTRACT.md",
+]
+
+[metric]
+kind = "pytest_failures"
+target = "tests/acceptance/phase2"
+direction = "lower"
+min_delta = 1
+# Phase 2 with both references took about 98 to 109 s on Nov 10 (215 items; the two new files about 77 s of it). Every call into the new surface
+# runs on a daemon thread joined under a limit (10 s a publish or a construct, 20 s a start or a stop), so a hanging reply costs about 20 s a
+# case over 34 cases, inside 600 s. A right reply never nears it.
+timeout_s = 600
+
+# Gates run in this order before the metric. Cheapest and most structural first.
+[[gates]]
+name = "layers"
+cmd = ["python", "-m", "pytest", "-q", "harness/plexus_loop/guards"]
+timeout_s = 600
+
+# L1 sends neuron.py whole, and most of its lines are read by no frozen test. This reads the parsed code against the last kept commit: every
+# statement stands, and the file gains NeuronRuntime.publish_organ_state alone. --may-add replaces M2's NeuronRuntime.publish_organ, so a change
+# to publish_organ now drops too. L2 does not touch neuron.py, so the gate passes it as it stands.
+[[gates]]
+name = "neuron_unchanged"
+cmd = ["python", "-I", "harness/plexus_loop/neuron_unchanged.py", "--may-add", "NeuronRuntime.publish_organ_state"]
+timeout_s = 120
+
+[[gates]]
+name = "core"
+cmd = ["python", "harness/plexus_loop/build_core.py"]
+timeout_s = 1800
+
+[[gates]]
+name = "predicate_smoke"
+cmd = ["python", "-I", "harness/plexus_loop/predicate_smoke.py"]
+timeout_s = 120
+
+[[gates]]
+name = "cargo"
+cmd = ["cargo", "test", "--workspace", "--quiet"]
+timeout_s = 1800
+
+# The same narrowed set as missions acceptance, organ, organ-live and organ-registry, Joe's word of Nov 1, with the gate's own test.
+# Dropping it is Joe's call.
+[[gates]]
+name = "unit"
+cmd = ["python", "-m", "pytest", "-q", "-x", "-m", "not integration",
+       "tests/harness_plexus_loop", "tests/test_portability_guards.py",
+       "tests/test_workflow_patch_engine_live.py"]
+timeout_s = 1800
+
+[worker]
+kind = "ollama"
+model = "qwen3-coder:30b"
+host = "http://127.0.0.1:11434"
+# M2's block. neuron.py whole with the method is 19,120 characters and cozy.py with the block 19,291, about 4,800 tokens to write;
+# at the worst write rate on record, 1.54 tokens a second, that is about 3,100 s, and the prompt read adds about 1,000 s. 4800 as before.
+timeout_s = 4800
+context_chars = 95000
+num_ctx = 49152
+
+# "first" takes the earliest ready step: L1 has every attempt until its targets pass, and L2 names after = ["L1"], because its bridge cases
+# (LB1, LB11) call publish_organ_state. No key is needed.
+[router]
+kind = "first"
+
+# L1 and L2: the reference implementer's text (m3/reference/STEPS.md), verbatim. Every non-blank added line of each reference diff is a whole
+# line of its step's text.
+[[steps]]
+id = "L1"
+targets = ["tests/acceptance/phase2/test_organ_state.py"]
+files = ["plexus/core/neuron.py"]
+text = '''Your reply is exactly one ```file:plexus/core/neuron.py block holding the whole file, from its first line to its last, and never a ```diff block. Start from the copy of plexus/core/neuron.py under Files and change only what this step names: it adds one method, NeuronRuntime.publish_organ_state, and nothing else. Every other line stays exactly as it is, publish_organ, register, start, _on_event, _run_action, _Ctx.author and _Ctx.author_asset above all, because the neuron_unchanged gate compares your file's code with the last kept commit and drops any other change, a new import, a module-level constant or a new helper included. The method needs nothing new: Sdf is already imported from pxr, and _set_attr already exists. No Rust change, no change to plexus/organs/cozy.py, and write no new tests. Frozen test_organ_state.py publishes an organ with publish_organ, then hands the runtime that organ's lifecycle state and reads plexus:lifecycle on the organ prim, in the edit layer's file and on the stage, and today its cases fail with AttributeError: 'NeuronRuntime' object has no attribute 'publish_organ_state'. Where it goes: inside class NeuronRuntime, after the last line of publish_organ, return path, and one blank line, and before the line def start(self) -> None:, with one blank line after it. These are its lines, exactly as written here, the def at four spaces like publish_organ's and the body at eight:
+
+    def publish_organ_state(self, organ_id: str, state: str) -> Sdf.Path:
+        """Author an organ's lifecycle as plexus:lifecycle on its prim in this participant's edit layer and return the prim's path.
+
+        The host calls it with each state its engine's lifecycle reports, for an organ this runtime published. It authors nothing else
+        on the prim, so it and publish_organ never undo each other. Every value is checked first, so a state that cannot land raises
+        with nothing authored.
+        """
+        states = ("stopped", "starting", "ready", "unavailable")
+        for field, value in (("organ_id", organ_id), ("state", state)):
+            if not isinstance(value, str):
+                raise TypeError(f"{field} must be a str, got {type(value).__name__}: {value!r}")
+        if state not in states:
+            raise ValueError(f"state {state!r} is not one of {', '.join(states)}")
+        if not Sdf.Path.IsValidIdentifier(organ_id):
+            raise ValueError(f"organ_id {organ_id!r} is not a valid prim name: it must be a USD identifier, a letter or underscore followed by letters, digits or underscores.")
+        path = Sdf.Path("/Plexus/Organs").AppendChild(organ_id)
+        layer = self.edit_layer
+        with self._lock:
+            spec = layer.GetPrimAtPath(path)
+            if not spec or "PlexusOrganAPI" not in spec.GetInfo("apiSchemas").prependedItems:
+                raise ValueError(f"{path} is not published in {self._participant_id}'s edit layer, so its state cannot land here. "
+                                 f"Call publish_organ first: a runtime writes the state only of an organ it published.")
+            with Sdf.ChangeBlock():
+                _set_attr(spec, "plexus:lifecycle", state, Sdf.ValueTypeNames.Token)
+            layer.Save()
+        return path
+
+Why each part is there, so none is dropped: organ_id and state are checked with isinstance and never coerced, so a value that is not a str raises TypeError; the four states are a tuple inside the method, never a module-level constant, and a state outside them, "failed" and "Ready" included, raises ValueError; the organ id is checked with Sdf.Path.IsValidIdentifier, as publish_organ checks it, and raises ValueError; every check runs before anything is authored, so a value that cannot land raises with nothing authored. Under self._lock the method reads the organ's prim spec in this runtime's own edit layer with layer.GetPrimAtPath and raises ValueError unless that spec prepends PlexusOrganAPI, so a runtime writes the state only of an organ it published itself; it never creates the prim and never calls Sdf.CreatePrimInLayer. It authors one attribute, plexus:lifecycle, as a token, through _set_attr inside an Sdf.ChangeBlock, so a second state replaces the first; it sets no apiSchemas, none of publish_organ's five attributes and no plexus:sourceLayer, so publish_organ and it never undo each other. layer.Save() runs inside with self._lock, after the ChangeBlock, so the state is in the file as it lands and a neuron in this process wakes on it. The prim's Sdf.Path is returned. neuron.py still never imports plexus.organs, even for a type hint, and never names an organ kind, in code, comments or strings. The reply must differ from that copy of neuron.py in those lines and in no others.'''
+
+[[steps]]
+id = "L2"
+after = ["L1"]
+targets = ["tests/acceptance/phase2/test_organ_lifecycle.py"]
+files = ["plexus/organs/cozy.py"]
+text = '''Your reply is exactly one ```file:plexus/organs/cozy.py block holding the whole file, from its first line to its last, and never a ```diff block. Start from the copy of plexus/organs/cozy.py under Files and change only what this step names: it widens two import lines and appends one block after the file's last line. Every line of CozyOrgan and of every helper and constant above it stays exactly as it is, because T7, T8, test_organ_surface.py, test_organ_malformed.py, test_organ_reply_shapes.py, test_organ_history_reads.py and the run against a real ComfyUI already pass on it. Step L1 is kept: NeuronRuntime.publish_organ_state is in plexus/core/neuron.py, and cozy.py does not import it or anything from plexus.core. Do not change neuron.py. Write no new tests. Frozen test_organ_lifecycle.py builds a CozyLifecycle on ports the operating system hands out, runs a fake comfy command in place of comfy-cli, and reads every report, the argv, the environment, stdin, the log and the process tree, and today its cases fail with ImportError: cannot import name 'CozyLifecycle' from 'plexus.organs.cozy'. These are the three changes, in the order they sit in the file.
+
+One: four new lines, import os, import signal, import socket and import subprocess, go between import json and import time, in that order. Two: the line from collections.abc import Iterator becomes from collections.abc import Callable, Iterator, Sequence. After both, the import lines above from dataclasses import dataclass read exactly:
+
+import copy
+import hashlib
+import http.client
+import json
+import os
+import signal
+import socket
+import subprocess
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+from collections.abc import Callable, Iterator, Sequence
+
+The lines from dataclasses import dataclass, from datetime import datetime, timezone, from pathlib import Path and the from plexus.organs.protocol import line stay as they are: the block uses Path and OrganError from them, and they are already there.
+
+Three: after the file's last line, return hashlib.sha256(fingerprint_json.encode()).hexdigest(), which ends CozyOrgan._env_fingerprint, come two blank lines and then this block, at module level, exactly as written here: the six constants, def _port_open and class CozyLifecycle at column zero, the methods at four spaces and their bodies at eight. It is the last thing in the file:
+
+LISTEN = '127.0.0.1'
+PORT_S = 1.0
+STATS_S = 5.0
+CHILD_ENV_DROP = ('COMFY_CLI_BACKGROUND', 'COMFY_OUTPUT', 'VIRTUAL_ENV', 'CONDA_PREFIX', 'PYTHONPATH', 'PYTHONHOME', 'PXR_PLUGINPATH_NAME')
+CHILD_ENV_SET = {'COMFY_NO_TELEMETRY': '1', 'DO_NOT_TRACK': '1', 'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'}
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _port_open(port: int) -> bool:
+    """True when something accepts a TCP connection on LISTEN:port within PORT_S."""
+    try:
+        with socket.create_connection((LISTEN, port), timeout=PORT_S):
+            return True
+    except OSError:
+        return False
+
+
+class CozyLifecycle:
+    """Starts, stops and measures one ComfyUI on 127.0.0.1:<port> through comfy-cli in the foreground, beside the organ contract.
+
+    It owns only the process tree its own start() spawned, and never uses comfy-cli's background slot or its stop command, which
+    are user-wide. Each measurement goes to report(state); the host points report at NeuronRuntime.publish_organ_state.
+    """
+
+    def __init__(self, workspace: Path, port: int, *, command: Sequence[str], report: Callable[[str], object],
+                 extra: Sequence[str] = (), log: Path | None = None, ready_s: float = 300.0, stop_s: float = 30.0,
+                 poll_s: float = 0.5):
+        self._workspace = Path(workspace)
+        self._port = port
+        self._command = list(command)
+        self._report = report
+        self._extra = list(extra)
+        self._log = log
+        self._ready_s = ready_s
+        self._stop_s = stop_s
+        self._poll_s = poll_s
+        self._proc = None
+        self.endpoint = f'http://{LISTEN}:{port}'
+        self.probe()  # a state an earlier process left on the stage is replaced before the constructor returns
+
+    def probe(self) -> str:
+        """Measure now, report it, return it."""
+        return self._tell(self._measure())
+
+    def start(self) -> str:
+        state = self._measure()
+        if state == 'ready':
+            return self._tell('ready')
+        if state == 'unavailable':
+            self._tell('unavailable')
+            raise OrganError(f"port {self._port} answers, but not as ComfyUI, so nothing was started there")
+        if state == 'stopped':
+            self._spawn()
+        deadline = time.monotonic() + self._ready_s
+        while True:
+            if self._measure() == 'ready':
+                return self._tell('ready')
+            code = self._proc.poll()
+            if code is not None:
+                self._proc = None
+                self._tell('unavailable')
+                where = f"its output is in {self._log}" if self._log is not None else "its output was discarded"
+                raise OrganError(f"comfy-cli exited with code {code} before ComfyUI answered on port {self._port}; {where}")
+            if time.monotonic() > deadline:
+                try:
+                    self._kill()
+                finally:
+                    self._tell('unavailable')
+                raise OrganError(f"ComfyUI did not answer on port {self._port} within {self._ready_s:g} s, so its process tree was killed")
+            time.sleep(self._poll_s)
+
+    def stop(self) -> str:
+        if self._proc is None:
+            raise OrganError(f"this lifecycle holds no process it started on port {self._port}, so it stops nothing")
+        try:
+            self._kill()
+        finally:
+            state = self._tell(self._measure())
+        return state
+
+    def _spawn(self) -> None:
+        main = self._workspace / 'main.py'
+        if not main.is_file():
+            self._tell('unavailable')
+            raise OrganError(f"Unavailable: {main} is not a file, so {self._workspace} is not a ComfyUI workspace and nothing was started")
+        argv = [*self._command, '--skip-prompt', f'--workspace={self._workspace}', 'launch', '--',
+                '--listen', LISTEN, '--port', str(self._port), *self._extra]
+        env = {k: v for k, v in os.environ.items() if k.upper() not in CHILD_ENV_DROP}
+        env.update(CHILD_ENV_SET)
+        if os.name == 'nt':
+            group = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+        else:
+            group = {'start_new_session': True}
+        self._tell('starting')
+        out = open(self._log, 'ab') if self._log is not None else subprocess.DEVNULL
+        try:
+            self._proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                                          cwd=str(self._workspace), env=env, **group)
+        except OSError as e:
+            self._tell('unavailable')
+            raise OrganError(f"Unavailable: could not run {argv[0]}: {e}") from e
+        finally:
+            if self._log is not None:
+                out.close()
+
+    def _kill(self) -> None:
+        """Kill the tree this lifecycle started, root and descendants together, then wait until the port no longer answers.
+
+        The handle is dropped only once the root has ended, so a kill that cannot end it leaves the tree this lifecycle's to stop again.
+        """
+        proc = self._proc
+        if proc.poll() is None:
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/T', '/F', '/PID', str(proc.pid)], stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               creationflags=subprocess.CREATE_NO_WINDOW, timeout=self._stop_s)
+            else:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            try:
+                proc.wait(timeout=self._stop_s)
+            except subprocess.TimeoutExpired:
+                raise OrganError(f"the process comfy-cli runs in on port {self._port} did not end within {self._stop_s:g} s of the kill; "
+                                 f"it is still this lifecycle's, so stop() can try again") from None
+        self._proc = None
+        deadline = time.monotonic() + self._stop_s
+        while _port_open(self._port):
+            if time.monotonic() > deadline:
+                raise OrganError(f"port {self._port} still answers {self._stop_s:g} s after the tree comfy-cli started was killed")
+            time.sleep(self._poll_s)
+
+    def _measure(self) -> str:
+        if not _port_open(self._port):
+            alive = self._proc is not None and self._proc.poll() is None
+            return 'starting' if alive else 'stopped'
+        try:
+            with _DIRECT.open(self.endpoint + '/system_stats', timeout=STATS_S) as response:
+                body = json.loads(response.read().decode('utf-8'))
+        except (OSError, ValueError, http.client.HTTPException):
+            return 'unavailable'
+        return 'ready' if isinstance(body, dict) and isinstance(body.get('system'), dict) else 'unavailable'
+
+    def _tell(self, state: str) -> str:
+        self._report(state)
+        return state
+
+Why each part is there, so none is dropped. LISTEN is the loopback address the engine listens on and the endpoint names, so nothing off this machine reaches it. PORT_S caps the TCP connect at 1 s and STATS_S caps the GET at 5 s, so one measurement costs at most 6 s. CHILD_ENV_DROP lists the seven variables the child must not inherit: COMFY_CLI_BACKGROUND switches even a foreground launch into comfy-cli's background path, COMFY_OUTPUT, VIRTUAL_ENV and CONDA_PREFIX override the workspace's own python, and PYTHONPATH, PYTHONHOME and PXR_PLUGINPATH_NAME belong to this host; the names are compared with k.upper() because Windows environment names ignore case. CHILD_ENV_SET turns telemetry off with no consent prompt and keeps the child's output unbuffered UTF-8 in the log. _DIRECT is an opener with no proxy, so a system proxy never sees a loopback read. _port_open only connects and sends nothing. The constructor stores its arguments, holds no process (self._proc = None), sets endpoint, and probes once, so a state an earlier process left in the saved edit layer is replaced by a measurement before it returns. probe() measures, reports and returns. start() measures first: ready reports ready and spawns nothing; unavailable reports it and raises OrganError naming the port, spawning nothing; stopped spawns; starting means its own process is alive, so it spawns nothing more and waits. The loop returns ready once a measurement reads it; a measurement that reads unavailable during a start is not yet; when its own process has exited it drops the handle, reports unavailable and raises naming the exit code and the log's path, or saying its output was discarded when log is None, so the text never reads in None; when ready_s passes it kills the tree in a try and reports unavailable in the finally, so a kill that raises still leaves a measured token, never a stale starting; it sleeps poll_s between measurements. stop() raises OrganError, touching nothing and reporting nothing, when this lifecycle holds no process it started; otherwise it kills in a try and measures and reports in the finally. _spawn checks <workspace>/main.py first and raises an OrganError naming the path, with Unavailable in its text, when it is not a file. The argv is exact: --skip-prompt before the subcommand, --workspace always, because without it comfy-cli falls back to the cwd and then its own default workspace, launch, then --, then --listen and --port as two tokens each, never --port=N, then extra, which comfy-cli hands to main.py as it is. The child gets the filtered environment, a new process group on Windows or a new session on POSIX, stdin at end of file (DEVNULL), stdout and stderr appended to log or discarded, never an unread PIPE, which fills and blocks the engine, and cwd at the workspace. starting is reported first, before the log is opened and before Popen, so a report that raises leaves no file open; a Popen OSError reports unavailable and raises naming the program; the finally closes the parent's copy of the log. _kill ends the root and its descendants together, main.py included, so comfy-cli's reboot loop cannot start main.py again: taskkill /T /F /PID on Windows, os.killpg with SIGKILL on POSIX. It drops self._proc only after the root has ended; when the root does not end within stop_s it raises and keeps the handle, so stop() can try again. Then it waits up to stop_s for the port to refuse connections, because a read right after taskkill can still find it open. It never kills by a pid read from a file, the stage, comfy-cli's config or the TCP table. _measure reads starting when nothing accepts a connection and its own process is alive, stopped when nothing accepts and it has none, ready when GET /system_stats answers a JSON object whose system is an object, and unavailable when anything else answers; it catches OSError, which covers URLError, HTTPError and timeouts, ValueError, which covers bad JSON and bad UTF-8, and http.client.HTTPException, which is not an OSError. _tell calls report on the caller's thread, so an exception from report reaches the caller of the constructor, probe(), start() or stop(), and the tree already spawned stays in self._proc for stop(); the lifecycle starts no thread of its own. It runs command once per start and never comfy-cli's --background launch or comfy stop, which act on whatever process comfy-cli's user-wide config names. Nothing else in the file changes: no line of CozyOrgan, no other constant or helper, and the block is not split or reordered. That holds for CozyOrgan's history read too: its line except (urllib.error.URLError, OSError) as e: binds an e it never uses, and it stays exactly as it is, because fixing it changes a line this step does not name.'''
+
+# A day run. At 30 to 40 minutes an attempt, 8 attempts take at most about 5.3 hours, and the run stops as soon as every target test passes.
+[budget]
+attempts = 8
+hours = 6
+max_consecutive_failures = 8
+
+[houdini]
+cpu_threads = 8
+cargo_jobs = 4
+
+# The failure router is off for this mission, so nothing leaves the machine.
+[fix_router]
+kind = "none"
+
+# Recognised failures and the brief line that fixes each. The harness quotes the line under the dropped attempt's own target failure, or under
+# a failing gate's output when there are no target failures. Each anchor appears once in the brief. The first two matches were tried on the
+# proof's base logs (m3/proof/pass2/logs/base_new.log); the rest on failure text made in a scratch clone by one-line mutations of the reference
+# files, restored at once (plan section 4). check_fixes.py checks both.
+[[known_fixes]]
+match = 'NeuronRuntime has no method publish_organ_state'
+file = "harness/plexus_loop/missions/organ-lifecycle.worker.md"
+anchor = "`publish_organ_state` is a method of `NeuronRuntime`"
+
+[[known_fixes]]
+match = 'plexus\.organs\.cozy has no CozyLifecycle'
+file = "harness/plexus_loop/missions/organ-lifecycle.worker.md"
+anchor = "`CozyLifecycle` is a new class at the end of `cozy.py`"
+
+[[known_fixes]]
+match = 'adds NeuronRuntime\.publish_organ_state and changes nothing else'
+file = "harness/plexus_loop/missions/organ-lifecycle.worker.md"
+anchor = "The `neuron_unchanged` gate compares"
+
+[[known_fixes]]
+match = 'plexus/core/neuron\.py holds \['
+file = "harness/plexus_loop/missions/organ-lifecycle.worker.md"
+anchor = "The core is blind to the engine"
+
+[[known_fixes]]
+match = 'never an unread subprocess\.PIPE'
+file = "harness/plexus_loop/missions/organ-lifecycle.worker.md"
+anchor = "never an unread `subprocess.PIPE`"
+
+[[known_fixes]]
+match = "Comfy-Cozy is a reference only"
+file = "harness/plexus_loop/missions/organ-lifecycle.worker.md"
+anchor = "Never import `agent`, `cognitive`"
+
+[[known_fixes]]
+match = "these modules must stay free of pxr"
+file = "harness/plexus_loop/missions/organ-lifecycle.worker.md"
+anchor = "`cozy.py` never imports `pxr`"
