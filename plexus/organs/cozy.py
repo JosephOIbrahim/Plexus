@@ -286,6 +286,7 @@ PORT_S = 1.0
 STATS_S = 5.0
 CHILD_ENV_DROP = ('COMFY_CLI_BACKGROUND', 'COMFY_OUTPUT', 'VIRTUAL_ENV', 'CONDA_PREFIX', 'PYTHONPATH', 'PYTHONHOME', 'PXR_PLUGINPATH_NAME')
 CHILD_ENV_SET = {'COMFY_NO_TELEMETRY': '1', 'DO_NOT_TRACK': '1', 'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'}
+INSTANCE_FLAGS = ('--user-directory', '--database-url', '--temp-directory', '--output-directory')
 _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -298,16 +299,62 @@ def _port_open(port: int) -> bool:
         return False
 
 
+if os.name == 'nt':
+    import ctypes
+    from ctypes import wintypes
+
+    _K32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    _K32.CreateJobObjectW.restype = wintypes.HANDLE
+    _K32.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
+    _K32.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD)
+    _K32.OpenProcess.restype = wintypes.HANDLE
+    _K32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    _K32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    _K32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    _K32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+    class _JobLimits(ctypes.Structure):
+        """JOBOBJECT_EXTENDED_LIMIT_INFORMATION; only flags is set."""
+        _fields_ = [('user_time', ctypes.c_int64 * 2), ('flags', wintypes.DWORD), ('working_set', ctypes.c_size_t * 2),
+                    ('process_limit', wintypes.DWORD), ('affinity', ctypes.c_size_t), ('priority', wintypes.DWORD),
+                    ('scheduling', wintypes.DWORD), ('io', ctypes.c_uint64 * 6), ('memory', ctypes.c_size_t * 4)]
+
+
+def _job_holding(pid: int):
+    """A Windows Job Object holding process pid, set to kill everything in it when its last handle closes. Returns (job, None) or (None, error).
+
+    Every process pid starts afterwards joins the job, so TerminateJobObject ends the whole tree even once the root has exited, and the
+    host's exit, which closes the handle, ends it too.
+    """
+    job = _K32.CreateJobObjectW(None, None)
+    process = _K32.OpenProcess(0x0101, False, pid)  # PROCESS_TERMINATE | PROCESS_SET_QUOTA
+    limits = _JobLimits()
+    limits.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    try:
+        held = bool(job and process and _K32.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits))
+                    and _K32.AssignProcessToJobObject(job, process))
+        error = None if held else ctypes.WinError(ctypes.get_last_error())
+    finally:
+        if process:
+            _K32.CloseHandle(process)
+    if not held:
+        if job:
+            _K32.CloseHandle(job)
+        return None, error
+    return job, None
+
+
 class CozyLifecycle:
     """Starts, stops and measures one ComfyUI on 127.0.0.1:<port> through comfy-cli in the foreground, beside the organ contract.
 
     It owns only the process tree its own start() spawned, and never uses comfy-cli's background slot or its stop command, which
-    are user-wide. Each measurement goes to report(state); the host points report at NeuronRuntime.publish_organ_state.
+    are user-wide. Each measurement goes to report(state); the host points report at NeuronRuntime.publish_organ_state. Given an
+    instance folder, its ComfyUI keeps its user folder, database, temp folder and output there, apart from the workspace's own.
     """
 
     def __init__(self, workspace: Path, port: int, *, command: Sequence[str], report: Callable[[str], object],
                  extra: Sequence[str] = (), log: Path | None = None, ready_s: float = 300.0, stop_s: float = 30.0,
-                 poll_s: float = 0.5):
+                 poll_s: float = 0.5, instance: Path | None = None):
         self._workspace = Path(workspace)
         self._port = port
         self._command = list(command)
@@ -317,7 +364,16 @@ class CozyLifecycle:
         self._ready_s = ready_s
         self._stop_s = stop_s
         self._poll_s = poll_s
+        self._instance = None if instance is None else Path(instance).resolve()
+        if self._instance is not None:
+            if self._instance == self._workspace.resolve():
+                raise ValueError(f"instance {self._instance} is the workspace itself; give this ComfyUI a folder of its own, "
+                                 "so it never shares the workspace's user folder, database, temp folder or output")
+            taken = [a for a in self._extra if str(a).split('=', 1)[0] in INSTANCE_FLAGS]
+            if taken:
+                raise ValueError(f"extra names {', '.join(taken)}, which instance sets; pass one or the other")
         self._proc = None
+        self._job = None
         self.endpoint = f'http://{LISTEN}:{port}'
         self.probe()  # a state an earlier process left on the stage is replaced before the constructor returns
 
@@ -329,7 +385,7 @@ class CozyLifecycle:
         state = self._measure()
         if state == 'ready':
             return self._tell('ready')
-        if state == 'unavailable':
+        if state == 'unavailable' and not self._alive():
             self._tell('unavailable')
             raise OrganError(f"port {self._port} answers, but not as ComfyUI, so nothing was started there")
         if state == 'stopped':
@@ -340,10 +396,12 @@ class CozyLifecycle:
                 return self._tell('ready')
             code = self._proc.poll()
             if code is not None:
-                self._proc = None
-                self._tell('unavailable')
+                try:
+                    self._kill()  # the root is gone; end whatever it left running
+                finally:
+                    self._tell('unavailable')
                 where = f"its output is in {self._log}" if self._log is not None else "its output was discarded"
-                raise OrganError(f"comfy-cli exited with code {code} before ComfyUI answered on port {self._port}; {where}")
+                raise OrganError(f"comfy-cli exited with code {code} before ComfyUI answered on port {self._port}, so its tree was killed; {where}")
             if time.monotonic() > deadline:
                 try:
                     self._kill()
@@ -361,63 +419,96 @@ class CozyLifecycle:
             state = self._tell(self._measure())
         return state
 
+    def _alive(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    def _instance_args(self) -> list[str]:
+        if self._instance is None:
+            return []
+        user = self._instance / 'user'
+        return ['--user-directory', str(user), '--database-url', f"sqlite:///{(user / 'comfyui.db').as_posix()}",
+                '--temp-directory', str(self._instance / 'temp'), '--output-directory', str(self._instance / 'output')]
+
     def _spawn(self) -> None:
         main = self._workspace / 'main.py'
         if not main.is_file():
             self._tell('unavailable')
             raise OrganError(f"Unavailable: {main} is not a file, so {self._workspace} is not a ComfyUI workspace and nothing was started")
         argv = [*self._command, '--skip-prompt', f'--workspace={self._workspace}', 'launch', '--',
-                '--listen', LISTEN, '--port', str(self._port), *self._extra]
+                '--listen', LISTEN, '--port', str(self._port), *self._instance_args(), *self._extra]
         env = {k: v for k, v in os.environ.items() if k.upper() not in CHILD_ENV_DROP}
         env.update(CHILD_ENV_SET)
         if os.name == 'nt':
             group = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
         else:
             group = {'start_new_session': True}
+        self._release()
         self._tell('starting')
-        out = open(self._log, 'ab') if self._log is not None else subprocess.DEVNULL
+        out, what = subprocess.DEVNULL, None
         try:
-            self._proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
-                                          cwd=str(self._workspace), env=env, **group)
+            if self._instance is not None:
+                for folder in (self._instance / 'user', self._instance / 'temp', self._instance / 'output'):
+                    what = folder
+                    folder.mkdir(parents=True, exist_ok=True)
+            if self._log is not None:
+                what = self._log
+                out = open(self._log, 'ab')
+            what = argv[0]
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                                    cwd=str(self._workspace), env=env, **group)
         except OSError as e:
             self._tell('unavailable')
-            raise OrganError(f"Unavailable: could not run {argv[0]}: {e}") from e
+            raise OrganError(f"Unavailable: {what}: {e.strerror or e}, so nothing was started on port {self._port}") from e
         finally:
-            if self._log is not None:
+            if out is not subprocess.DEVNULL:
                 out.close()
+        self._proc = proc
+        if os.name == 'nt':
+            self._job, error = _job_holding(proc.pid)
+            if self._job is None:
+                proc.kill()
+                proc.wait()
+                self._proc = None
+                self._tell('unavailable')
+                raise OrganError(f"Unavailable: comfy-cli's process tree could not be held in a job object ({error}), so it was killed")
 
     def _kill(self) -> None:
-        """Kill the tree this lifecycle started, root and descendants together, then wait until the port no longer answers.
+        """Kill the tree this lifecycle started, the root, its descendants and anything it left running, then wait until the port closes.
 
         The handle is dropped only once the root has ended, so a kill that cannot end it leaves the tree this lifecycle's to stop again.
         """
         proc = self._proc
-        if proc.poll() is None:
-            if os.name == 'nt':
-                subprocess.run(['taskkill', '/T', '/F', '/PID', str(proc.pid)], stdin=subprocess.DEVNULL,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                               creationflags=subprocess.CREATE_NO_WINDOW, timeout=self._stop_s)
-            else:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+        if os.name == 'nt':
+            if not _K32.TerminateJobObject(self._job, 1):
+                raise OrganError(f"the tree comfy-cli runs in on port {self._port} could not be killed "
+                                 f"({ctypes.WinError(ctypes.get_last_error())}); it is still this lifecycle's, so stop() can try again")
+        else:
             try:
-                proc.wait(timeout=self._stop_s)
-            except subprocess.TimeoutExpired:
-                raise OrganError(f"the process comfy-cli runs in on port {self._port} did not end within {self._stop_s:g} s of the kill; "
-                                 f"it is still this lifecycle's, so stop() can try again") from None
-        self._proc = None
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        try:
+            proc.wait(timeout=self._stop_s)
+        except subprocess.TimeoutExpired:
+            raise OrganError(f"the process comfy-cli runs in on port {self._port} did not end within {self._stop_s:g} s of the kill; "
+                             f"it is still this lifecycle's, so stop() can try again") from None
+        self._release()
         deadline = time.monotonic() + self._stop_s
         while _port_open(self._port):
             if time.monotonic() > deadline:
                 raise OrganError(f"port {self._port} still answers {self._stop_s:g} s after the tree comfy-cli started was killed")
             time.sleep(self._poll_s)
 
+    def _release(self) -> None:
+        """Drop the handle and the job. Closing a job ends whatever is still in it, which is only ever this lifecycle's own."""
+        if self._job is not None:
+            _K32.CloseHandle(self._job)
+        self._proc = None
+        self._job = None
+
     def _measure(self) -> str:
         if not _port_open(self._port):
-            alive = self._proc is not None and self._proc.poll() is None
-            return 'starting' if alive else 'stopped'
+            return 'starting' if self._alive() else 'stopped'
         try:
             with _DIRECT.open(self.endpoint + '/system_stats', timeout=STATS_S) as response:
                 body = json.loads(response.read().decode('utf-8'))
