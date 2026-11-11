@@ -233,6 +233,33 @@ class NeuronRuntime:
             layer.Save()
         return path
 
+    def publish_organ_state(self, organ_id: str, state: str) -> Sdf.Path:
+        """Author an organ's lifecycle as plexus:lifecycle on its prim in this participant's edit layer and return the prim's path.
+
+        The host calls it with each state its engine's lifecycle reports, for an organ this runtime published. It authors nothing else
+        on the prim, so it and publish_organ never undo each other. Every value is checked first, so a state that cannot land raises
+        with nothing authored.
+        """
+        states = ("stopped", "starting", "ready", "unavailable")
+        for field, value in (("organ_id", organ_id), ("state", state)):
+            if not isinstance(value, str):
+                raise TypeError(f"{field} must be a str, got {type(value).__name__}: {value!r}")
+        if state not in states:
+            raise ValueError(f"state {state!r} is not one of {', '.join(states)}")
+        if not Sdf.Path.IsValidIdentifier(organ_id):
+            raise ValueError(f"organ_id {organ_id!r} is not a valid prim name: it must be a USD identifier, a letter or underscore followed by letters, digits or underscores.")
+        path = Sdf.Path("/Plexus/Organs").AppendChild(organ_id)
+        layer = self.edit_layer
+        with self._lock:
+            spec = layer.GetPrimAtPath(path)
+            if not spec or "PlexusOrganAPI" not in spec.GetInfo("apiSchemas").prependedItems:
+                raise ValueError(f"{path} is not published in {self._participant_id}'s edit layer, so its state cannot land here. "
+                                 f"Call publish_organ first: a runtime writes the state only of an organ it published.")
+            with Sdf.ChangeBlock():
+                _set_attr(spec, "plexus:lifecycle", state, Sdf.ValueTypeNames.Token)
+            layer.Save()
+        return path
+
     def start(self) -> None:
         if self._axon is not None:
             return
