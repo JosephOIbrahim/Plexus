@@ -1,6 +1,24 @@
 # Capsule — Plexus
 
-**Where we are (Nov 11, after alpha.10):** Mile 3.7 of ~4 on the central-nervous-system goal. **M3.1 organ-isolation is released as `plexus-0.1.0-alpha.10`.**
+**Where we are (Nov 11, 15:20, M3.2 drafting):** Mile 3.7 of ~4. No release since alpha.10: nothing that ships has changed.
+
+**Fixed and pushed on `mission/organ-isolation`:**
+- **`5ac709b`:** `/mission`, `/report` and `/doctor` never paste their arguments into a shell. Claude Code pastes them as raw text, so the apostrophe in `/mission M3.2: close alpha.10's …` broke it before anything was drafted. `${ARGUMENTS:-acceptance}` was never filled in, so `/report` and `/doctor` always read `acceptance`. `/mission` now drafts a new mission from a scope.
+- **`4358156`:** the README shows alpha.10.
+- **Default branch:** now `mission/organ-isolation`. Undo: `gh repo edit --default-branch mission/organ-lifecycle`.
+
+**M3.2 `organ-hardening`, the design wave** (workflow `wf_29cef66b-d51`, results in `scratchpad\m32\design\`): WIN_SYS, POSIX_SYS, COMFY_LEAD, TEST_ARCH, RED_TEAM and CI_ENG have returned, and the ARCHITECT is running. Measured so far:
+- **S1 and S2** are readable only through a frozen case that holds `_winapi.CreateProcess` for 3 s. That is Joe's call: it rules out a hand-built `CreateProcessW` spawn.
+- **Windows refuses job nesting past 101 levels** (error 50), which forces S2.
+- **S3 and S4 are POSIX only.** They need a WSL run before placement.
+- **S5, S6 and S7** are deterministic on Windows.
+- **TEST_ARCH's prototype:** 12 cases fail on alpha.10 for their own reasons; phase 2 plus the draft gives 250 passed, 2 skipped, in 207 s; 10 of 11 mutants were caught ("resume before the job attaches" survives).
+- **RED_TEAM found that alpha.10 accepts `\\?\<workspace>` as an instance**, a hole in I2.
+- **CI draft:** `scratchpad\m32\ci\plexus-ci.yml`, for `mission/**` and `plexus-loop/**`. Its Linux leg is unproven; enabling it is Joe's go.
+
+**Next:** the ARCHITECT's decisions, then the build wave, the proof wave, and the mission files with one placement line, then stop for Joe. The next release, alpha.11, carries M3.2 once it is kept, reviewed and checklisted, on Joe's word. <!-- src:0e857ac5 date:2026-11-11 -->
+
+**Where we were (Nov 11, after alpha.10):** Mile 3.7 of ~4 on the central-nervous-system goal. **M3.1 organ-isolation is released as `plexus-0.1.0-alpha.10`.**
 - **Tag:** annotated, object `33f4b2a`, on `38097a1`. That commit is the keep `28f2a47` plus capsule commits `841580b` and `38097a1`, which change only CAPSULE.md. The message came from `scratchpad\m31\promote\tag_msg.txt`; the tag was pushed on its own, and `ls-remote` peels it to `38097a1`.
 - **Pre-release:** "Plexus 0.1.0-alpha.10: an instance folder and a held process tree", published 2026-11-11T17:47:47Z at https://github.com/JosephOIbrahim/Plexus/releases/tag/plexus-0.1.0-alpha.10. Its body is byte-identical to `scratchpad\m31\promote\alpha10_notes.md` (saved as `alpha10_published.md`). GitHub's targetCommitish reads `mission/organ-lifecycle`, the default branch, as alpha.9's does; the tag decides the commit.
 - **Branch:** `mission/organ-isolation` pushed `418dc31` -> `38097a1` as a fast-forward that changed only `cozy.py` and CAPSULE.md. It was not a pure fast-forward locally: Claude moved the branch with `checkout -B` and replayed two capsule commits. The `reset --hard` that came first was held by Blast Radius.
