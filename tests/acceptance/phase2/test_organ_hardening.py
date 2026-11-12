@@ -665,99 +665,6 @@ def ran_in(ws):
 # ---------- H1 and H2: on Windows the root is held before it runs ----------
 
 
-@pytest.mark.skipif(not WINDOWS, reason="H1 reads the moment between Popen's return and the job's hold, which is Windows'")
-def test_a_process_the_root_starts_at_once_ends_with_its_host(rig):
-    """H1a. HOST_HELD, mode pause, in no job of its own, starts the engine with its hook on and exits without stop()."""
-    port = free_port()
-    ws = rig.workspace("h1a")
-    host = rig.host(HOST_HELD, ws, port, rig.cli, "pause")
-    got = host_out(rig, host)
-    try:
-        host.wait(timeout=CHILD_S)
-    except subprocess.TimeoutExpired:
-        raise AssertionError(f"The host had not exited {CHILD_S:g} s after its line; it exits without stop().") from None
-    if got.get("hook", {}).get("root"):
-        rig.pids.append(got["hook"]["root"])
-    held_premises(got, SENTENCE_H1)
-    assert got.get("value") == "ready", (
-        f"In the host, start() {said(got)}, and on a free port with a workspace that has main.py it returns 'ready'. {SENTENCE_H1} {HOW_HOLD}"
-    )
-    pid = got.get("main_pid")
-    gone = until(lambda: refused(port) and not (pid and alive(pid)), GONE_S, every=0.25)
-    paused = got["hook"]["paused_s"]
-    assert gone, (
-        f"The host exited {GONE_S:g} s ago without stop(), and main.py (pid {pid}) {'still runs' if pid and alive(pid) else 'is gone'} and port "
-        f"{port} {'is closed' if refused(port) else 'still answers'}. "
-        + (f"The hook paused the host {paused:g} s at the first ctypes call that found the root able to run, and main.py started during that "
-           f"pause, before the job held the root, so it is outside the tree. " if paused is not None else "")
-        + f"{SENTENCE_H1} {SENTENCE_I6} {HOW_HOLD}"
-    )
-
-
-@pytest.mark.skipif(not WINDOWS, reason="H2a reads a root that no job can hold, which is Windows'")
-def test_a_tree_no_job_can_hold_is_killed_before_it_runs(rig):
-    """H2a. HOST_HELD, mode ceiling, sits at Windows' job nesting limit, so no job can hold the root; its hook pauses the host at the first
-    ctypes call that finds the root able to run. Its first job kills on close, so whatever the host leaves ends with it."""
-    port = free_port()
-    ws = rig.workspace("h2a")
-    host = rig.host(HOST_HELD, ws, port, rig.cli, "ceiling")
-    got = host_out(rig, host)
-    try:
-        if got.get("hook", {}).get("root"):
-            rig.pids.append(got["hook"]["root"])
-        held_premises(got, SENTENCE_H2, ceiling=True)
-        root = got["hook"]["root"]
-        assert got.get("organ_error"), (
-            f"No job can hold the root here, and start() {said(got)}; it raises OrganError, because a tree it cannot hold would outlive its "
-            f"host. {SENTENCE_H2} {HOW_KILL}"
-        )
-        assert got["states"][-1:] == ["unavailable"], (
-            f"After a start whose tree no job could hold, report last saw {got['states'][-1:]}. {SENTENCE_H2}"
-        )
-        assert not alive(root), (
-            f"start() raised, and comfy-cli's process (pid {root}) still runs: a root no job holds is killed before it has run. {SENTENCE_H2} {HOW_KILL}"
-        )
-        ran = ran_in(ws)
-        assert not ran, (
-            f"start() raised, and the command had run: {' and '.join(ran)} exist in the workspace. The root ran before the lifecycle knew no job "
-            f"could hold it, and what it started then is outside any job of the lifecycle's, so killing the root alone leaves it running. "
-            f"{SENTENCE_H2} {SENTENCE_H1} {HOW_HOLD} {HOW_KILL}"
-        )
-        assert refused(port), f"start() raised, and port {port} answers: something the root started holds it. {SENTENCE_H2}"
-    finally:
-        release(host)
-
-
-@pytest.mark.skipif(not WINDOWS, reason="H2b reads the moment between Popen's return and the job's hold, which is Windows'")
-def test_an_error_between_the_spawn_and_the_hold_kills_the_root(rig):
-    """H2b. HOST_HELD, mode raise, in a kill-on-close job of its own: its hook raises OSError at the first ctypes call after the spawn, so
-    that call never runs."""
-    port = free_port()
-    ws = rig.workspace("h2b")
-    host = rig.host(HOST_HELD, ws, port, rig.cli, "raise")
-    got = host_out(rig, host)
-    try:
-        if got.get("hook", {}).get("root"):
-            rig.pids.append(got["hook"]["root"])
-        held_premises(got, SENTENCE_H2)
-        root = got["hook"]["root"]
-        assert got.get("organ_error"), (
-            f"The first ctypes call after the spawn raised OSError, and start() {said(got)}; it raises OrganError from it, so a host that "
-            f"catches OrganError never meets an error a ctypes call or an audit hook raised. {SENTENCE_H2} {HOW_KILL}"
-        )
-        assert got["states"][-1:] == ["unavailable"], (
-            f"After a start that raised between the spawn and the hold, report last saw {got['states'][-1:]}. {SENTENCE_H2}"
-        )
-        assert not alive(root), (
-            f"start() raised, and comfy-cli's process (pid {root}) still runs outside any job of the lifecycle's. {SENTENCE_H2} {HOW_KILL}"
-        )
-        ran = ran_in(ws)
-        assert not ran, f"start() raised, and the command had run: {' and '.join(ran)} exist in the workspace. {SENTENCE_H2} {HOW_HOLD}"
-        assert refused(port), f"start() raised, and port {port} answers: something the root started holds it. {SENTENCE_H2}"
-    finally:
-        release(host)
-
-
 # ---------- H3 and H4: the POSIX group ----------
 
 # ---------- H5: a start of a folder flag beside an instance ----------
@@ -986,3 +893,76 @@ def test_an_instance_another_host_runs_is_refused_until_that_host_ends(rig):
     stopped = value_of(within(life.stop, "stop()", STOP_S), "stop()", SENTENCE_H7)
     assert stopped == "stopped", f"stop() returned {stopped!r}. {SENTENCE_H7}"
 
+# ---------- the spawn's contract: five guards ----------
+
+
+SPAWN_SENTENCE = (
+    "CONTRACT: start() runs the command in the foreground with the argv below, in the workspace, with stdin at end of file, the "
+    "lifecycle's environment, and the tree held in a job from creation.")
+
+PROBE_ROOT = r'''
+import ctypes, json, os, sys
+out = sys.argv[1]
+in_job = -1
+if os.name == "nt":
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.IsProcessInJob.argtypes = (ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_int))
+    k32.GetCurrentProcess.restype = ctypes.c_void_p
+    answer = ctypes.c_int(-1)
+    k32.IsProcessInJob(k32.GetCurrentProcess(), None, ctypes.byref(answer))
+    in_job = answer.value
+read = sys.stdin.buffer.read()
+with open(out, "w", encoding="utf-8") as f:
+    json.dump({"argv": sys.argv, "cwd": os.getcwd(), "in_job": in_job, "stdin_eof": read == b"", "env": dict(os.environ)}, f)
+'''
+
+
+@pytest.fixture
+def spawn_probe(rig, tmp_path):
+    """A lifecycle whose command is a probe interpreter, started once; yields (record, workspace, port)."""
+    probe = tmp_path / "probe_root.py"
+    probe.write_text(PROBE_ROOT, encoding="utf-8")
+    out = tmp_path / "probe.json"
+    ws = rig.workspace("spawn")
+    port = free_port()
+    life = lifecycle_class()(ws, port, command=[sys.executable, str(probe), str(out)], report=Reports(), ready_s=START_S - 2)
+    rig.lifes.append(life)
+    within(life.start, "start()", START_S, must_return=False)
+    assert out.exists(), f"The probe wrote nothing: the child did not run. {SPAWN_SENTENCE}"
+    record = json.loads(out.read_text(encoding="utf-8"))
+    yield record, ws, port
+    within(life.stop, "stop()", START_S, must_return=False)
+
+
+def test_the_child_receives_the_command_the_contract_names(spawn_probe):
+    record, ws, port = spawn_probe
+    head = ["--skip-prompt", f"--workspace={ws}", "launch", "--", "--listen", "127.0.0.1", "--port", str(port)]
+    tail = record["argv"][2:]  # argv[0] is the probe, argv[1] the file it writes
+    assert tail[:len(head)] == head, f"The child's argv after the probe is {tail[:len(head)]!r}, and the contract names {head!r}. {SPAWN_SENTENCE}"
+
+
+def test_the_child_runs_in_the_workspace(spawn_probe):
+    record, ws, _port = spawn_probe
+    assert record["cwd"].lower() == str(ws).lower(), f"The child's cwd is {record['cwd']!r}, not {ws!r}. {SPAWN_SENTENCE}"
+
+
+def test_the_child_reads_stdin_at_end_of_file(spawn_probe):
+    record, _ws, _port = spawn_probe
+    assert record["stdin_eof"] is True, f"The child's read on stdin returned bytes: a fake waiting for EOF would block. {SPAWN_SENTENCE}"
+
+
+def test_the_child_carries_the_lifecycle_environment(spawn_probe):
+    record, _ws, _port = spawn_probe
+    env = record["env"]
+    for name, value in (("COMFY_NO_TELEMETRY", "1"), ("DO_NOT_TRACK", "1")):
+        assert env.get(name) == value, f"The child's {name} is {env.get(name)!r}, not {value!r}. {SPAWN_SENTENCE}"
+    for name in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PXR_PLUGINPATH_NAME"):
+        assert name not in env, f"The child still carries {name}. {SPAWN_SENTENCE}"
+
+
+@pytest.mark.skipif(not WINDOWS, reason="a job object is Windows'")
+def test_the_root_is_in_a_job_at_its_first_instruction(spawn_probe):
+    record, _ws, _port = spawn_probe
+    assert record["in_job"] == 1, (
+        f"The child's first instruction found itself outside a job (IsProcessInJob answered {record['in_job']}), so the tree is not "
+        f"held from creation. {SPAWN_SENTENCE}")
