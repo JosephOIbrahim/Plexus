@@ -391,14 +391,30 @@ def _names_folder_flag(item) -> bool:
 
 
 def _real(path) -> Path:
-    """path resolved, once the extended-length prefix a Windows path may carry, in its plain or its UNC form, is dropped: resolve() keeps it."""
+    """path resolved, once the extended-length prefix a Windows path may carry, in its plain or its UNC form, is dropped and a local
+    admin share is written as its drive: resolve() keeps both, and neither names a folder that does not exist yet."""
     s = str(path)
     if os.name == 'nt':
         if s.startswith('\\\\?\\UNC\\'):
             s = '\\\\' + s[8:]
         elif s.startswith('\\\\?\\'):
             s = s[4:]
+        s = _local_share(s)
     return Path(s).resolve()
+
+
+def _local_share(s: str) -> str:
+    """A Windows admin-share spelling of a local drive written as the drive itself, so it compares with C:\\... whether or not it
+    exists. Only this host's own name counts: another machine's C$ is another machine's folder."""
+    if not s.startswith('\\\\'):
+        return s
+    parts = s[2:].split('\\')
+    share = parts[1] if len(parts) > 1 else ''
+    if len(share) == 2 and share[0].isalpha() and share[1] == '$':
+        host = parts[0].lower()
+        if host in ('localhost', '127.0.0.1', socket.gethostname().lower().split('.')[0]):
+            return share[0].upper() + ':\\' + '\\'.join(parts[2:])
+    return s
 
 
 def _same(path: Path, folder: Path) -> bool:
@@ -437,6 +453,34 @@ def _locked(folder: Path) -> int | None:
     return fd
 
 
+def _engine_held(folder: Path) -> bool:
+    """True when a process holds ComfyUI's own database lock, <folder>/user/comfyui.db.lock, as a running main.py does.
+
+    The probe holds it only for the moment it takes to learn the answer, because a ComfyUI trying to take it in that instant would
+    lose; a file nobody holds, which a killed ComfyUI leaves behind, is free."""
+    path = folder / 'user' / 'comfyui.db.lock'
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    try:
+        if os.name == 'nt':
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (PermissionError if os.name == 'nt' else BlockingIOError):
+        os.close(fd)
+        return True
+    except BaseException:
+        os.close(fd)
+        raise
+    _unlocked(fd)
+    return False
+
+
 def _unlocked(fd: int) -> None:
     """Let go the lock _locked() took on fd, and close fd."""
     if os.name == 'nt':
@@ -458,7 +502,7 @@ class CozyLifecycle:
 
     def __init__(self, workspace: Path, port: int, *, command: Sequence[str], report: Callable[[str], object],
                  extra: Sequence[str] = (), log: Path | None = None, ready_s: float = 300.0, stop_s: float = 30.0,
-                 poll_s: float = 0.5, instance: Path | None = None):
+                 poll_s: float = 0.5, instance: Path | None = None, workspace_temp: Path | None = None):
         self._workspace = Path(workspace)
         self._port = port
         self._command = list(command)
@@ -469,14 +513,16 @@ class CozyLifecycle:
         self._stop_s = stop_s
         self._poll_s = poll_s
         self._instance = None if instance is None else _real(instance)
+        self._workspace_temp = None if workspace_temp is None else _real(workspace_temp)
         if self._instance is not None:
             workspace = _real(self._workspace)
             if _same(self._instance, workspace):
                 raise ValueError(f"instance {self._instance} is the workspace itself; give this ComfyUI a folder of its own, "
                                  "so it never shares the workspace's user folder, database, temp folder or output")
-            if _inside(self._instance, workspace / 'temp'):
-                raise ValueError(f"instance {self._instance} is in {workspace / 'temp'}, which a ComfyUI started from the workspace deletes "
-                                 "when it starts and again when it exits; give this ComfyUI a folder outside it")
+            for temp_root in [workspace / 'temp'] + ([self._workspace_temp] if self._workspace_temp is not None else []):
+                if _inside(self._instance, temp_root):
+                    raise ValueError(f"instance {self._instance} is in {temp_root}, which a ComfyUI started from the workspace deletes "
+                                     "when it starts and again when it exits; give this ComfyUI a folder outside it")
             taken = [a for a in self._extra if _names_folder_flag(a)]
             if taken:
                 raise ValueError(f"extra names {', '.join(taken)}, which instance sets; pass one or the other")
@@ -563,6 +609,11 @@ class CozyLifecycle:
                         self._tell('unavailable')
                         raise OrganError(f"Unavailable: instance {self._instance} is in use by another lifecycle's ComfyUI, "
                                          f"so nothing was started on port {self._port}")
+                    if _engine_held(self._instance):
+                        self._drop_lock()
+                        self._tell('unavailable')
+                        raise OrganError(f"Unavailable: instance {self._instance} is in use by a ComfyUI that held its own database "
+                                         f"lock, so nothing was started on port {self._port}")
                     for folder in (self._instance / 'user', self._instance / 'temp', self._instance / 'output'):
                         what = folder
                         folder.mkdir(parents=True, exist_ok=True)
