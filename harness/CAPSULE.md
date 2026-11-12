@@ -13,6 +13,23 @@
     - `UpdateProcThreadAttribute(JOB_LIST)` alone returns **ok, err 0**;
     - `UpdateProcThreadAttribute(HANDLE_LIST)` alone returns **ok, err 0**;
     - the handle array built from plain integers, the obvious marshalling suspect, changes nothing: still error 87.
+  - **The C runs settle it: the job list works, the handle list never does.** A 40-line C program (`m34\verify\probe.c`, built by
+    `m34\verify\build.cmd` with the Visual Studio build tools) makes the same call with none of ctypes in the way. Four runs:
+    | Configuration | `CreateProcessW` |
+    |---|---|
+    | job list alone | **succeeds** (ok=1, err=0) |
+    | handle list alone, three handles | error 87 |
+    | both attributes, three handles | error 87 |
+    | both, one handle, `INVALID_HANDLE_VALUE` out and err, `bInheritHandles=FALSE` | error 87 |
+    `UpdateProcThreadAttribute(HANDLE_LIST)` returns 1 in every one of those, so the list is accepted and the creation is refused:
+    **`PROC_THREAD_ATTRIBUTE_HANDLE_LIST` is unusable in this configuration**, in C as much as in Python, and no arrangement of its
+    contents, its length, the std handles or the inheritance flag changes that. The job list alone succeeds, which also rules out the
+    process being inside a job of its own.
+  - **What that leaves, and the next change.** A closed-pipe stdin cannot be delivered through a handle list. It does not need to be:
+    with `bInheritHandles=TRUE` the child inherits every inheritable handle, so making the pipe's **read end** inheritable and leaving
+    its write end non-inheritable gives the child end-of-file reads and no writer — no second attribute at all. The next change is:
+    closed-pipe stdin with only its read end inheritable, a write-only NUL for stdout and stderr, `bInheritHandles=TRUE`, and **no
+    handle list**. That is the configuration the C probe has shown is creatable, and the one thing the 27-of-39 file lacks.
   - **So neither attribute is rejected by Windows, and the failure is at creation.** The next thing to test is **flag interaction**: `CREATE_NO_WINDOW` (0x08000000) and `STARTF_USESTDHANDLES` combined with a handle list are the remaining suspects, and the test is one creation per flag removed, alone. That is where the next session starts.
   - **The file is back to 27 of 39.** `m34
 eference\plexus\organs\cozy.py` was rebuilt by `make_reference.py`, `wire.py` and `fix_spawn.py` with the `limits.flags` fix by hand, so it holds the read-only NUL stdin version and no handle list.
