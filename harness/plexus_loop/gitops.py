@@ -49,6 +49,14 @@ def rev(repo: Path, ref: str) -> str:
     return git(repo, "rev-parse", "--verify", ref + "^{commit}").strip()
 
 
+def tree_of(repo: Path, commit: str, path: str) -> str | None:
+    """The tree (or blob) that path names at commit, or None when commit has no such path."""
+    try:
+        return git(repo, "rev-parse", "--verify", f"{commit}:{path}").strip()
+    except GitError:
+        return None
+
+
 def ensure_branch(repo: Path, branch: str) -> str:
     """Create the harness branch at HEAD if it doesn't exist. Return its tip."""
     try:

@@ -48,6 +48,9 @@ def default_route(mission: Mission, last: MetricResult | None, recent: list[Atte
                         [f"step {a.route or '?'}: {a.reason}" for a in recent if not a.kept and not a.unreachable])
 
 STATE_DIR = ".plexus_loop"
+# The tree a loop branch must share with its mission branch before a run measures it: a frozen placement after the loop
+# branch was cut never reaches it, and the run would then score the older file.
+FROZEN_ROOT = "tests/acceptance"
 WORKER_DOWN = "the worker could not run"  # starts the stop reason and the refusal
 # How long the model server gets to come back before a run stops or refuses, and how often it is asked. A restart, an
 # update or a busy reply clear in seconds to a minute, and rule 3 holds this stop for Joe, so stopping on one costs the night.
@@ -762,10 +765,35 @@ class MissionRun:
             why = check(self.profile_fn())
         return why
 
+    def _refuse_stale_frozen_tests(self, mi, loop_tip: str) -> None:
+        """Refuse to run when the mission branch's tests/acceptance is not the tree the loop branch measures.
+
+        The loop branch is cut from the mission branch when it is first made, and it keeps that branch's frozen tests for
+        good. Tests placed after that never reach it, so the run would measure the older file: mission organ-hardening
+        restarted onto a stale branch and read 3 failures from tests the mission branch no longer had. The two trees are
+        compared here, before anything is measured, so the answer is a refusal that names both commits rather than a
+        number about the wrong file.
+        """
+        mission_ref = f"mission/{mi.name}"
+        try:
+            mission_tip = gitops.rev(self.repo, "refs/heads/" + mission_ref)
+        except gitops.GitError:
+            return  # no mission branch to compare with: the loop branch is the only frozen tree there is
+        loop_tree = gitops.tree_of(self.repo, loop_tip, FROZEN_ROOT)
+        mission_tree = gitops.tree_of(self.repo, mission_tip, FROZEN_ROOT)
+        if loop_tree == mission_tree:
+            return
+        raise RefuseToStart(
+            f"the frozen tests are not the same on the two branches: {FROZEN_ROOT} is {str(mission_tree)[:12]} on "
+            f"{mission_ref} at {mission_tip[:10]} and {str(loop_tree)[:12]} on {mi.branch} at {loop_tip[:10]}, so this run "
+            f"would measure the older file. Move {mi.branch} onto {mission_ref} (cherry-pick any keep onto it) or delete "
+            f"{mi.branch} and run again. Nothing was measured.")
+
     def _run(self) -> RunReport:
         mi = self.mission
         started = self.clock()
         base = tip = gitops.ensure_branch(self.repo, mi.branch)
+        self._refuse_stale_frozen_tests(mi, tip)
         self.mdir.mkdir(parents=True, exist_ok=True)
         attempts_log = self.mdir / "attempts.jsonl"
         wt_root = self.state / "worktrees"

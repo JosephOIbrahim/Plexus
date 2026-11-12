@@ -99,6 +99,32 @@ def test_refuses_when_required_path_missing(repo):
     assert "plexus-loop/demo" not in _git(repo, "branch")
 
 
+def _commit(repo, message):
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-am", message)
+
+
+def test_refuses_when_the_loop_branch_measures_older_frozen_tests(repo):
+    # The loop branch keeps the frozen tests it was cut with. A placement after that never reaches it, and the run would
+    # score the older file: mission organ-hardening read 3 that way. The refusal names both branches and measures nothing.
+    _git(repo, "branch", "plexus-loop/demo")
+    (repo / "tests" / "acceptance" / "placed_later.txt").write_text("placed after the loop branch was cut\n")
+    _git(repo, "add", "-A")
+    _commit(repo, "place a frozen test")
+    _git(repo, "branch", "mission/demo")
+    w = Scripted()
+    with pytest.raises(RefuseToStart, match="frozen tests are not the same"):
+        run(repo, _mission(), w)
+    assert w.prompts == []
+
+
+def test_a_run_measures_when_both_branches_hold_the_same_frozen_tests(repo):
+    # The guard: equal trees are not a refusal, or no mission could run at all.
+    _git(repo, "branch", "plexus-loop/demo")
+    _git(repo, "branch", "mission/demo")
+    report = run(repo, _mission(), Scripted(set_score(0)))
+    assert report.baseline == 5 and report.best == 0
+
+
 def test_refuses_when_stop_file_present(repo):
     (repo / ".plexus_loop").mkdir()
     (repo / ".plexus_loop" / "STOP").touch()
