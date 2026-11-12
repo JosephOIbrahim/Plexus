@@ -563,11 +563,40 @@ def test_pytest_failures_metric_counts_down_and_stops_at_zero(tmp_path):
 
 
 def test_a_skipped_test_counts_as_not_passing(tmp_path):
-    # A change must never score by skipping a test.
+    # A change must never score by skipping a test it was not allowed to skip.
     (tmp_path / "t").mkdir()
     (tmp_path / "t" / "test_s.py").write_text("import pytest\n\ndef test_skips(): pytest.skip('x')\n\ndef test_passes(): pass\n")
     res = measure(Metric(kind="pytest_failures", target="t"), tmp_path, CPU)
     assert (res.value, res.total) == (1.0, 2) and res.failing == ["t.test_s::test_skips"]
+
+
+def test_a_skip_the_mission_declared_is_not_a_failure(tmp_path):
+    # A case that can only run on another platform skips here for good. Counted, it is a floor no attempt
+    # can clear, which is what cost mission organ-hardening a run and forced its frozen file to be split.
+    (tmp_path / "t").mkdir()
+    (tmp_path / "t" / "test_s.py").write_text(
+        "import pytest\n\ndef test_skips_elsewhere(): pytest.skip('POSIX only')\n\ndef test_passes(): pass\n")
+    res = measure(Metric(kind="pytest_failures", target="t", allowed_skips=("t.test_s::test_skips_elsewhere",)), tmp_path, CPU)
+    assert (res.value, res.total, res.failing) == (0.0, 2, [])
+
+
+def test_a_declared_allowance_does_not_cover_another_test_s_skip(tmp_path):
+    # The allowance is per test id: one declared id must not excuse a second test's skip, nor a failure.
+    (tmp_path / "t").mkdir()
+    (tmp_path / "t" / "test_s.py").write_text(
+        "import pytest\n\ndef test_declared(): pytest.skip('x')\n\ndef test_undeclared(): pytest.skip('y')\n\ndef test_fails(): assert False\n")
+    res = measure(Metric(kind="pytest_failures", target="t",
+                         allowed_skips=("t.test_s::test_declared",)), tmp_path, CPU)
+    assert res.value == 2.0 and sorted(res.failing) == ["t.test_s::test_fails", "t.test_s::test_undeclared"]
+
+
+def test_an_allowed_pattern_covers_a_whole_file(tmp_path):
+    (tmp_path / "t").mkdir()
+    (tmp_path / "t" / "test_posix.py").write_text(
+        "import pytest\n\n@pytest.mark.skipif(True, reason='POSIX only')\ndef test_a(): pass\n\n"
+        "@pytest.mark.skipif(True, reason='POSIX only')\ndef test_b(): pass\n")
+    res = measure(Metric(kind="pytest_failures", target="t", allowed_skips=("t.test_posix::*",)), tmp_path, CPU)
+    assert (res.value, res.total) == (0.0, 2)
 
 
 def test_a_run_that_collects_nothing_is_an_error_never_a_score_of_zero(tmp_path):

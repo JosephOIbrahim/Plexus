@@ -38,6 +38,10 @@ class Metric:
     target: str = ""  # pytest path for pytest_failures
     cmd: list[str] = field(default_factory=list)  # for kind="command"
     timeout_s: int = 1800
+    # Test ids, as fnmatch patterns on "classname::name", whose skips are not failures. A case that can only
+    # run on another platform skips here forever, and without this it would be a floor no attempt can clear.
+    # Undeclared skips still count, so a change can never score by skipping a test it was not allowed to skip.
+    allowed_skips: tuple[str, ...] = ()
 
     def improves(self, new: float, best: float) -> bool:
         """True only for a strict gain of at least min_delta."""
@@ -249,7 +253,10 @@ def mission_from_dict(raw: dict[str, Any]) -> Mission:
         target=str(met.get("target", "")),
         cmd=[str(x) for x in met.get("cmd", [])],
         timeout_s=int(met.get("timeout_s", 1800)),
+        allowed_skips=tuple(str(x) for x in met.get("allowed_skips", [])),
     )
+    if isinstance(met.get("allowed_skips"), str):
+        raise MissionError("[metric] allowed_skips must be a list of test-id patterns, not one string")
     if metric.kind not in ("pytest_failures", "command"):
         raise MissionError("[metric] kind must be 'pytest_failures' or 'command'")
     if metric.direction not in ("lower", "higher"):
