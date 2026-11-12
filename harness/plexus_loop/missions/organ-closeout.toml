@@ -1,0 +1,823 @@
+# Eighth Plexus mission, M3.3: organ-closeout. It closes what alpha.11's notes left open and could be closed: a local admin share
+# names its drive, so an instance written through one is refused even before the folder exists; a host may declare where its own
+# ComfyUI keeps its temp files; and ComfyUI's own database lock decides whether an instance is in use, which catches an engine whose
+# comfy-cli has died. The ~80 microsecond suspended-root window stays a stated limit: closing it means a hand-built CreateProcessW.
+# Plan: missions/organ-closeout.plan.md.
+
+[mission]
+name = "organ-closeout"
+goal = "Make Joe's frozen tests/acceptance/phase2/test_organ_closeout.py pass with one step, K1, that changes plexus/organs/cozy.py alone: a local admin share is written as the drive it names before folders are compared, so an instance through it inside the workspace's temp folder is refused whether or not the folder exists; CozyLifecycle takes workspace_temp and refuses an instance inside it; start() refuses an instance whose ComfyUI database lock another process holds, and lets its own probe go at once. Break no other phase 2 test and no phase 1 test. tests/acceptance/CONTRACT.md is the Python surface; harness/plexus_loop/missions/organ-closeout.worker.md says what the step is."
+requires = ["tests/acceptance/phase2/test_organ_closeout.py", "tests/acceptance/phase2/test_organ_hardening.py", "tests/acceptance/phase2/test_organ_hardening_posix.py", "tests/acceptance/phase2/test_organ_isolation.py", "tests/acceptance/phase2/test_organ_lifecycle.py", "tests/acceptance/phase1"]
+focus = ["plexus/organs/cozy.py"]
+frozen = ["tests/acceptance/**", "harness/**", "docs/plexus/**", "PLEXUS_SPEC.md", ".github/**", "pyproject.toml"]
+context = [
+  "harness/plexus_loop/missions/organ-closeout.worker.md",
+  "tests/acceptance/CONTRACT.md",
+]
+
+[metric]
+kind = "pytest_failures"
+target = "tests/acceptance/phase2/test_organ_closeout.py"
+direction = "lower"
+min_delta = 1
+timeout_s = 600
+
+[[gates]]
+name = "layers"
+cmd = ["python", "-m", "pytest", "-q", "harness/plexus_loop/guards"]
+timeout_s = 600
+
+[[gates]]
+name = "neuron_unchanged"
+cmd = ["python", "-I", "harness/plexus_loop/neuron_unchanged.py"]
+timeout_s = 120
+
+[[gates]]
+name = "core"
+cmd = ["python", "harness/plexus_loop/build_core.py"]
+timeout_s = 1800
+
+[[gates]]
+name = "predicate_smoke"
+cmd = ["python", "-I", "harness/plexus_loop/predicate_smoke.py"]
+timeout_s = 120
+
+[[gates]]
+name = "cargo"
+cmd = ["cargo", "test", "--workspace", "--quiet"]
+timeout_s = 1800
+
+[[gates]]
+name = "unit"
+cmd = ["python", "-m", "pytest", "-q", "-x", "-m", "not integration",
+       "tests/harness_plexus_loop", "tests/test_portability_guards.py",
+       "tests/test_workflow_patch_engine_live.py"]
+timeout_s = 1800
+
+[worker]
+kind = "ollama"
+model = "qwen3-coder:30b"
+host = "http://127.0.0.1:11434"
+timeout_s = 7200
+context_chars = 95000
+num_ctx = 49152
+
+[router]
+kind = "first"
+
+[[steps]]
+id = "K1"
+targets = ["tests/acceptance/phase2/test_organ_closeout.py"]
+files = ["plexus/organs/cozy.py"]
+text = '''Your reply is exactly one ```file:plexus/organs/cozy.py block holding the whole file, from its first line to its last, and never a ```diff block. The file to send is the one under Files, alpha.11's cozy.py at 8de1b67, with the lifecycle part at the end replaced by the file quoted below. Everything above the line that starts LISTEN stays exactly as it is, byte for byte. Do not change neuron.py. Write no new tests. Frozen test_organ_closeout.py reads three things the file must do: a local admin share is the drive it names, `workspace_temp` declares the folder the host's own ComfyUI keeps its temp files in, and ComfyUI's own database lock decides whether an instance is in use. Send the file below whole and unchanged: it is the exact text that passes every frozen case.
+
+```file:plexus/organs/cozy.py
+"""The Cozy organ, written new against ComfyUI's own HTTP API. The only file under plexus/ that may name engine words."""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import http.client
+import json
+import os
+import signal
+import socket
+import subprocess
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+from plexus.organs.protocol import AssetRecord, Job, JobHandle, Organ, OrganError, OrganProfile, Progress
+
+ORGAN_ID = "cozy"
+ORGAN_VERSION = "0.1.0"
+SEED_INPUTS = ("seed", "noise_seed")
+COLORSPACES = ("acescg", "srgb", "linear", "raw")
+INT64_MIN = -(2**63)
+INT64_MAX = 2**63 - 1
+HTTP_TIMEOUT_S = 60.0
+MIN_CALL_S = 0.5
+
+
+def _json(data: bytes, route: str) -> dict:
+    try:
+        return json.loads(data.decode('utf-8'))
+    except ValueError as e:
+        raise OrganError(f"{route}: the engine's reply is not JSON") from e
+
+
+def _call_timeout(deadline: float | None) -> float:
+    if deadline is None:
+        return HTTP_TIMEOUT_S
+    return max(MIN_CALL_S, min(HTTP_TIMEOUT_S, deadline - time.monotonic()))
+
+
+@dataclass(frozen=True)
+class _Submitted:
+    """What the organ remembers of one job. It stays in here: core never sees the engine's id."""
+
+    prompt_id: str
+    seed: int | None
+    colorspace: str
+
+
+class CozyOrgan(Organ):
+    def __init__(self, endpoint: str, output_dir: Path, *, poll_s: float = 0.2, deadline_s: float = 3600.0):
+        self._endpoint = endpoint.rstrip('/')
+        self._output_dir = Path(output_dir).resolve()
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+        self._poll_s = poll_s
+        self._deadline_s = deadline_s
+        self._jobs = {}
+        self._nodes = None
+
+    def profile(self) -> OrganProfile:
+        return OrganProfile(ORGAN_ID, 'comfyui', self._endpoint, self.capabilities(), 'free')
+
+    def capabilities(self) -> list[str]:
+        if self._nodes is None:
+            info = self._get_json('/object_info')
+            self._nodes = sorted(info.keys())
+        return self._nodes
+
+    def submit(self, job: Job) -> JobHandle:
+        if job.correlation_id in self._jobs:
+            raise OrganError(f"Job with correlation id {job.correlation_id} already submitted")
+        if type(job.seed) is not int:
+            raise OrganError(f"Seed {job.seed!r} is not an int")
+        if job.colorspace not in COLORSPACES:
+            raise OrganError(f"Colorspace {job.colorspace} is not in {COLORSPACES}")
+        if not (INT64_MIN <= job.seed <= INT64_MAX):
+            raise OrganError(f"Seed {job.seed} is outside the range [{INT64_MIN}, {INT64_MAX}]")
+
+        graph = copy.deepcopy(job.graph)
+        seed_written = False
+        for node_id, node in graph.items():
+            if not isinstance(node, dict) or not isinstance(node.get('inputs'), dict) or 'class_type' not in node:
+                raise OrganError(f"Node {node_id} has no inputs or no class_type")
+            for name in SEED_INPUTS:
+                if isinstance(node['inputs'].get(name), int):
+                    node['inputs'][name] = job.seed
+                    seed_written = True
+
+        for node in graph.values():
+            if node['class_type'] not in self.capabilities():
+                raise OrganError(f"Engine does not support node class {node['class_type']}")
+
+        try:
+            body = json.dumps({'prompt': graph}).encode('utf-8')
+        except (TypeError, ValueError) as e:
+            raise OrganError(f"The graph holds a value JSON cannot write: {e}") from e
+
+        try:
+            req = urllib.request.Request(self._endpoint + '/prompt', data=body)
+            req.add_header('Content-Type', 'application/json')
+            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as response:
+                result = _json(response.read(), '/prompt')
+        except urllib.error.HTTPError as e:
+            try:
+                words = e.read().decode('utf-8', 'replace')
+            except (OSError, http.client.HTTPException):
+                words = ''
+            raise OrganError(f"/prompt refused the graph ({e.code}): {words}") from e
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
+            raise OrganError(f"Failed to submit job to {self._endpoint}/prompt: {str(e)}")
+
+        prompt_id = result.get('prompt_id') if isinstance(result, dict) else None
+        if not isinstance(prompt_id, str) or not prompt_id:
+            raise OrganError("/prompt: the engine's reply holds no prompt_id that is a string")
+        self._jobs[job.correlation_id] = _Submitted(prompt_id, job.seed if seed_written else None, job.colorspace)
+        return JobHandle(job.correlation_id)
+
+    def stream(self, handle: JobHandle) -> Iterator[Progress]:
+        job = self._jobs.get(handle.correlation_id)
+        if not job:
+            raise OrganError(f"Unknown job handle with correlation id {handle.correlation_id}")
+        deadline = time.monotonic() + self._deadline_s
+        while True:
+            entry = self._history_entry(job.prompt_id, deadline)
+            if time.monotonic() > deadline:
+                raise OrganError("Job timed out")
+            if entry is None:
+                yield Progress(handle.correlation_id, 'queued')
+                time.sleep(self._poll_s)
+                continue
+            status = (entry.get('status') or {}).get('status_str')
+            if status == 'error':
+                yield Progress(handle.correlation_id, 'failed')
+                return
+            yield Progress(handle.correlation_id, 'done')
+            return
+
+    def result(self, handle: JobHandle) -> AssetRecord:
+        job = self._jobs.get(handle.correlation_id)
+        if not job:
+            raise OrganError(f"Unknown job handle with correlation id {handle.correlation_id}")
+        deadline = time.monotonic() + self._deadline_s
+        while True:
+            entry = self._history_entry(job.prompt_id, deadline)
+            if time.monotonic() > deadline:
+                raise OrganError("Job timed out")
+            if entry is None:
+                time.sleep(self._poll_s)
+                continue
+            status = (entry.get('status') or {}).get('status_str')
+            if status == 'error':
+                raise OrganError("the engine failed this job")
+            break
+
+        # Find the first image with type 'output'
+        output_image = None
+        outputs = entry.get('outputs')
+        if not isinstance(outputs, dict):
+            raise OrganError("the engine's history entry holds no outputs")
+        for node_outputs in outputs.values():
+            images = node_outputs.get('images', []) if isinstance(node_outputs, dict) else None
+            if not isinstance(images, list) or not all(isinstance(img, dict) for img in images):
+                raise OrganError("the engine's history entry holds outputs that are not objects with a list of image objects")
+            for img in images:
+                if img.get('type') == 'output':
+                    output_image = img
+                    break
+            if output_image:
+                break
+
+        if not output_image:
+            raise OrganError("No output image found in job result")
+
+        path = self._fetch_file(output_image)
+        sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+
+        metadata = {
+            'engine': ORGAN_ID,
+            'engineJobId': job.prompt_id,
+            'envFingerprint': self._env_fingerprint(),
+            'organVersion': ORGAN_VERSION,
+            'modelHashes': [],
+            'colorspace': job.colorspace,
+            'createdAt': datetime.now(timezone.utc).isoformat(timespec='seconds')
+        }
+        if job.seed is not None:
+            metadata['seed'] = job.seed
+
+        return AssetRecord(path, sha256, metadata)
+
+    def _get_json(self, route: str) -> dict:
+        """GET the endpoint plus route, as JSON. A URL or HTTP failure is an OrganError."""
+        try:
+            with urllib.request.urlopen(self._endpoint + route, timeout=_call_timeout(None)) as response:
+                result = _json(response.read(), route)
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
+            raise OrganError(f"Failed to GET {self._endpoint}{route}: {str(e)}")
+        if not isinstance(result, dict):
+            raise OrganError(f"{route}: the engine's reply is not a JSON object")
+        return result
+
+    def _history_entry(self, prompt_id: str, deadline: float | None = None) -> dict | None:
+        """This job's entry in /history/<prompt_id>, or None while the engine's history does not have it or the engine cannot answer."""
+        try:
+            with urllib.request.urlopen(self._endpoint + f'/history/{prompt_id}', timeout=_call_timeout(deadline)) as response:
+                result = _json(response.read(), '/history')
+                entry = result.get(prompt_id) if isinstance(result, dict) else None
+                if entry is not None and (not isinstance(entry, dict) or not isinstance(entry.get('status') or {}, dict)):
+                    raise OrganError("/history: the engine's entry for this job, or its status, is not a JSON object")
+                return entry
+        except urllib.error.HTTPError as e:
+            if 500 <= e.code:
+                # 5xx error, treat as not yet
+                return None
+            elif e.code == 404:
+                # 404 means the history entry doesn't exist yet
+                raise OrganError(f"/history: {e}")
+            else:
+                raise OrganError(f"/history: {e}")
+        except (urllib.error.URLError, OSError) as e:
+            # URLError or OSError means no connection or timeout
+            return None
+        except http.client.HTTPException as e:
+            raise OrganError(f"/history: the engine's reply is not HTTP the organ can read ({type(e).__name__})") from e
+
+    def _fetch_file(self, image: dict) -> Path:
+        """GET /view for one output and write it under output_dir. Returns the path of the file on disk."""
+        filename = image.get('filename')
+        if not isinstance(filename, str):
+            raise OrganError("the engine's output image names no filename that is a string")
+        subfolder = image.get('subfolder', '')
+        type_ = image.get('type', 'output')
+        query = urllib.parse.urlencode({
+            'filename': filename,
+            'subfolder': subfolder,
+            'type': type_
+        })
+        url = self._endpoint + '/view?' + query
+        try:
+            with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_S) as response:
+                data = response.read()
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
+            raise OrganError(f"Failed to fetch image {filename}: {str(e)}")
+
+        # Generate a unique filename to avoid overwrites
+        unique_filename = f"{uuid.uuid4().hex}_{Path(filename).name}"
+        path = self._output_dir / unique_filename
+        path.write_bytes(data)
+        return path
+
+    def _env_fingerprint(self) -> str:
+        """SHA-256 hex over the engine's environment, from /system_stats and /object_info."""
+        system = self._get_json('/system_stats')
+        info = self._get_json('/object_info')
+
+        # Hash only the required fields
+        try:
+            fingerprint_data = {
+                'system': {
+                    'os': system['system']['os'],
+                    'comfyui_version': system['system']['comfyui_version'],
+                    'python_version': system['system']['python_version'],
+                    'pytorch_version': system['system']['pytorch_version']
+                },
+                'devices': [
+                    {'name': d['name'], 'type': d['type']} for d in system['devices']
+                ],
+                'node_classes': sorted(info.keys())
+            }
+        except (KeyError, TypeError) as e:
+            raise OrganError(f"/system_stats: the engine's reply lacks a field the fingerprint reads: {e!r}") from e
+
+        fingerprint_json = json.dumps(fingerprint_data, sort_keys=True)
+        return hashlib.sha256(fingerprint_json.encode()).hexdigest()
+
+
+LISTEN = '127.0.0.1'
+PORT_S = 1.0
+STATS_S = 5.0
+CHILD_ENV_DROP = ('COMFY_CLI_BACKGROUND', 'COMFY_OUTPUT', 'VIRTUAL_ENV', 'CONDA_PREFIX', 'PYTHONPATH', 'PYTHONHOME', 'PXR_PLUGINPATH_NAME')
+CHILD_ENV_SET = {'COMFY_NO_TELEMETRY': '1', 'DO_NOT_TRACK': '1', 'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'}
+INSTANCE_FLAGS = ('--user-directory', '--database-url', '--temp-directory', '--output-directory')
+CREATE_SUSPENDED = 0x00000004  # Windows: the root runs nothing until the job holds it
+INSTANCE_LOCK = '.plexus-instance.lock'  # in the instance's own root, beside user, temp and output, which ComfyUI never lists or wipes
+_NOWAIT = os.name != 'nt' and hasattr(os, 'waitid') and hasattr(os, 'WNOWAIT')
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _port_open(port: int) -> bool:
+    """True when something accepts a TCP connection on LISTEN:port within PORT_S."""
+    try:
+        with socket.create_connection((LISTEN, port), timeout=PORT_S):
+            return True
+    except OSError:
+        return False
+
+
+if os.name == 'nt':
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    _K32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    _K32.CreateJobObjectW.restype = wintypes.HANDLE
+    _K32.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
+    _K32.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD)
+    _K32.OpenProcess.restype = wintypes.HANDLE
+    _K32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    _K32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    _K32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    _K32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    _K32.SetInformationJobObject.restype = wintypes.BOOL  # these four return BOOL, which ctypes' default int reads the same way
+    _K32.AssignProcessToJobObject.restype = wintypes.BOOL
+    _K32.TerminateJobObject.restype = wintypes.BOOL
+    _K32.CloseHandle.restype = wintypes.BOOL
+    _NT = ctypes.WinDLL('ntdll')
+    _NT.NtResumeProcess.restype = ctypes.c_long  # NTSTATUS; 0 is STATUS_SUCCESS
+    _NT.NtResumeProcess.argtypes = (wintypes.HANDLE,)
+
+    class _JobLimits(ctypes.Structure):
+        """JOBOBJECT_EXTENDED_LIMIT_INFORMATION; only flags is set."""
+        _fields_ = [('user_time', ctypes.c_int64 * 2), ('flags', wintypes.DWORD), ('working_set', ctypes.c_size_t * 2),
+                    ('process_limit', wintypes.DWORD), ('affinity', ctypes.c_size_t), ('priority', wintypes.DWORD),
+                    ('scheduling', wintypes.DWORD), ('io', ctypes.c_uint64 * 6), ('memory', ctypes.c_size_t * 4)]
+else:
+    import fcntl
+
+
+def _job_holding(pid: int):
+    """A Windows Job Object holding process pid, set to kill everything in it when its last handle closes. Returns (job, None) or (None, error).
+
+    Every process pid starts afterwards joins the job, so TerminateJobObject ends the whole tree even once the root has exited, and the
+    host's exit, which closes the handle, ends it too.
+    """
+    job = _K32.CreateJobObjectW(None, None)
+    process = _K32.OpenProcess(0x0101, False, pid)  # PROCESS_TERMINATE | PROCESS_SET_QUOTA
+    limits = _JobLimits()
+    limits.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    try:
+        held = bool(job and process and _K32.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits))
+                    and _K32.AssignProcessToJobObject(job, process))
+        error = None if held else ctypes.WinError(ctypes.get_last_error())
+    finally:
+        if process:
+            _K32.CloseHandle(process)
+    if not held:
+        if job:
+            _K32.CloseHandle(job)
+        return None, error
+    return job, None
+
+
+def _resumed(pid: int):
+    """Resume process pid, which start() spawned suspended and a job now holds. Returns None, or the error."""
+    process = _K32.OpenProcess(0x0800, False, pid)  # PROCESS_SUSPEND_RESUME
+    if not process:
+        return ctypes.WinError(ctypes.get_last_error())
+    try:
+        status = _NT.NtResumeProcess(process)
+    finally:
+        _K32.CloseHandle(process)
+    return None if status == 0 else OSError(f"NtResumeProcess returned NTSTATUS {status & 0xFFFFFFFF:#010x}")
+
+
+def _exited(proc) -> int | None:
+    """The root's exit code once it has exited, else None. On POSIX it never reaps the root: a zombie keeps its process ID, which is
+    also its process group's ID, so the number cannot pass to another group before _kill() has signalled this one and reaped it."""
+    if not _NOWAIT or proc.returncode is not None:
+        return proc.poll()
+    try:
+        info = os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:  # something else in this process reaped it (SIGCHLD ignored, a waitpid(-1)); poll() then sets returncode
+        return proc.poll()
+    if info is None:
+        return None
+    return info.si_status if info.si_code == os.CLD_EXITED else -info.si_status
+
+
+def _names_folder_flag(item) -> bool:
+    """True when ComfyUI's parser reads item, alone or as name=value, as one of INSTANCE_FLAGS: its name is '--' and at least one more
+    character, and starts one of the four. argparse reads an unambiguous start of a flag as that flag, and its last value wins."""
+    name = str(item).split('=', 1)[0]
+    return len(name) > 2 and name.startswith('--') and any(flag.startswith(name) for flag in INSTANCE_FLAGS)
+
+
+def _real(path) -> Path:
+    """path resolved, once the extended-length prefix a Windows path may carry, in its plain or its UNC form, is dropped and a local
+    admin share is written as its drive: resolve() keeps both, and neither names a folder that does not exist yet."""
+    s = str(path)
+    if os.name == 'nt':
+        if s.startswith('\\\\?\\UNC\\'):
+            s = '\\\\' + s[8:]
+        elif s.startswith('\\\\?\\'):
+            s = s[4:]
+        s = _local_share(s)
+    return Path(s).resolve()
+
+
+def _local_share(s: str) -> str:
+    """A Windows admin-share spelling of a local drive written as the drive itself, so it compares with C:\\... whether or not it
+    exists. Only this host's own name counts: another machine's C$ is another machine's folder."""
+    if not s.startswith('\\\\'):
+        return s
+    parts = s[2:].split('\\')
+    share = parts[1] if len(parts) > 1 else ''
+    if len(share) == 2 and share[0].isalpha() and share[1] == '$':
+        host = parts[0].lower()
+        if host in ('localhost', '127.0.0.1', socket.gethostname().lower().split('.')[0]):
+            return share[0].upper() + ':\\' + '\\'.join(parts[2:])
+    return s
+
+
+def _same(path: Path, folder: Path) -> bool:
+    """True when path and folder, both from _real(), are one folder: equal as written, or the same folder on disk."""
+    return path == folder or (path.exists() and folder.exists() and os.path.samefile(path, folder))
+
+
+def _inside(path: Path, folder: Path) -> bool:
+    """True when path, from _real(), is folder or below it: as written, or, when folder exists, through any existing folder among path
+    and its parents that is folder on disk. On Windows equality ignores case; on POSIX it does not."""
+    if path == folder or folder in path.parents:
+        return True
+    return folder.is_dir() and any(p.exists() and os.path.samefile(p, folder) for p in (path, *path.parents))
+
+
+def _locked(folder: Path) -> int | None:
+    """A descriptor holding an OS lock on folder's INSTANCE_LOCK, taken without waiting, or None when another holder has it.
+
+    The descriptor is a bare int that nothing owns, so only os.close() or the end of every process that holds it lets the lock go.
+    Nothing is ever written to the file.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    fd = os.open(folder / INSTANCE_LOCK, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        if os.name == 'nt':
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)  # PermissionError (errno 13) when another handle holds byte 0
+        else:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # BlockingIOError when another open file description holds it
+    except (PermissionError if os.name == 'nt' else BlockingIOError):
+        os.close(fd)
+        return None
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _engine_held(folder: Path) -> bool:
+    """True when a process holds ComfyUI's own database lock, <folder>/user/comfyui.db.lock, as a running main.py does.
+
+    The probe holds it only for the moment it takes to learn the answer, because a ComfyUI trying to take it in that instant would
+    lose; a file nobody holds, which a killed ComfyUI leaves behind, is free."""
+    path = folder / 'user' / 'comfyui.db.lock'
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    try:
+        if os.name == 'nt':
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (PermissionError if os.name == 'nt' else BlockingIOError):
+        os.close(fd)
+        return True
+    except BaseException:
+        os.close(fd)
+        raise
+    _unlocked(fd)
+    return False
+
+
+def _unlocked(fd: int) -> None:
+    """Let go the lock _locked() took on fd, and close fd."""
+    if os.name == 'nt':
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+    os.close(fd)
+
+
+class CozyLifecycle:
+    """Starts, stops and measures one ComfyUI on 127.0.0.1:<port> through comfy-cli in the foreground, beside the organ contract.
+
+    It owns only the process tree its own start() spawned, and never uses comfy-cli's background slot or its stop command, which
+    are user-wide. Each measurement goes to report(state); the host points report at NeuronRuntime.publish_organ_state. Given an
+    instance folder, its ComfyUI keeps its user folder, database, temp folder and output there, apart from the workspace's own.
+    """
+
+    def __init__(self, workspace: Path, port: int, *, command: Sequence[str], report: Callable[[str], object],
+                 extra: Sequence[str] = (), log: Path | None = None, ready_s: float = 300.0, stop_s: float = 30.0,
+                 poll_s: float = 0.5, instance: Path | None = None, workspace_temp: Path | None = None):
+        self._workspace = Path(workspace)
+        self._port = port
+        self._command = list(command)
+        self._report = report
+        self._extra = list(extra)
+        self._log = log
+        self._ready_s = ready_s
+        self._stop_s = stop_s
+        self._poll_s = poll_s
+        self._instance = None if instance is None else _real(instance)
+        self._workspace_temp = None if workspace_temp is None else _real(workspace_temp)
+        if self._instance is not None:
+            workspace = _real(self._workspace)
+            if _same(self._instance, workspace):
+                raise ValueError(f"instance {self._instance} is the workspace itself; give this ComfyUI a folder of its own, "
+                                 "so it never shares the workspace's user folder, database, temp folder or output")
+            for temp_root in [workspace / 'temp'] + ([self._workspace_temp] if self._workspace_temp is not None else []):
+                if _inside(self._instance, temp_root):
+                    raise ValueError(f"instance {self._instance} is in {temp_root}, which a ComfyUI started from the workspace deletes "
+                                     "when it starts and again when it exits; give this ComfyUI a folder outside it")
+            taken = [a for a in self._extra if _names_folder_flag(a)]
+            if taken:
+                raise ValueError(f"extra names {', '.join(taken)}, which instance sets; pass one or the other")
+        self._proc = None
+        self._job = None
+        self._lock = None
+        self.endpoint = f'http://{LISTEN}:{port}'
+        self.probe()  # a state an earlier process left on the stage is replaced before the constructor returns
+
+    def probe(self) -> str:
+        """Measure now, report it, return it."""
+        return self._tell(self._measure())
+
+    def start(self) -> str:
+        state = self._measure()
+        if state == 'ready':
+            return self._tell('ready')
+        if state == 'unavailable' and not self._alive():
+            self._tell('unavailable')
+            raise OrganError(f"port {self._port} answers, but not as ComfyUI, so nothing was started there")
+        if state == 'stopped':
+            self._spawn()
+        deadline = time.monotonic() + self._ready_s
+        while True:
+            if self._measure() == 'ready':
+                return self._tell('ready')
+            code = _exited(self._proc)
+            if code is not None:
+                try:
+                    self._kill()  # the root is gone; end whatever it left running
+                finally:
+                    self._tell('unavailable')
+                where = f"its output is in {self._log}" if self._log is not None else "its output was discarded"
+                raise OrganError(f"comfy-cli exited with code {code} before ComfyUI answered on port {self._port}, so its tree was killed; {where}")
+            if time.monotonic() > deadline:
+                try:
+                    self._kill()
+                finally:
+                    self._tell('unavailable')
+                raise OrganError(f"ComfyUI did not answer on port {self._port} within {self._ready_s:g} s, so its process tree was killed")
+            time.sleep(self._poll_s)
+
+    def stop(self) -> str:
+        if self._proc is None:
+            raise OrganError(f"this lifecycle holds no process it started on port {self._port}, so it stops nothing")
+        try:
+            self._kill()
+        finally:
+            state = self._tell(self._measure())
+        return state
+
+    def _alive(self) -> bool:
+        return self._proc is not None and _exited(self._proc) is None
+
+    def _instance_args(self) -> list[str]:
+        if self._instance is None:
+            return []
+        user = self._instance / 'user'
+        return ['--user-directory', str(user), '--database-url', f"sqlite:///{(user / 'comfyui.db').as_posix()}",
+                '--temp-directory', str(self._instance / 'temp'), '--output-directory', str(self._instance / 'output')]
+
+    def _spawn(self) -> None:
+        main = self._workspace / 'main.py'
+        if not main.is_file():
+            self._tell('unavailable')
+            raise OrganError(f"Unavailable: {main} is not a file, so {self._workspace} is not a ComfyUI workspace and nothing was started")
+        argv = [*self._command, '--skip-prompt', f'--workspace={self._workspace}', 'launch', '--',
+                '--listen', LISTEN, '--port', str(self._port), *self._instance_args(), *self._extra]
+        env = {k: v for k, v in os.environ.items() if k.upper() not in CHILD_ENV_DROP}
+        env.update(CHILD_ENV_SET)
+        if os.name == 'nt':
+            group = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW | CREATE_SUSPENDED}
+        else:
+            group = {'start_new_session': True}
+        self._release()
+        self._tell('starting')
+        out, what, proc, job = subprocess.DEVNULL, None, None, None
+        try:
+            try:
+                if self._instance is not None:
+                    what = self._instance
+                    self._lock = _locked(self._instance)
+                    if self._lock is None:
+                        self._tell('unavailable')
+                        raise OrganError(f"Unavailable: instance {self._instance} is in use by another lifecycle's ComfyUI, "
+                                         f"so nothing was started on port {self._port}")
+                    if _engine_held(self._instance):
+                        self._drop_lock()
+                        self._tell('unavailable')
+                        raise OrganError(f"Unavailable: instance {self._instance} is in use by a ComfyUI that held its own database "
+                                         f"lock, so nothing was started on port {self._port}")
+                    for folder in (self._instance / 'user', self._instance / 'temp', self._instance / 'output'):
+                        what = folder
+                        folder.mkdir(parents=True, exist_ok=True)
+                if self._log is not None:
+                    what = self._log
+                    out = open(self._log, 'ab')
+                what = argv[0]
+                proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                                        cwd=str(self._workspace), env=env, **group,
+                                        **({'pass_fds': (self._lock,)} if self._lock is not None and os.name != 'nt' else {}))
+            except OSError as e:
+                self._drop_lock()
+                self._tell('unavailable')
+                raise OrganError(f"Unavailable: {what}: {e.strerror or e}, so nothing was started on port {self._port}") from e
+            finally:
+                if out is not subprocess.DEVNULL:
+                    out.close()
+            if os.name == 'nt':
+                job, error = _job_holding(proc.pid)
+                if job is not None:
+                    error = _resumed(proc.pid)
+                if error is not None:
+                    raise error
+        except BaseException as e:
+            if proc is None:  # nothing was spawned; the in-use branch or the OSError handler has reported, and a lock taken is let go
+                self._drop_lock()
+                raise
+            try:
+                proc.kill()  # on Windows still suspended, so it has run nothing and is the whole tree; killed before the job closes
+                proc.wait()
+            except OSError:
+                pass
+            finally:
+                if job is not None:
+                    _K32.CloseHandle(job)
+            self._drop_lock()
+            self._tell('unavailable')
+            if not isinstance(e, Exception):
+                raise
+            raise OrganError(f"Unavailable: comfy-cli's process could not be held in a job object and let run ({e}), so it was killed "
+                             f"before it ran, and nothing runs on port {self._port}") from e
+        self._proc, self._job = proc, job
+
+    def _kill(self) -> None:
+        """Kill the tree this lifecycle started, the root, its descendants and anything it left running, then wait until the port closes.
+
+        The handle is dropped only once the root has ended, so a kill that cannot end it leaves the tree this lifecycle's to stop again.
+        On POSIX the root is reaped only here, after its group is signalled, so the group's number is still this tree's when it is.
+        """
+        proc = self._proc
+        if os.name == 'nt':
+            if not _K32.TerminateJobObject(self._job, 1):
+                raise OrganError(f"the tree comfy-cli runs in on port {self._port} could not be killed "
+                                 f"({ctypes.WinError(ctypes.get_last_error())}); it is still this lifecycle's, so stop() can try again")
+        else:
+            if _NOWAIT:
+                _exited(proc)  # learns, without reaping, of a root something else reaped; poll() then sets returncode
+            if not _NOWAIT or proc.returncode is None:  # unreaped, so the root's number is still its group's
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except OSError as e:
+                    raise OrganError(f"the tree comfy-cli runs in on port {self._port} could not be killed ({e}); "
+                                     "it is still this lifecycle's, so stop() can try again") from e
+        try:
+            proc.wait(timeout=self._stop_s)
+        except subprocess.TimeoutExpired:
+            raise OrganError(f"the process comfy-cli runs in on port {self._port} did not end within {self._stop_s:g} s of the kill; "
+                             f"it is still this lifecycle's, so stop() can try again") from None
+        self._release()
+        deadline = time.monotonic() + self._stop_s
+        while _port_open(self._port):
+            if time.monotonic() > deadline:
+                raise OrganError(f"port {self._port} still answers {self._stop_s:g} s after the tree comfy-cli started was killed")
+            time.sleep(self._poll_s)
+
+    def _release(self) -> None:
+        """Drop the handle, the job and the instance. Closing a job ends whatever is still in it, which is only ever this lifecycle's own."""
+        if self._job is not None:
+            _K32.CloseHandle(self._job)
+        self._proc = None
+        self._job = None
+        self._drop_lock()
+
+    def _drop_lock(self) -> None:
+        """Let this lifecycle's lock on its instance go. On POSIX comfy-cli holds the same lock until it ends."""
+        if self._lock is not None:
+            fd, self._lock = self._lock, None
+            _unlocked(fd)
+
+    def _measure(self) -> str:
+        if not _port_open(self._port):
+            return 'starting' if self._alive() else 'stopped'
+        try:
+            with _DIRECT.open(self.endpoint + '/system_stats', timeout=STATS_S) as response:
+                body = json.loads(response.read().decode('utf-8'))
+        except (OSError, ValueError, http.client.HTTPException):
+            return 'unavailable'
+        return 'ready' if isinstance(body, dict) and isinstance(body.get('system'), dict) else 'unavailable'
+
+    def _tell(self, state: str) -> str:
+        self._report(state)
+        return state
+```
+'''
+
+[budget]
+attempts = 6
+hours = 6
+max_consecutive_failures = 6
+
+[houdini]
+cpu_threads = 8
+cargo_jobs = 4
+
+[fix_router]
+kind = "none"
+
+[[known_fixes]]
+match = "local admin share|_local_share"
+file = "harness/plexus_loop/missions/organ-closeout.worker.md"
+anchor = "A local admin share is the drive it names"
+
+[[known_fixes]]
+match = "workspace_temp"
+file = "harness/plexus_loop/missions/organ-closeout.worker.md"
+anchor = "`workspace_temp=` declares"
+
+[[known_fixes]]
+match = "comfyui.db.lock|database lock"
+file = "harness/plexus_loop/missions/organ-closeout.worker.md"
+anchor = "The probe of ComfyUI's own `comfyui.db.lock`"
