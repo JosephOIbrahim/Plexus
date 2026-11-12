@@ -1,6 +1,20 @@
 # Capsule — Plexus
 
-**Where we are (Nov 12, after alpha.11):** Mile 3.9 of ~4. **M3.2 `organ-hardening` is released as `plexus-0.1.0-alpha.11`** on `8de1b67`, the promoted keep, which is the reference the worker returned byte for byte.
+**Where we are (Nov 12, after alpha.12):** Mile 4.0 of ~4 — the lifecycle thread is exhausted; what remains is the spawn rewrite and the harness's platform reach.
+- **Released:** `plexus-0.1.0-alpha.12` on `fde0053`, annotated object `8ef460e`, pushed alone, body byte-identical to `scratchpad\m33\promote\alpha12_notes.md` (5,684 characters). Pre-release live at https://github.com/JosephOIbrahim/Plexus/releases/tag/plexus-0.1.0-alpha.12, published 2026-11-12T15:31:42Z.
+- **Checklist on `fde0053`:** full suite 5,890 passed and 0 failed (14 skipped, 51 deselected, 17:52); harness 458; guards 9; ruff clean on `harness/`; `plexus/` 7 findings at the same lines as alpha.9 to alpha.11; `check` ready; cargo 0 tests.
+- **Mission `organ-closeout`:** one run, one attempt, one keep, 5 → 0 in 42.3 min; the worker returned the reference unchanged (720 lines, no diff). Frozen commit `9861074`; C1 `673d56e`; C2 `e92211f`.
+
+**Two harness fixes landed on the way**, both committed and tested: `allowed_skips` (a mission may declare test ids whose skips are not failures, so a platform-only case is no longer a floor — the M3.2 bug that cost a run and a frozen-file split), and a refusal to run when the loop branch's `tests/acceptance` differs from its mission branch's, which is what made M3.2's restart measure stale tests. Harness suite is 458.
+
+**What is left, in order of what it costs:**
+1. **The ~80 µs suspended-root window.** JEV scored "fix in its own mission" at 0.92. It needs `CreateProcessW` with `PROC_THREAD_ATTRIBUTE_JOB_LIST`, replacing `Popen`'s Windows half and rebuilding H1a, H2a and H2b around a new lever. Proposed slug: `organ-spawn`.
+2. **POSIX coverage.** The three POSIX cases cannot drive the worker because the harness measures on Windows. Candidates: a WSL gate at the end of each attempt (0.37) or a harness that measures both platforms and takes the worse (0.49). Neither built.
+3. Joe's: the default branch holds alpha.11 on `mission/organ-hardening`; the README says alpha.11; `main` untouched; two frozen files are LF among CRLF.
+
+**Evidence:** notes and logs in `scratchpad\m33\promote\`, M3.3's proof in `scratchpad\m33\`, JEV gates 1 to 6 in `m33\verify\jev_answer*.json`. <!-- src:0e857ac5 date:2026-11-12 -->
+
+**Earlier, Nov 12, after alpha.11:** Mile 3.9 of ~4. **M3.2 `organ-hardening` is released as `plexus-0.1.0-alpha.11`** on `8de1b67`, the promoted keep, which is the reference the worker returned byte for byte.
 - **Tag:** annotated, object `4534770`, pushed alone; `ls-remote` peels it to `8de1b67`. Message: `scratchpad\m32\promote\tag_msg.txt`.
 - **Pre-release:** "Plexus 0.1.0-alpha.11: an engine that cannot outrun its tree", published 2026-11-12T11:52:26Z at https://github.com/JosephOIbrahim/Plexus/releases/tag/plexus-0.1.0-alpha.11. The body is byte-identical to `scratchpad\m32\promote\alpha11_notes.md` (8,596 characters; published copy at `alpha11_published.md`).
 - **Checklist on `8de1b67`** (`m32\promote\checklist4.out`): full suite 5,876 passed, 0 failed, 14 skipped, 51 deselected in 18:15; harness 453; guards 9; ruff 0.15.10 clean on `harness/`; `plexus/` 7 findings, the same seven as alpha.9 and alpha.10 at the same lines; `check` ready; cargo 0 tests.
