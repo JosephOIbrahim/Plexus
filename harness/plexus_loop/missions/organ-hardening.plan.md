@@ -59,7 +59,7 @@ The first prompt is about 58,394 characters of 95,000: the step text (the whole 
 ## 5. Proof (Nov 11, `m32/`)
 
 - **Base, alpha.10's code:** 21 Windows cases fail, each for its own reason, 3 guard cases pass, 3 POSIX cases skip, in 58.3 s.
-- **Reference:** 24 pass, 3 skip, 0 fail, in 58.4 s. The 39 existing lifecycle and isolation cases pass in 133.8 s. **Phase 1 and phase 2 whole, in `m32/wt` with the reference: 286 passed, 3 failed, 3 skipped in 240.5 s.** Phase 1 is 30 of 30. Phase 2 is 253 passed, 3 skipped (the POSIX cases) and 3 failed: H1a, H2a and H2b, the three cases that read the moment between `Popen` and the hold. They fail as inconclusive, by design, because the lever they use, the `ctypes.call_function` audit event, exists only on Python 3.14; this machine's 3.12.10 and 3.13.14 raise `ctypes.dlopen` and `dlsym` but not `call_function`. All three passed 24 of 24 against the same reference on 3.14.2, and 21 of 21 non-guard cases still fail on alpha.10 there.
+- **Reference:** 24 pass, 3 skip, 0 fail, in 58.4 s. The 39 existing lifecycle and isolation cases pass in 133.8 s. **Phase 1 and phase 2 whole, in `m32/wt` with the reference: 289 passed, 0 failed, 3 skipped in 302 s.** Phase 1 is 30 of 30 and phase 2 is 256 of 256, the three skips being the POSIX cases. It ran under Python 3.14.2, the interpreter the project is built on; the same run under 3.12.10 leaves H1a, H2a and H2b inconclusive, because the audit event they pause on, `ctypes.call_function`, exists only on 3.14.
 - **Prototype:** H1a, H2a and H2b pass against the S1/S2 prototype in 13.9 s, so the cases read the mechanism and not only the reference.
 - **Mutants: 8 of 9 caught.** M1 no `CREATE_SUSPENDED` (H1a), M2 resume before the job holds it (H1a), M3 the root is not killed when the job fails (H2a), M4 exact flag names only (H5a), M5 every `-directory` flag refused (H5b), M7 the temp check as a string prefix (H6b), M8 no lock (H7a), M9 the lock never let go (H7b). M6, dropping the `\?\` strip, survives and is equivalent: `samefile` alone refuses every spelling the frozen cases use. The strip still covers a `\?\` path that does not exist yet, which no case reads.
 - **POSIX under WSL Ubuntu:** H3, H4 and H7d pass against the reference in 2.8 s; H7c skips as Windows-only.
@@ -89,3 +89,20 @@ Nothing is mapped: this mission changes `plexus/organs/cozy.py`, Plexus's own or
 - macOS is untested.
 - The frozen `test_organ_lifecycle.py` still hints `taskkill /T /F` in its failure text; only Joe can change that file.
 - Parked: `--port`/`--listen` overrides, and comfy-cli's argument expansion.
+
+## 10. The split of the POSIX cases (Nov 11, after attempt 1)
+
+`harness/plexus_loop/metrics.py:106` counts a skipped test as a failure, and the harness runs on Windows, where H3, H4 and H7d skip. The
+first run measured a floor of 3 that no attempt could remove: baseline 24 was 21 failures plus those 3 skips, and the keep scored 3.
+So the frozen file is split, and the metric target narrowed to the file that has no skips:
+
+- `test_organ_hardening.py`, 11 functions, 24 cases, all of which run on Windows: H1a, H2a, H2b, H5a (6), H5b, H6a (9), H6b, H6c, H7a, H7b, H7c.
+- `test_organ_hardening_posix.py`, 3 functions: H3, H4, H7d, with the `group_signals` fixture, importing the Rig, the sentences and the
+  helpers from the first file rather than copying them. Phase 2 still runs it, and the WSL proof still covers it.
+- The mission's metric target is now `tests/acceptance/phase2/test_organ_hardening.py`, and `requires` names both files.
+
+Proved after the split, in copies of the same scratch runs:
+- base, Windows file: 21 failed, 3 passed (the guards), 0 skipped, 58.7 s;
+- reference, Windows file: **24 passed, 0 failed, 0 skipped**, 58.0 s;
+- base, POSIX file under WSL: 3 failed, 2.7 s;
+- reference, POSIX file under WSL: **3 passed**, 2.6 s.

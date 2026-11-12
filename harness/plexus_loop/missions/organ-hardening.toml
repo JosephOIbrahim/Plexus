@@ -7,7 +7,7 @@
 [mission]
 name = "organ-hardening"
 goal = "Make Joe's frozen tests/acceptance/phase2/test_organ_hardening.py pass with one step, H1, that changes plexus/organs/cozy.py alone: on Windows start() creates comfy-cli's process suspended, holds it in the kill-on-close job and only then resumes it; a hold that fails kills the root before it runs, reports unavailable and raises OrganError; on POSIX the root is never reaped before its group is signalled and a refused kill becomes OrganError; the constructor refuses abbreviated folder flags and an instance inside the workspace's temp folder, judged by the folder on disk; start() holds the instance with an OS lock and refuses one another lifecycle holds. Break no other phase 2 test and no phase 1 test. tests/acceptance/CONTRACT.md is the Python surface; harness/plexus_loop/missions/organ-hardening.worker.md says what the step is."
-requires = ["tests/acceptance/phase2/test_organ_hardening.py", "tests/acceptance/phase2/test_organ_isolation.py", "tests/acceptance/phase2/test_organ_lifecycle.py", "tests/acceptance/phase1"]
+requires = ["tests/acceptance/phase2/test_organ_hardening.py", "tests/acceptance/phase2/test_organ_hardening_posix.py", "tests/acceptance/phase2/test_organ_isolation.py", "tests/acceptance/phase2/test_organ_lifecycle.py", "tests/acceptance/phase1"]
 focus = ["plexus/organs/cozy.py"]
 frozen = ["tests/acceptance/**", "harness/**", "docs/plexus/**", "PLEXUS_SPEC.md", ".github/**", "pyproject.toml"]
 context = [
@@ -17,10 +17,10 @@ context = [
 
 [metric]
 kind = "pytest_failures"
-target = "tests/acceptance/phase2"
+target = "tests/acceptance/phase2/test_organ_hardening.py"
 direction = "lower"
 min_delta = 1
-# Phase 2 with the reference took  in the proof run (235 + 21 cases). A wrong file that leaves child hosts behind can add up to
+# The target file alone: 24 cases with the reference, none of them skipped on Windows. Phase 2 with the reference took  in the proof run (235 + 21 cases). A wrong file that leaves child hosts behind can add up to
 # 15 s a case, still inside 600 s.
 timeout_s = 900
 
