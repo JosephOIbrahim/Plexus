@@ -1,6 +1,20 @@
 # Capsule — Plexus
 
-**Where we are (Nov 11, 15:20, M3.2 drafting):** Mile 3.7 of ~4. No release since alpha.10: nothing that ships has changed.
+**Where we are (Nov 12, after alpha.11):** Mile 3.9 of ~4. **M3.2 `organ-hardening` is released as `plexus-0.1.0-alpha.11`** on `8de1b67`, the promoted keep, which is the reference the worker returned byte for byte.
+- **Tag:** annotated, object `4534770`, pushed alone; `ls-remote` peels it to `8de1b67`. Message: `scratchpad\m32\promote\tag_msg.txt`.
+- **Pre-release:** "Plexus 0.1.0-alpha.11: an engine that cannot outrun its tree", published 2026-11-12T11:52:26Z at https://github.com/JosephOIbrahim/Plexus/releases/tag/plexus-0.1.0-alpha.11. The body is byte-identical to `scratchpad\m32\promote\alpha11_notes.md` (8,596 characters; published copy at `alpha11_published.md`).
+- **Checklist on `8de1b67`** (`m32\promote\checklist4.out`): full suite 5,876 passed, 0 failed, 14 skipped, 51 deselected in 18:15; harness 453; guards 9; ruff 0.15.10 clean on `harness/`; `plexus/` 7 findings, the same seven as alpha.9 and alpha.10 at the same lines; `check` ready; cargo 0 tests.
+- **Environment caveat, written into the notes:** the full-suite count is 55 items below alpha.10's 5,931 with 11 more skips. The moved Python 3.14 lost packages; modules needing `openai`, `sentence_transformers` or `OpenEXR` now skip. Every Plexus acceptance test passes.
+
+**M3.2's two runs and what they taught.** Attempt 1 (first run) returned the reference byte for byte and was kept `7d0a450`, 24 -> 3 in 52.6 min; the 3 were the POSIX cases skipping, since `metrics.py` counts a skip as a failure. Joe split the frozen file (`2235c1b`): the Windows cases stay in `test_organ_hardening.py`, the three POSIX cases moved to `test_organ_hardening_posix.py`, and the metric targets the first. The loop branch was then rebuilt on the split tip with the keep cherry-picked (`8de1b67`), and the second run measured **baseline 0** and stopped on "every target test passes" with no attempt spent.
+
+**Proof behind the keep** (`scratchpad\m32\`): base 21 failed and 3 guards passed; reference 24 of 24 on Windows and 3 of 3 under WSL; 8 of 9 mutants caught, the ninth equivalent because `samefile` closes the spelling it would leave open; whole suite 289 of 289 at the time.
+
+**For Joe:** `main` is untouched; the default branch is `mission/organ-isolation` and holds alpha.10, so the front page does not show this release; `mission/organ-hardening` is pushed to `8de1b67`; the README still says alpha.10. The `test_organ_hardening_posix.py` header carries 50 LF-only lines among CRLF — cosmetic, and his file to change.
+
+**Next action:** Joe's pick. Phase 3 (Safety) is the roadmap's next phase; the alternative is a short M3.3 that closes alpha.11's Still-open list — the ~80 µs suspended-root window, a not-yet-existing temp folder through a UNC alias, a workspace whose ComfyUI moved its temp dir, the POSIX orphaned-engine lock, and the POSIX skip coverage. **Blockers:** none. **Energy:** low to pick, medium for a Phase 3 design wave. <!-- src:0e857ac5 date:2026-11-12 -->
+
+**Earlier, Nov 11, at 15:20, M3.2 drafting:**
 
 **Fixed and pushed on `mission/organ-isolation`:**
 - **`5ac709b`:** `/mission`, `/report` and `/doctor` never paste their arguments into a shell. Claude Code pastes them as raw text, so the apostrophe in `/mission M3.2: close alpha.10's …` broke it before anything was drafted. `${ARGUMENTS:-acceptance}` was never filled in, so `/report` and `/doctor` always read `acceptance`. `/mission` now drafts a new mission from a scope.
