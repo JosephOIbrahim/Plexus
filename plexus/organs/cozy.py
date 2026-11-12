@@ -287,6 +287,9 @@ STATS_S = 5.0
 CHILD_ENV_DROP = ('COMFY_CLI_BACKGROUND', 'COMFY_OUTPUT', 'VIRTUAL_ENV', 'CONDA_PREFIX', 'PYTHONPATH', 'PYTHONHOME', 'PXR_PLUGINPATH_NAME')
 CHILD_ENV_SET = {'COMFY_NO_TELEMETRY': '1', 'DO_NOT_TRACK': '1', 'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'}
 INSTANCE_FLAGS = ('--user-directory', '--database-url', '--temp-directory', '--output-directory')
+CREATE_SUSPENDED = 0x00000004  # Windows: the root runs nothing until the job holds it
+INSTANCE_LOCK = '.plexus-instance.lock'  # in the instance's own root, beside user, temp and output, which ComfyUI never lists or wipes
+_NOWAIT = os.name != 'nt' and hasattr(os, 'waitid') and hasattr(os, 'WNOWAIT')
 _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -301,6 +304,7 @@ def _port_open(port: int) -> bool:
 
 if os.name == 'nt':
     import ctypes
+    import msvcrt
     from ctypes import wintypes
 
     _K32 = ctypes.WinDLL('kernel32', use_last_error=True)
@@ -312,12 +316,21 @@ if os.name == 'nt':
     _K32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
     _K32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
     _K32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    _K32.SetInformationJobObject.restype = wintypes.BOOL  # these four return BOOL, which ctypes' default int reads the same way
+    _K32.AssignProcessToJobObject.restype = wintypes.BOOL
+    _K32.TerminateJobObject.restype = wintypes.BOOL
+    _K32.CloseHandle.restype = wintypes.BOOL
+    _NT = ctypes.WinDLL('ntdll')
+    _NT.NtResumeProcess.restype = ctypes.c_long  # NTSTATUS; 0 is STATUS_SUCCESS
+    _NT.NtResumeProcess.argtypes = (wintypes.HANDLE,)
 
     class _JobLimits(ctypes.Structure):
         """JOBOBJECT_EXTENDED_LIMIT_INFORMATION; only flags is set."""
         _fields_ = [('user_time', ctypes.c_int64 * 2), ('flags', wintypes.DWORD), ('working_set', ctypes.c_size_t * 2),
                     ('process_limit', wintypes.DWORD), ('affinity', ctypes.c_size_t), ('priority', wintypes.DWORD),
                     ('scheduling', wintypes.DWORD), ('io', ctypes.c_uint64 * 6), ('memory', ctypes.c_size_t * 4)]
+else:
+    import fcntl
 
 
 def _job_holding(pid: int):
@@ -344,6 +357,97 @@ def _job_holding(pid: int):
     return job, None
 
 
+def _resumed(pid: int):
+    """Resume process pid, which start() spawned suspended and a job now holds. Returns None, or the error."""
+    process = _K32.OpenProcess(0x0800, False, pid)  # PROCESS_SUSPEND_RESUME
+    if not process:
+        return ctypes.WinError(ctypes.get_last_error())
+    try:
+        status = _NT.NtResumeProcess(process)
+    finally:
+        _K32.CloseHandle(process)
+    return None if status == 0 else OSError(f"NtResumeProcess returned NTSTATUS {status & 0xFFFFFFFF:#010x}")
+
+
+def _exited(proc) -> int | None:
+    """The root's exit code once it has exited, else None. On POSIX it never reaps the root: a zombie keeps its process ID, which is
+    also its process group's ID, so the number cannot pass to another group before _kill() has signalled this one and reaped it."""
+    if not _NOWAIT or proc.returncode is not None:
+        return proc.poll()
+    try:
+        info = os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:  # something else in this process reaped it (SIGCHLD ignored, a waitpid(-1)); poll() then sets returncode
+        return proc.poll()
+    if info is None:
+        return None
+    return info.si_status if info.si_code == os.CLD_EXITED else -info.si_status
+
+
+def _names_folder_flag(item) -> bool:
+    """True when ComfyUI's parser reads item, alone or as name=value, as one of INSTANCE_FLAGS: its name is '--' and at least one more
+    character, and starts one of the four. argparse reads an unambiguous start of a flag as that flag, and its last value wins."""
+    name = str(item).split('=', 1)[0]
+    return len(name) > 2 and name.startswith('--') and any(flag.startswith(name) for flag in INSTANCE_FLAGS)
+
+
+def _real(path) -> Path:
+    """path resolved, once the extended-length prefix a Windows path may carry, in its plain or its UNC form, is dropped: resolve() keeps it."""
+    s = str(path)
+    if os.name == 'nt':
+        if s.startswith('\\\\?\\UNC\\'):
+            s = '\\\\' + s[8:]
+        elif s.startswith('\\\\?\\'):
+            s = s[4:]
+    return Path(s).resolve()
+
+
+def _same(path: Path, folder: Path) -> bool:
+    """True when path and folder, both from _real(), are one folder: equal as written, or the same folder on disk."""
+    return path == folder or (path.exists() and folder.exists() and os.path.samefile(path, folder))
+
+
+def _inside(path: Path, folder: Path) -> bool:
+    """True when path, from _real(), is folder or below it: as written, or, when folder exists, through any existing folder among path
+    and its parents that is folder on disk. On Windows equality ignores case; on POSIX it does not."""
+    if path == folder or folder in path.parents:
+        return True
+    return folder.is_dir() and any(p.exists() and os.path.samefile(p, folder) for p in (path, *path.parents))
+
+
+def _locked(folder: Path) -> int | None:
+    """A descriptor holding an OS lock on folder's INSTANCE_LOCK, taken without waiting, or None when another holder has it.
+
+    The descriptor is a bare int that nothing owns, so only os.close() or the end of every process that holds it lets the lock go.
+    Nothing is ever written to the file.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    fd = os.open(folder / INSTANCE_LOCK, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        if os.name == 'nt':
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)  # PermissionError (errno 13) when another handle holds byte 0
+        else:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # BlockingIOError when another open file description holds it
+    except (PermissionError if os.name == 'nt' else BlockingIOError):
+        os.close(fd)
+        return None
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _unlocked(fd: int) -> None:
+    """Let go the lock _locked() took on fd, and close fd."""
+    if os.name == 'nt':
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+    os.close(fd)
+
+
 class CozyLifecycle:
     """Starts, stops and measures one ComfyUI on 127.0.0.1:<port> through comfy-cli in the foreground, beside the organ contract.
 
@@ -364,16 +468,21 @@ class CozyLifecycle:
         self._ready_s = ready_s
         self._stop_s = stop_s
         self._poll_s = poll_s
-        self._instance = None if instance is None else Path(instance).resolve()
+        self._instance = None if instance is None else _real(instance)
         if self._instance is not None:
-            if self._instance == self._workspace.resolve():
+            workspace = _real(self._workspace)
+            if _same(self._instance, workspace):
                 raise ValueError(f"instance {self._instance} is the workspace itself; give this ComfyUI a folder of its own, "
                                  "so it never shares the workspace's user folder, database, temp folder or output")
-            taken = [a for a in self._extra if str(a).split('=', 1)[0] in INSTANCE_FLAGS]
+            if _inside(self._instance, workspace / 'temp'):
+                raise ValueError(f"instance {self._instance} is in {workspace / 'temp'}, which a ComfyUI started from the workspace deletes "
+                                 "when it starts and again when it exits; give this ComfyUI a folder outside it")
+            taken = [a for a in self._extra if _names_folder_flag(a)]
             if taken:
                 raise ValueError(f"extra names {', '.join(taken)}, which instance sets; pass one or the other")
         self._proc = None
         self._job = None
+        self._lock = None
         self.endpoint = f'http://{LISTEN}:{port}'
         self.probe()  # a state an earlier process left on the stage is replaced before the constructor returns
 
@@ -394,7 +503,7 @@ class CozyLifecycle:
         while True:
             if self._measure() == 'ready':
                 return self._tell('ready')
-            code = self._proc.poll()
+            code = _exited(self._proc)
             if code is not None:
                 try:
                     self._kill()  # the root is gone; end whatever it left running
@@ -420,7 +529,7 @@ class CozyLifecycle:
         return state
 
     def _alive(self) -> bool:
-        return self._proc is not None and self._proc.poll() is None
+        return self._proc is not None and _exited(self._proc) is None
 
     def _instance_args(self) -> list[str]:
         if self._instance is None:
@@ -439,43 +548,69 @@ class CozyLifecycle:
         env = {k: v for k, v in os.environ.items() if k.upper() not in CHILD_ENV_DROP}
         env.update(CHILD_ENV_SET)
         if os.name == 'nt':
-            group = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+            group = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW | CREATE_SUSPENDED}
         else:
             group = {'start_new_session': True}
         self._release()
         self._tell('starting')
-        out, what = subprocess.DEVNULL, None
+        out, what, proc, job = subprocess.DEVNULL, None, None, None
         try:
-            if self._instance is not None:
-                for folder in (self._instance / 'user', self._instance / 'temp', self._instance / 'output'):
-                    what = folder
-                    folder.mkdir(parents=True, exist_ok=True)
-            if self._log is not None:
-                what = self._log
-                out = open(self._log, 'ab')
-            what = argv[0]
-            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
-                                    cwd=str(self._workspace), env=env, **group)
-        except OSError as e:
-            self._tell('unavailable')
-            raise OrganError(f"Unavailable: {what}: {e.strerror or e}, so nothing was started on port {self._port}") from e
-        finally:
-            if out is not subprocess.DEVNULL:
-                out.close()
-        self._proc = proc
-        if os.name == 'nt':
-            self._job, error = _job_holding(proc.pid)
-            if self._job is None:
-                proc.kill()
-                proc.wait()
-                self._proc = None
+            try:
+                if self._instance is not None:
+                    what = self._instance
+                    self._lock = _locked(self._instance)
+                    if self._lock is None:
+                        self._tell('unavailable')
+                        raise OrganError(f"Unavailable: instance {self._instance} is in use by another lifecycle's ComfyUI, "
+                                         f"so nothing was started on port {self._port}")
+                    for folder in (self._instance / 'user', self._instance / 'temp', self._instance / 'output'):
+                        what = folder
+                        folder.mkdir(parents=True, exist_ok=True)
+                if self._log is not None:
+                    what = self._log
+                    out = open(self._log, 'ab')
+                what = argv[0]
+                proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                                        cwd=str(self._workspace), env=env, **group,
+                                        **({'pass_fds': (self._lock,)} if self._lock is not None and os.name != 'nt' else {}))
+            except OSError as e:
+                self._drop_lock()
                 self._tell('unavailable')
-                raise OrganError(f"Unavailable: comfy-cli's process tree could not be held in a job object ({error}), so it was killed")
+                raise OrganError(f"Unavailable: {what}: {e.strerror or e}, so nothing was started on port {self._port}") from e
+            finally:
+                if out is not subprocess.DEVNULL:
+                    out.close()
+            if os.name == 'nt':
+                job, error = _job_holding(proc.pid)
+                if job is not None:
+                    error = _resumed(proc.pid)
+                if error is not None:
+                    raise error
+        except BaseException as e:
+            if proc is None:  # nothing was spawned; the in-use branch or the OSError handler has reported, and a lock taken is let go
+                self._drop_lock()
+                raise
+            try:
+                proc.kill()  # on Windows still suspended, so it has run nothing and is the whole tree; killed before the job closes
+                proc.wait()
+            except OSError:
+                pass
+            finally:
+                if job is not None:
+                    _K32.CloseHandle(job)
+            self._drop_lock()
+            self._tell('unavailable')
+            if not isinstance(e, Exception):
+                raise
+            raise OrganError(f"Unavailable: comfy-cli's process could not be held in a job object and let run ({e}), so it was killed "
+                             f"before it ran, and nothing runs on port {self._port}") from e
+        self._proc, self._job = proc, job
 
     def _kill(self) -> None:
         """Kill the tree this lifecycle started, the root, its descendants and anything it left running, then wait until the port closes.
 
         The handle is dropped only once the root has ended, so a kill that cannot end it leaves the tree this lifecycle's to stop again.
+        On POSIX the root is reaped only here, after its group is signalled, so the group's number is still this tree's when it is.
         """
         proc = self._proc
         if os.name == 'nt':
@@ -483,10 +618,16 @@ class CozyLifecycle:
                 raise OrganError(f"the tree comfy-cli runs in on port {self._port} could not be killed "
                                  f"({ctypes.WinError(ctypes.get_last_error())}); it is still this lifecycle's, so stop() can try again")
         else:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            if _NOWAIT:
+                _exited(proc)  # learns, without reaping, of a root something else reaped; poll() then sets returncode
+            if not _NOWAIT or proc.returncode is None:  # unreaped, so the root's number is still its group's
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except OSError as e:
+                    raise OrganError(f"the tree comfy-cli runs in on port {self._port} could not be killed ({e}); "
+                                     "it is still this lifecycle's, so stop() can try again") from e
         try:
             proc.wait(timeout=self._stop_s)
         except subprocess.TimeoutExpired:
@@ -500,11 +641,18 @@ class CozyLifecycle:
             time.sleep(self._poll_s)
 
     def _release(self) -> None:
-        """Drop the handle and the job. Closing a job ends whatever is still in it, which is only ever this lifecycle's own."""
+        """Drop the handle, the job and the instance. Closing a job ends whatever is still in it, which is only ever this lifecycle's own."""
         if self._job is not None:
             _K32.CloseHandle(self._job)
         self._proc = None
         self._job = None
+        self._drop_lock()
+
+    def _drop_lock(self) -> None:
+        """Let this lifecycle's lock on its instance go. On POSIX comfy-cli holds the same lock until it ends."""
+        if self._lock is not None:
+            fd, self._lock = self._lock, None
+            _unlocked(fd)
 
     def _measure(self) -> str:
         if not _port_open(self._port):
