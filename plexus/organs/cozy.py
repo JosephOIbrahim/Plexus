@@ -314,6 +314,46 @@ if os.name == 'nt':
     _K32.OpenProcess.restype = wintypes.HANDLE
     _K32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
     _K32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    class _StartupInfoW(ctypes.Structure):
+        _fields_ = [('cb', wintypes.DWORD), ('lpReserved', wintypes.LPWSTR), ('lpDesktop', wintypes.LPWSTR),
+                    ('lpTitle', wintypes.LPWSTR), ('dwX', wintypes.DWORD), ('dwY', wintypes.DWORD),
+                    ('dwXSize', wintypes.DWORD), ('dwYSize', wintypes.DWORD),
+                    ('dwXCountChars', wintypes.DWORD), ('dwYCountChars', wintypes.DWORD),
+                    ('dwFillAttribute', wintypes.DWORD), ('dwFlags', wintypes.DWORD),
+                    ('wShowWindow', wintypes.WORD), ('cbReserved2', wintypes.WORD),
+                    ('lpReserved2', ctypes.c_void_p), ('hStdInput', wintypes.HANDLE),
+                    ('hStdOutput', wintypes.HANDLE), ('hStdError', wintypes.HANDLE)]
+
+    class _StartupInfoEx(ctypes.Structure):
+        _fields_ = [('StartupInfo', _StartupInfoW), ('lpAttributeList', ctypes.c_void_p)]
+
+    class _ProcessInfo(ctypes.Structure):
+        _fields_ = [('hProcess', wintypes.HANDLE), ('hThread', wintypes.HANDLE),
+                    ('dwProcessId', wintypes.DWORD), ('dwThreadId', wintypes.DWORD)]
+
+    _K32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    _K32.GetExitCodeProcess.restype = wintypes.BOOL
+    _K32.CreatePipe.argtypes = (ctypes.POINTER(wintypes.HANDLE), ctypes.POINTER(wintypes.HANDLE), ctypes.c_void_p, wintypes.DWORD)
+    _K32.CreatePipe.restype = wintypes.BOOL
+    _K32.CreateProcessW.argtypes = (wintypes.LPCWSTR, wintypes.LPWSTR, ctypes.c_void_p, ctypes.c_void_p,
+                                    wintypes.BOOL, wintypes.DWORD, ctypes.c_void_p, wintypes.LPCWSTR,
+                                    ctypes.c_void_p, ctypes.c_void_p)
+    _K32.CreateProcessW.restype = wintypes.BOOL
+    _K32.InitializeProcThreadAttributeList.argtypes = (ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                                                       ctypes.POINTER(ctypes.c_size_t))
+    _K32.InitializeProcThreadAttributeList.restype = wintypes.BOOL
+    _K32.UpdateProcThreadAttribute.argtypes = (ctypes.c_void_p, wintypes.DWORD, ctypes.c_size_t, ctypes.c_void_p,
+                                               ctypes.c_size_t, ctypes.c_void_p, ctypes.c_void_p)
+    _K32.UpdateProcThreadAttribute.restype = wintypes.BOOL
+    _K32.DeleteProcThreadAttributeList.argtypes = (ctypes.c_void_p,)
+    _K32.SetHandleInformation.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD)
+    _K32.CreateFileW.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                                 wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+    _K32.CreateFileW.restype = wintypes.HANDLE
+    _K32.TerminateProcess.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    _K32.TerminateProcess.restype = wintypes.BOOL
+    _K32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    _K32.WaitForSingleObject.restype = wintypes.DWORD
     _K32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
     _K32.CloseHandle.argtypes = (wintypes.HANDLE,)
     _K32.SetInformationJobObject.restype = wintypes.BOOL  # these four return BOOL, which ctypes' default int reads the same way
@@ -333,40 +373,114 @@ else:
     import fcntl
 
 
-def _job_holding(pid: int):
-    """A Windows Job Object holding process pid, set to kill everything in it when its last handle closes. Returns (job, None) or (None, error).
+class _Child:
+    """A process this lifecycle started on Windows: its pid, and the handle that answers for its life."""
 
-    Every process pid starts afterwards joins the job, so TerminateJobObject ends the whole tree even once the root has exited, and the
-    host's exit, which closes the handle, ends it too.
-    """
+    __slots__ = ('pid', 'handle')
+
+    def __init__(self, pid: int, handle):
+        self.pid = pid
+        self.handle = handle
+
+    def poll(self):
+        """The exit code once the process has ended, or None while it runs: the one method of Popen the lifecycle reads."""
+        if _K32.WaitForSingleObject(self.handle, 0) == 0x00000102:  # WAIT_TIMEOUT
+            return None
+        code = wintypes.DWORD(0)
+        _K32.GetExitCodeProcess(self.handle, ctypes.byref(code))
+        return code.value
+
+    def wait(self, timeout=None):
+        """Wait for the process to end, in milliseconds when a timeout is given; raise TimeoutExpired as Popen does."""
+        ms = 0xFFFFFFFF if timeout is None else int(timeout * 1000)
+        if _K32.WaitForSingleObject(self.handle, ms) == 0x00000102:
+            raise subprocess.TimeoutExpired('comfy-cli', timeout)
+        return self.poll()
+
+
+def _job_for(pid_holder) -> object:
+    """A job with kill-on-close, ready to be named in a process's attribute list before the process exists."""
     job = _K32.CreateJobObjectW(None, None)
-    process = _K32.OpenProcess(0x0101, False, pid)  # PROCESS_TERMINATE | PROCESS_SET_QUOTA
+    if not job:
+        return None, ctypes.WinError(ctypes.get_last_error())
     limits = _JobLimits()
     limits.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-    try:
-        held = bool(job and process and _K32.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits))
-                    and _K32.AssignProcessToJobObject(job, process))
-        error = None if held else ctypes.WinError(ctypes.get_last_error())
-    finally:
-        if process:
-            _K32.CloseHandle(process)
-    if not held:
-        if job:
-            _K32.CloseHandle(job)
+    if not _K32.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
+        error = ctypes.WinError(ctypes.get_last_error())
+        _K32.CloseHandle(job)
         return None, error
     return job, None
 
 
-def _resumed(pid: int):
-    """Resume process pid, which start() spawned suspended and a job now holds. Returns None, or the error."""
-    process = _K32.OpenProcess(0x0800, False, pid)  # PROCESS_SUSPEND_RESUME
-    if not process:
-        return ctypes.WinError(ctypes.get_last_error())
-    try:
-        status = _NT.NtResumeProcess(process)
-    finally:
-        _K32.CloseHandle(process)
-    return None if status == 0 else OSError(f"NtResumeProcess returned NTSTATUS {status & 0xFFFFFFFF:#010x}")
+def _pipe_eof():
+    """A pipe with no writer left in this process, its read end inheritable and nothing else: every read returns end of file at once."""
+    read_end, write_end = wintypes.HANDLE(), wintypes.HANDLE()
+    if not _K32.CreatePipe(ctypes.byref(read_end), ctypes.byref(write_end), None, 0):
+        raise OSError(ctypes.get_last_error(), "CreatePipe failed")
+    _K32.SetHandleInformation(read_end, 1, 1)  # HANDLE_FLAG_INHERIT on the read end alone
+    _K32.CloseHandle(write_end)
+    return read_end.value
+
+
+def _spawned(argv, env, cwd: str, log_fd: int | None):
+    """Create the child already inside a new kill-on-close job, with CreateProcessW and PROC_THREAD_ATTRIBUTE_JOB_LIST.
+
+    Returns (process_handle, pid, job, None) or (None, 0, None, error). No instant exists in which the child is alive and
+    outside the job, so a host that dies here leaves nothing behind: Windows closes the job with the host's last handle.
+    """
+    job, error = _job_for(None)
+    if job is None:
+        return None, 0, None, error
+    size = ctypes.c_size_t(0)
+    _K32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
+    buf = ctypes.create_string_buffer(size.value)
+    if not _K32.InitializeProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p), 1, 0, ctypes.byref(size)):
+        error = ctypes.WinError(ctypes.get_last_error())
+        _K32.CloseHandle(job)
+        return None, 0, None, error
+    job_ref = ctypes.c_void_p(job)
+    if not _K32.UpdateProcThreadAttribute(ctypes.cast(buf, ctypes.c_void_p), 0, 0x0002000D,  # PROC_THREAD_ATTRIBUTE_JOB_LIST
+                                          ctypes.byref(job_ref), ctypes.sizeof(job_ref), None, None):
+        error = ctypes.WinError(ctypes.get_last_error())
+        _K32.DeleteProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p))
+        _K32.CloseHandle(job)
+        return None, 0, None, error
+    si = _StartupInfoEx()
+    si.StartupInfo.cb = ctypes.sizeof(si)
+    # stdin is a pipe whose write end is already closed here, so a read returns end of file at once as Popen's DEVNULL does. Only its
+    # read end is made inheritable, so the child receives a reader with no writer. stdout and stderr stay a write-only NUL.
+    stdin_handle = _pipe_eof()
+    nul = _K32.CreateFileW("NUL", 0x40000000, 0x00000001 | 0x00000002, None, 3, 0, None)
+    _K32.SetHandleInformation(wintypes.HANDLE(nul), 1, 1)
+    si.StartupInfo.hStdInput = wintypes.HANDLE(stdin_handle)
+    si.StartupInfo.hStdOutput = wintypes.HANDLE(nul)
+    si.StartupInfo.hStdError = wintypes.HANDLE(nul)
+    si.StartupInfo.dwFlags |= 0x00000100  # STARTF_USESTDHANDLES
+    si.lpAttributeList = ctypes.cast(buf, ctypes.c_void_p)
+    inherit = True
+    if log_fd is not None:
+        import msvcrt
+
+        handle = msvcrt.get_osfhandle(log_fd)
+        _K32.SetHandleInformation(wintypes.HANDLE(handle), 1, 1)  # HANDLE_FLAG_INHERIT
+        si.StartupInfo.hStdOutput = wintypes.HANDLE(handle)
+        si.StartupInfo.hStdError = wintypes.HANDLE(handle)
+    block = ["%s=%s" % (k, v) for k, v in sorted(env.items(), key=lambda kv: kv[0].upper())]
+    env_buf = ctypes.create_unicode_buffer("\0".join(block) + "\0\0", sum(len(x) for x in block) + 2 * len(block) + 2)
+    command = ctypes.create_unicode_buffer(subprocess.list2cmdline(list(argv)))
+    info = _ProcessInfo()
+    flags = 0x00000010 | 0x00000200 | 0x00000400 | 0x00080000  # UNICODE_ENVIRONMENT | NEW_PROCESS_GROUP | NO_WINDOW | EXTENDED_STARTUPINFO
+    ok = _K32.CreateProcessW(None, command, None, None, inherit, flags,
+                             ctypes.cast(env_buf, ctypes.c_void_p), cwd, ctypes.byref(si), ctypes.byref(info))
+    if not ok:
+        error = ctypes.WinError(ctypes.get_last_error())
+        _K32.DeleteProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p))
+        _K32.CloseHandle(job)
+        return None, 0, None, error
+    _K32.DeleteProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p))
+    _K32.CloseHandle(info.hThread)
+    _K32.CloseHandle(nul)
+    return info.hProcess, info.dwProcessId, job, None
 
 
 def _exited(proc) -> int | None:
@@ -575,6 +689,9 @@ class CozyLifecycle:
         return state
 
     def _alive(self) -> bool:
+        if self._proc is not None and os.name == 'nt':
+            # WAIT_TIMEOUT is the only answer that means alive; WAIT_OBJECT_0 and WAIT_FAILED both mean this is over.
+            return _K32.WaitForSingleObject(self._proc.handle, 0) == 0x00000102
         return self._proc is not None and _exited(self._proc) is None
 
     def _instance_args(self) -> list[str]:
@@ -621,9 +738,16 @@ class CozyLifecycle:
                     what = self._log
                     out = open(self._log, 'ab')
                 what = argv[0]
-                proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
-                                        cwd=str(self._workspace), env=env, **group,
-                                        **({'pass_fds': (self._lock,)} if self._lock is not None and os.name != 'nt' else {}))
+                if os.name == 'nt':
+                    handle, pid, job, error = _spawned(argv, env, str(self._workspace),
+                                                       out.fileno() if out is not subprocess.DEVNULL else None)
+                    if error is not None:
+                        raise error
+                    proc = _Child(pid, handle)
+                else:
+                    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                                            cwd=str(self._workspace), env=env, **group,
+                                            **({'pass_fds': (self._lock,)} if self._lock is not None else {}))
             except OSError as e:
                 self._drop_lock()
                 self._tell('unavailable')
@@ -631,19 +755,18 @@ class CozyLifecycle:
             finally:
                 if out is not subprocess.DEVNULL:
                     out.close()
-            if os.name == 'nt':
-                job, error = _job_holding(proc.pid)
-                if job is not None:
-                    error = _resumed(proc.pid)
-                if error is not None:
-                    raise error
         except BaseException as e:
             if proc is None:  # nothing was spawned; the in-use branch or the OSError handler has reported, and a lock taken is let go
                 self._drop_lock()
                 raise
             try:
-                proc.kill()  # on Windows still suspended, so it has run nothing and is the whole tree; killed before the job closes
-                proc.wait()
+                if os.name == 'nt':
+                    _K32.TerminateProcess(proc.handle, 1)  # created inside the job, so this is the whole tree
+                    _K32.WaitForSingleObject(proc.handle, int(self._stop_s * 1000))
+                    _K32.CloseHandle(proc.handle)
+                else:
+                    proc.kill()
+                    proc.wait()
             except OSError:
                 pass
             finally:
@@ -680,7 +803,12 @@ class CozyLifecycle:
                     raise OrganError(f"the tree comfy-cli runs in on port {self._port} could not be killed ({e}); "
                                      "it is still this lifecycle's, so stop() can try again") from e
         try:
-            proc.wait(timeout=self._stop_s)
+            if os.name == 'nt':
+                if _K32.WaitForSingleObject(proc.handle, int(self._stop_s * 1000)) == 0x00000102:  # WAIT_TIMEOUT
+                    raise OrganError(f"the process comfy-cli runs in on port {self._port} did not end within {self._stop_s:g} s of the kill; "
+                                     f"it is still this lifecycle's, so stop() can try again")
+            else:
+                proc.wait(timeout=self._stop_s)
         except subprocess.TimeoutExpired:
             raise OrganError(f"the process comfy-cli runs in on port {self._port} did not end within {self._stop_s:g} s of the kill; "
                              f"it is still this lifecycle's, so stop() can try again") from None
@@ -693,6 +821,8 @@ class CozyLifecycle:
 
     def _release(self) -> None:
         """Drop the handle, the job and the instance. Closing a job ends whatever is still in it, which is only ever this lifecycle's own."""
+        if self._proc is not None and os.name == 'nt':
+            _K32.CloseHandle(self._proc.handle)
         if self._job is not None:
             _K32.CloseHandle(self._job)
         self._proc = None
