@@ -25,7 +25,8 @@
 |---|---|
 | **Where it stands** | As of `plexus-0.1.0-alpha.11`, Phase 1 and Phase 2 are done. Every frozen phase 1 and phase 2 test passes on Windows: **30 of 30** and **262 of 262**. Organs sit on the stage, and Plexus can start, stop and measure a ComfyUI through comfy-cli. Given an instance folder, that ComfyUI keeps its own user folder, database, temp folder and output; on Windows its process tree is held in a Job Object, and it starts suspended so nothing it starts escapes that tree. |
 | **What's next** | Phase 3, Safety: the four contracts. Mission M3.3, which would close alpha.11's own open list, is the alternative. The latest state is in [`harness/CAPSULE.md`](harness/CAPSULE.md). |
-| **Start here** | [01 · The idea](#01--the-idea) for why, [05 · Run it](#05--run-it) for how. |
+| **Start here** | [01 · The idea](#01--the-idea) for why, [05 · Run it](#05--run-it) for how. One diagram of a round trip is in [03](#03--how-it-works); the rest is below that. |
+| **The one number that matters** | **292 acceptance tests pass**, 30 in phase 1 and 262 in phase 2, and the full suite has no failures. Everything else here is how. |
 
 *Plexus is a working title.*
 
@@ -73,22 +74,7 @@ flowchart LR
 
 ## 03 · How it works
 
-**Each layer calls only the layer below it, or a contract.** Rust goes where code is hot, long-running or must be exact. Python stays where code must be flexible, or where what Plexus calls is Python-only: usd-core and the LLM SDKs.
-
-```mermaid
-flowchart TB
-    L5["L5 · Surfaces<br/>MCP server · CLI · panel"]
-    L4["L4 · Organs<br/>ComfyUI organ · any engine behind the organ contract"]
-    L3["L3 · Projection<br/>stage prims to organ intent"]
-    L2["L2 · Nervous system<br/>predicates + budgets in the Rust core · neurons in Python"]
-    L1["L1 · Contracts<br/>Safety · Memory · Ledger · Composer"]
-    L0["L0 · Substrate<br/>the composed stage · writer sublayers · the exchange"]
-    L5 --> L4 --> L3 --> L2 --> L1 --> L0
-    classDef here stroke:#E8452C,stroke-width:3px
-    class L2,L4 here
-```
-
-The outlined layers hold the code that exists today: the nervous system and the first organ.
+**Each layer calls only the layer below it, or a contract.** Six of them, top to bottom: surfaces (MCP server, CLI), **organs** (ComfyUI and anything else behind the organ contract), projection (stage prims to organ intent), the **nervous system** (predicates and budgets in the Rust core, neurons in Python), four contracts (Safety, Memory, Ledger, Composer), and the substrate (the composed stage, writer sublayers, the exchange). Rust goes where code is hot, long-running or must be exact; Python stays where it must be flexible, or where what Plexus calls is Python-only — usd-core and the LLM SDKs. The two in bold are the ones with code today.
 
 **One round trip, end to end.** This is what T7 checks.
 
@@ -239,7 +225,8 @@ python -m harness.plexus_loop stop
 
 ---
 
-## 06 · Where things live
+<details>
+<summary><strong>06 · Where things live</strong></summary>
 
 | Path | What it is | Who may change it |
 |---|---|---|
@@ -250,6 +237,8 @@ python -m harness.plexus_loop stop
 | `docs/plexus/` | Blueprint v5.3, diagrams, the voice guide | Joe |
 | `PLEXUS_SPEC.md` | Engineering Spec v2.1 + Patch 01 | Joe |
 | `agent/`, `cognitive/`, … | Seeded Comfy-Cozy code, kept as history. Plexus doesn't build on it. | Joe decides whether it stays |
+
+</details>
 
 ---
 
@@ -265,7 +254,8 @@ The hooks in `.claude/settings.json` enforce these. `CLAUDE.md` explains them.
 
 ---
 
-## 08 · Read next
+<details>
+<summary><strong>08 · Read next</strong></summary>
 
 | If you want… | Read |
 |---|---|
@@ -275,6 +265,10 @@ The hooks in `.claude/settings.json` enforce these. `CLAUDE.md` explains them.
 | How the harness works | [`harness/plexus_loop/README.md`](harness/plexus_loop/README.md) and [`program.md`](harness/plexus_loop/program.md) |
 | Where the last session stopped | [`harness/CAPSULE.md`](harness/CAPSULE.md) |
 | The words Plexus uses | [`docs/plexus/VOICE.md`](docs/plexus/VOICE.md) |
+
+---
+
+</details>
 
 ---
 
