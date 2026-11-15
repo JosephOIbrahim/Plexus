@@ -2,9 +2,9 @@
 #
 # On every push to a mission/** or plexus-loop/** branch, this runs the harness's own
 # gates (layers, core, predicate_smoke, cargo, unit; see missions/organ-closeout.toml)
-# and then the frozen acceptance tests, phase 1 and phase 2, on Windows and on Linux.
-# A correct branch is one the harness would keep: every gate green, and phase 1 and
-# phase 2 at zero failures. The mission gate neuron_unchanged is left out: it compares
+# and then the frozen acceptance tests, phases 1, 2 and 3, on Windows and on Linux.
+# A correct branch is one the harness would keep: every gate green, and phases 1, 2
+# and 3 at zero failures. The mission gate neuron_unchanged is left out: it compares
 # neuron.py with one mission's base and the names that mission may add, so it has no
 # meaning outside a run.
 #
@@ -166,6 +166,12 @@ jobs:
         if: ${{ !cancelled() && steps.core.outcome == 'success' }}
         timeout-minutes: 15
         run: python -m pytest -q -ra -m "not integration" tests/acceptance/phase2 --junitxml="$RUNNER_TEMP/reports/phase2.xml"
+
+      - name: Frozen phase 3 (the contracts, from M2b's Outcome envelope)
+        # Red on mission/outcome-envelope until E1 is kept, which is the branch's honest state; green on the loop branch's keep.
+        if: ${{ !cancelled() && steps.core.outcome == 'success' }}
+        timeout-minutes: 5
+        run: python -m pytest -q -ra -m "not integration" tests/acceptance/phase3 --junitxml="$RUNNER_TEMP/reports/phase3.xml"
 
       - name: Upload test reports
         if: ${{ !cancelled() }}
