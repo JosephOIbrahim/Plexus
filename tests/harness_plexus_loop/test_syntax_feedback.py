@@ -57,9 +57,13 @@ def test_warnings_are_not_errors_and_code_never_runs(tmp_path):
 def test_degenerate_files_are_reported_not_raised(tmp_path):
     # A model stuck repeating a token: the compiler raises MemoryError or RecursionError,
     # which must cost the attempt a line of feedback, never end the run.
-    (tmp_path / "deep.py").write_text("x = " + "1+" * 30000 + "1\n", encoding="utf-8")
+    # neg.py overflows the parser's own fixed stack (MemoryError) on every platform. deep.py and attr.py
+    # overflow the C stack while compiling (RecursionError), which on 3.14 is measured in bytes: 30,000
+    # levels overflowed Windows' stack but compiled within Linux's 8 MB (Plexus CI, Nov 15), so they are
+    # a million levels deep, past any default stack.
+    (tmp_path / "deep.py").write_text("x = " + "1+" * 1_000_000 + "1\n", encoding="utf-8")
     (tmp_path / "neg.py").write_text("x = " + "-" * 10000 + "1\n", encoding="utf-8")
-    (tmp_path / "attr.py").write_text("x = a" + ".b" * 30000 + "\n", encoding="utf-8")
+    (tmp_path / "attr.py").write_text("x = a" + ".b" * 1_000_000 + "\n", encoding="utf-8")
     out = syntax_errors(tmp_path, ["deep.py", "neg.py", "attr.py"])
     assert [o.split(":", 1)[0] for o in out] == ["deep.py", "neg.py", "attr.py"]
     assert all("\n" not in o and len(o) <= SYNTAX_LINE_CHARS for o in out)
