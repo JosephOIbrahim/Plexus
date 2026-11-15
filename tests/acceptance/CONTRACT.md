@@ -4,7 +4,7 @@ These tests turn Engineering Spec v2.1 §3, §9 and §10 (T1 to T8) into code. T
 
 The spec names modules (§2) but not functions. To test behaviour, the tests need a small Python surface, and this file is that surface. Everything below it is free: Python, Rust through `plexus._core`, or both. The tests only ever call what is listed here, read composed values back through plain `pxr`, and author "project A" opinions with plain `Sdf`, so any USD writer counts as a participant.
 
-`phase1/` is the slice (the §3 schema gate and T1 to T6). It is the first harness mission. `phase2/` is T7, T8 and `test_organ_surface.py`, which reads what the organ contract promises and those two leave unread, for the mission after it. `live/` holds what needs a real engine: `test_organ_live.py` runs the Cozy organ against a running ComfyUI. Its tests are marked `integration`, skip and say why when no ComfyUI answers, and stay out of CI and out of the harness's score. `pending/` holds T1b, the two-process version of T1. It stays skipped and uncounted until the event transport is decided.
+`phase1/` is the slice (the §3 schema gate and T1 to T6). It is the first harness mission. `phase2/` is T7, T8 and `test_organ_surface.py`, which reads what the organ contract promises and those two leave unread, for the mission after it. `live/` holds what needs a real engine: `test_organ_live.py` runs the Cozy organ against a running ComfyUI. Its tests are marked `integration`, skip and say why when no ComfyUI answers, and stay out of CI and out of the harness's score. `pending/` holds T1b, the two-process version of T1. It stays skipped and uncounted until the event transport is decided. `phase3/` reads the contracts every Plexus call answers through, starting with the `Outcome` envelope (Blueprint v5.4 §4, mission M2b).
 
 ## `plexus.schema`
 
@@ -86,6 +86,15 @@ The spec names modules (§2) but not functions. To test behaviour, the tests nee
 - `start()` reports `"unavailable"` and raises `OrganError` naming the instance, spawning nothing, when a process holds ComfyUI's own database lock, `<instance>/user/comfyui.db.lock`, which `main.py` takes for as long as it runs: an engine whose comfy-cli has died is still in use, on every platform.
 - A database lock file nobody holds, which a killed ComfyUI leaves behind, does not make an instance in use: `start()` proceeds, and a lifecycle's own `stop()` lets both locks go.
 - On Windows the frozen tests may hold `<instance>/user/comfyui.db.lock` in their own process with `msvcrt.locking`, and on POSIX with `fcntl.flock`, as ComfyUI's own `FileLock` does, so a case can read the refusal without running an engine.
+
+## `plexus._core` (phase 3)
+
+- `Outcome(status: str, payload=None, *, reason_code: str | None = None, reason: str | None = None, missing: Sequence[str] = ())` — the envelope every Plexus call returns (Blueprint v5.4 §4). It is defined once in Rust, in `plexus-core`, and this class is how Python sees it, so a Python layer that answers a call builds its answer here. A call returns an `Outcome` for the state of the world (something missing, a gate's refusal, a limit reached) and still raises for a mistake its own arguments show, as `register` does with `PredicateError`.
+  - `status` is `"ok"`, `"unavailable"` or `"blocked"`, spelled exactly so: no other case and no surrounding space.
+  - A status that is not `"ok"` needs a reason: a `reason_code` that is snake_case (a lowercase ASCII letter, then lowercase ASCII letters, digits and underscores, such as `non_finite`) and a `reason`, a sentence that is not blank. Only `"unavailable"` takes `missing`, the names of what is missing, in the order given; `missing` alone is no reason.
+  - An `"ok"` outcome takes no `reason_code`, `reason` or `missing`, and only it takes a payload, which may be any object, `None` included.
+  - A broken rule raises `ValueError` at construction. An argument of the wrong type raises `TypeError` there instead: a `status`, `reason_code` or `reason` that is not a `str`, or a `missing` that is a bare `str` or holds anything but `str`.
+  - `.status`, `.payload` (the object given, itself, or `None`), `.reason_code` and `.reason` (both `None` for `"ok"`), `.missing` (a `tuple` of `str`, empty unless given) and `.ok` (`True` exactly when the status is `"ok"`). The object is frozen: setting an attribute, or adding one, raises `AttributeError`. `Outcome.__module__` is `"plexus._core"`, an `Outcome` is never an exception, and `repr()` names the status and either the reason code or, for `"ok"`, the payload.
 
 ## Proof that the tests are passable
 
