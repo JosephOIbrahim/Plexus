@@ -85,9 +85,8 @@ jobs:
 
       - name: Install Python dependencies
         id: deps
-        # `-e .` installs the seeded package's dependencies. tests/conftest.py's autouse
-        # fixtures import agent.* for every test under tests/, the frozen ones included,
-        # so usd-core and pytest alone are not enough. Test tools are pinned to the
+        # `-e .` installs the plexus package and its one dependency, usd-core (the seed and
+        # its tests/conftest.py were archived on Nov 15, at the tag cozy-seed-final). Test tools are pinned to the
         # versions of the last green run. usd-core 26.5 is the composer of record.
         run: |
           python -m pip install --upgrade pip

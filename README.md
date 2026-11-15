@@ -238,7 +238,7 @@ python -m harness.plexus_loop stop
 | `harness/plexus_loop/` | The build harness, its `program.md`, and the mission files | Joe, and Claude when Joe says so |
 | `docs/plexus/` | Blueprint v5.4, diagrams, the voice guide | Joe |
 | `PLEXUS_SPEC.md` | Engineering Spec v2.1 + Patch 01 | Joe |
-| `agent/`, `cognitive/`, … | Seeded Comfy-Cozy code, kept as history. Plexus doesn't build on it. | Joe decides whether it stays |
+| `agent/`, `cognitive/`, … | Archived on Nov 15: the seeded Comfy-Cozy code, its tests and its other parts are at the tag `cozy-seed-final` | Joe |
 
 </details>
 
@@ -276,6 +276,6 @@ The hooks in `.claude/settings.json` enforce these. `CLAUDE.md` explains them.
 
 ## 09 · Lineage and license
 
-**Plexus is the next generation of Comfy-Cozy, built from the ground up.** This repo began as a clone of Comfy-Cozy, so it still carries that history and the seeded `agent/` and `cognitive/` code. The Comfy-Cozy README moved to [`README.cozy.md`](README.cozy.md), and its conventions to [`CLAUDE.cozy.md`](CLAUDE.cozy.md).
+**Plexus is the next generation of Comfy-Cozy, built from the ground up.** This repo began as a clone of Comfy-Cozy, so it still carries that history; the seeded `agent/` and `cognitive/` code was archived on Nov 15 and lives on at the tag `cozy-seed-final`. The Comfy-Cozy README moved to [`README.cozy.md`](README.cozy.md), and its conventions to [`CLAUDE.cozy.md`](CLAUDE.cozy.md).
 
 **MIT.** See [`LICENSE`](LICENSE). Comfy-Cozy's MIT notice is kept.

@@ -1,6 +1,6 @@
 # Plexus — CLAUDE.md
 
-Plexus (working title): a living network where projects compose into each other while running, agents wake only when needed, and execution engines are interchangeable organs. USD composition is the runtime. A Rust core (PyO3, built by `harness/plexus_loop/build_core.py` with cargo and no maturin step, importable as `plexus._core`) owns the runtime, and new Plexus Python grows around it in `plexus/`. Plexus is the next generation of Comfy-Cozy, built from the ground up: Comfy-Cozy (`G:\Comfy-Cozy`) is an architecture reference only, not the codebase, and new Plexus code copies nothing from it and imports nothing from it. The repo still carries Comfy-Cozy's history and the seeded `agent/` and `cognitive/` code; whether that stays is Joe's call. Their conventions are in `CLAUDE.cozy.md`; read that only when touching `agent/` or `cognitive/`.
+Plexus (working title): a living network where projects compose into each other while running, agents wake only when needed, and execution engines are interchangeable organs. USD composition is the runtime. A Rust core (PyO3, built by `harness/plexus_loop/build_core.py` with cargo and no maturin step, importable as `plexus._core`) owns the runtime, and new Plexus Python grows around it in `plexus/`. Plexus is the next generation of Comfy-Cozy, built from the ground up: Comfy-Cozy (`G:\Comfy-Cozy`) is an architecture reference only, not the codebase, and new Plexus code copies nothing from it and imports nothing from it. The repo carries Comfy-Cozy's history; the seeded `agent/` and `cognitive/` code, its tests and its other parts were archived on Nov 15 and live on at the tag `cozy-seed-final`. Their old conventions are in `CLAUDE.cozy.md`.
 
 This file advises. The hooks in `.claude/settings.json` enforce. A rule that matters enough to be unbreakable is also a hook.
 
@@ -46,4 +46,4 @@ Lead with the answer. Complete sentences, one idea per paragraph. A mission repo
 
 When Joe corrects something, add one line here so it is not repeated.
 
-- Plexus is the next generation of Comfy-Cozy, built from the ground up. G:\Comfy-Cozy, like SYNAPSE, is an architecture reference only: new Plexus code copies nothing from it and imports nothing from it, at module or function scope (Joe, Nov 1). Whether the seeded `agent/` and `cognitive/` stay is Joe's call.
+- Plexus is the next generation of Comfy-Cozy, built from the ground up. G:\Comfy-Cozy, like SYNAPSE, is an architecture reference only: new Plexus code copies nothing from it and imports nothing from it, at module or function scope (Joe, Nov 1). The seeded `agent/` and `cognitive/` were archived on Nov 15 at the tag `cozy-seed-final` (Joe, decision 10).
