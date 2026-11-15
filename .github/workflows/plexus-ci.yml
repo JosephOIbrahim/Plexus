@@ -58,13 +58,10 @@ jobs:
     name: plexus (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
-    # Windows is the platform of record. Every green run so far was on Windows, the Job
-    # Object path runs only there, and the cases that read it skip off Windows.
-    # Linux reports but does not fail the run until it has passed once (Joe, Nov 14, decision 05).
-    # Under WSL, the lifecycle and isolation cases that need no core passed on Nov 11, and the
-    # three cases of test_organ_hardening_posix.py passed on Nov 15. The cases that need
-    # plexus._core have never run on Linux. Remove this line once a Linux run is green.
-    continue-on-error: ${{ matrix.os == 'ubuntu-latest' }}
+    # Windows is the platform of record: the Job Object path runs only there, and the cases
+    # that read it skip off Windows. Both legs fail the run. Linux reported without failing
+    # until it had passed twice in a row (runs 43732667702 and 43735799542, Nov 15; Joe's
+    # decision 05).
     strategy:
       fail-fast: false
       matrix:
