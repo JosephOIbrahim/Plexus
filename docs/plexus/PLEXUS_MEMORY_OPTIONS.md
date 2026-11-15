@@ -15,7 +15,7 @@ Both return the Plexus envelope, `Outcome`, with status `Ok`, `Unavailable` or `
 
 **Absence shape: narrow.** When no memory backend is reachable, `recall` answers from the local stage only and says so in its payload, and `remember` returns `Unavailable` with the record handed back to the caller. A neuron reading memory should keep working on what it can see, because parts of a Plexus network are routinely offline.
 
-Comfy-Cozy, which Plexus is seeded from, already has two memories of its own: the session memory in `agent/memory/session.py`, and the experience accumulator in `cognitive/experience/`, which starts biasing toward what worked after about 30 runs. Under every option below, the accumulator becomes a client of the Memory contract instead of keeping a private store.
+Comfy-Cozy, the predecessor, had two memories: the session memory (`agent/memory/session.py`) and the experience accumulator (`cognitive/experience/`), which starts biasing toward what worked after about 30 runs. Both are references only. Whatever Plexus needs from them is rebuilt against the Memory contract, and neither is carried over.
 
 ## Option A · Plexus-local memory first
 

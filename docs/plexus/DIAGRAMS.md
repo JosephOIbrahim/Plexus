@@ -2,7 +2,7 @@
 
 **Six pictures of how Plexus is meant to work.** Each one has a single job, stated above it.
 
-They follow Blueprint v5.3 (`docs/plexus/PLEXUS_BLUEPRINT_v5.md`), with the Nov 1 Comfy-Cozy decision (draft v5.4, `BLUEPRINT_v5.4_DRAFT_CHANGES.md` B5), and Engineering Spec v2.1 (`PLEXUS_SPEC.md`). Where a diagram shows something not yet decided, it says so in its title.
+They follow Blueprint v5.4 (`docs/plexus/PLEXUS_BLUEPRINT_v5.md`, ratified by Joe on Nov 15), and Engineering Spec v2.1 (`PLEXUS_SPEC.md`). Where a diagram shows something not yet decided, it says so in its title.
 
 GitHub draws these directly. In other viewers, paste a block into [mermaid.live](https://mermaid.live).
 

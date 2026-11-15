@@ -1,7 +1,7 @@
-# PLEXUS · Blueprint v5.3
+# PLEXUS · Blueprint v5.4
 
 **Working title. Refactor of Blueprint v4.0 (Aug 21, 2026).**
-Drafted Nov 1, 2026. v5.1 added Rust. v5.2 locks Joe's two decisions and his rule on SYNAPSE. v5.3 reconciles it with the document package Joe sent on Nov 1 (§14). Status: draft for Joe's review. Nothing here is ratified until he says so.
+Drafted Nov 1, 2026. v5.1 added Rust. v5.2 locks Joe's two decisions and his rule on SYNAPSE. v5.3 reconciles it with the document package Joe sent on Nov 1 (§14). v5.4 makes Comfy-Cozy an architecture reference only (§0 item 9); Joe ratified the v5.4 changes on Nov 15, 2026 (decision 09). Status of the rest: draft for Joe's review. Nothing else here is ratified until he says so.
 
 **Thesis (unchanged, his words):** a living network where projects compose into each other while running, agents wake only when needed, and execution engines are interchangeable organs.
 
@@ -18,7 +18,7 @@ Drafted Nov 1, 2026. v5.1 added Rust. v5.2 locks Joe's two decisions and his rul
 v5 draws on five references, and none of them is a template:
 
 - **Joe's v4.0** is the base: the thesis, F0 to F9, the neuron model, the organ contract and the phase order.
-- **Comfy-Cozy** is the seed code. Plexus is cloned from it with history, and its code becomes Plexus's own.
+- **Comfy-Cozy** is the predecessor and an architecture reference. The repo was seeded with its history, but Plexus is built from the ground up and copies nothing from it and imports nothing from it.
 - **SYNAPSE** is a reference for design ideas learned while running agents in a live scene. No code or contract crosses over.
 - **OpenUSD and the AOUSD Core Specification 1.0.1** define what composition means. Any composer Plexus uses has to agree with them.
 - **The Rust ecosystem** (the `openusd` crate, PyO3, maturin, tokio) is the basis for §13.
@@ -27,7 +27,8 @@ Every change from v4.0 carries a tag:
 
 - **[v5 · fixed]** v4.0 said something that the actual repos contradict. The evidence is cited.
 - **[v5 · after SYNAPSE]** is an idea SYNAPSE also uses, restated in Plexus's own terms with the reason it fits Plexus. No code or contract is shared.
-- **[v5 · from OpenUSD]** or **[v5 · from Cozy]** is a borrowed pattern, with the reason it fits.
+- **[v5 · from OpenUSD]** is a pattern from OpenUSD, which Plexus runs (usd-core, and `openusd` in shadow), with the reason it fits.
+- **[v5 · from Cozy]** is a borrowed idea, restated in Plexus's own terms with the reason it fits. No Comfy-Cozy code comes with it.
 - **[v5 · new]** is something v4.0 did not cover.
 - **[v5 · Rust]** concerns where Rust sits (§13).
 - **[DECIDED · Joe]** is a decision Joe made on Nov 1.
@@ -44,10 +45,11 @@ Untagged text is v4.0 carried forward, sometimes tightened.
 2. **[v5 · new] Plexus defines its own contracts.** There are four (Safety, Memory, Ledger, Composer), and every call returns one Plexus envelope, `Outcome` (§4).
 3. **[v5 · after SYNAPSE] Absence has a shape.** Read-side absence narrows, write-side absence goes to an outbox, and gate-side absence fails closed.
 4. **[v5 · from OpenUSD] Safety rides on layers.** Compound actions write into a throwaway layer and merge in one step, which gives real rollback.
-5. **[v5 · new] Projection moves into Plexus itself** and is seeded from Comfy-Cozy's stage-to-workflow mapping.
+5. **[v5 · new] Projection moves into Plexus itself.** It is written new, with Comfy-Cozy's stage-to-workflow mapping as the reference.
 6. **[DECIDED · Joe] Plexus owns its neuron runtime,** written in Rust (§9).
 7. **[DECIDED · Joe] Shadow mode for composition.** Pixar's `usd-core`, pinned to 26.5 to match Houdini 22, is the composer of record. The pure-Rust `openusd` runs in shadow behind a parity test. The Composer contract is shaped for Rust from day one, so `openusd` can take over through a config change once it matches on Joe's real scenes (§13.4).
 8. **[DECIDED · Joe] Plexus has its own build harness in its own repo** (§12).
+9. **[DECIDED · Joe] Comfy-Cozy is an architecture reference, not the seed code.** Plexus is Comfy-Cozy's next generation, built from the ground up. The repo keeps Comfy-Cozy's history, but new Plexus code copies and imports nothing from it (Nov 1).
 
 ---
 
@@ -75,10 +77,10 @@ F0 to F9 carry over from v4.0. Several are sharpened.
 Plexus keeps every substrate behind a contract it owns, so that each one can be absent, swapped or upgraded without touching callers. **[v5 · Rust]** The column on the right says which language each layer is written in (§13).
 
 ```
- L5  Surfaces        MCP server · CLI · panel                     Python (from Cozy)
+ L5  Surfaces        MCP server · CLI · panel                     Python (new; Cozy as reference)
  L4  Organs          ComfyUI organ · any engine behind contract    any, behind the contract
- L3  Projection      stage prims -> organ intent, pure functions   Python (seeded from Cozy)
- L2  Nervous system  scheduler · predicates · budgets · tools      Rust (plexus-core)
+ L3  Projection      stage prims -> organ intent, pure functions   Python (new; Cozy as reference)
+ L2  Nervous system  scheduler · predicates · budgets · tools      Rust (plexus-core); scheduler in Python until measured
  L1  Contracts       Safety · Memory · Ledger · Composer          defined in Rust, Plexus-owned
  L0  Substrate       composed stage · writer sublayers · exchange  usd-core of record, openusd in shadow
 ```
@@ -98,7 +100,7 @@ Rules for the stack:
 - **Data boundaries.** Heavy assets stay out-of-band. The stage holds references, hashes, schemas and metadata, so recomposition stays near-instant.
 - **[v5 · fixed] Provenance lives in the stage, not in Moneta.** Each writer's sublayer carries its own hash-chained provenance as layer metadata, and every organ result arrives as an opinion with its provenance delta attached. Memory can index provenance for recall, but it isn't the system of record. That keeps F1 and F4 true when memory is absent.
 - **[v5 · new] Sanitization is a Plexus step.** v4.0 never said who cleans a stage before an agent reads it. In v5 the Composer contract (§13.4) offers a sanitized view, written in Plexus: drop unresolved references, block-listed attributes and anything outside the reader's scope. Octavius is not involved.
-- **[v5 · from Cozy] Seed.** Comfy-Cozy already has a LIVRPS stage with reversible delta layers (`agent/stage/cognitive_stage.py`, `cognitive/core/delta.py`), built on Pixar's `usd-core`. L0 starts from that code.
+- **[v5 · from Cozy] Reference.** Comfy-Cozy has a LIVRPS stage with reversible delta layers (`agent/stage/cognitive_stage.py`, `cognitive/core/delta.py`), built on Pixar's `usd-core`. Plexus's L0 code is written new on usd-core, and that stage is the reference, including what to avoid: it raises its events from inside its own mutating methods (`write()` and three others) and registers no `Tf.Notice`, so it cannot see a write made by any other writer.
 
 ---
 
@@ -129,7 +131,7 @@ Plexus defines four contracts of its own. Each is written for what Plexus needs,
 
 A neuron has a watched scope, a deterministic wake predicate (a pure function of stage diff and external signal), cooldown and hysteresis, a resource budget, an allowed tool set, and explicit escalation rules. Tiers stay Reflex, Wake and Reason. Every agent turn is non-blocking, with backpressure, cancellation and max-pending queues.
 
-**[v5 · Rust]** Rust suits this part of Plexus best. Predicates run on every stage change and must be cheap, deterministic and exact. The scheduler is a long-lived loop that juggles cooldowns, budgets and cancellation without blocking. Rust gives both without a garbage collector or Python's global interpreter lock in the hot path. The scheduler runs on tokio, and wake events cross into Python only when a neuron actually wakes.
+**[v5 · Rust]** Rust suits this part of Plexus best. Predicates run on every stage change and must be cheap, deterministic and exact. The scheduler is a long-lived loop that juggles cooldowns, budgets and cancellation without blocking. Rust gives both without a garbage collector or Python's global interpreter lock in the hot path. **[v5.4]** Until a measurement says otherwise, the scheduler's threads stay in Python and call the Rust predicate engine and budgets synchronously; tokio is revisited when organ-queue measurements exist.
 
 ### 5.2 · The agent contract
 
@@ -161,7 +163,7 @@ Three anchors keep an unattended writer from leaving a scene half-changed. OpenU
 
 The third anchor is real rollback. A failed compound action leaves no partial state, because the transaction layer is discarded whole. That is a claim to prove in a test, not to assume.
 
-**Emergency halt.** A halt is immediate. In-flight organ jobs are cancelled through the organ contract. Pending transaction layers are dropped, and nothing half-written reaches a writer's sublayer. In the Rust scheduler, the halt is one cancellation signal that every task listens on.
+**Emergency halt.** A halt is immediate. In-flight organ jobs are cancelled through the organ contract. Pending transaction layers are dropped, and nothing half-written reaches a writer's sublayer. In the scheduler, the halt is one cancellation signal that every action and organ job listens on.
 
 ---
 
@@ -169,7 +171,7 @@ The third anchor is real rollback. A failed compound action leaves no partial st
 
 v4.0 gave projection to Hanish. In v5 it is a Plexus-owned layer, with the rules v4.0 set: pure functions, no LLM, no side effects, never writes the stage, never enqueues a job. It turns stage prims and parameters into organ intent (for ComfyUI, a workflow graph), and it runs in the Reflex tier.
 
-**[v5 · from Cozy]** Comfy-Cozy already has this code: `agent/stage/workflow_mapper.py`, `workflow_signature.py`, and the `workflow.lock` sidecars that pin model hashes and pack commits. Projection starts there, in Python. **[v5 · Rust]** It moves to Rust only if a measurement shows it on the hot path.
+**[v5 · from Cozy]** Comfy-Cozy's `agent/stage/workflow_mapper.py`, `workflow_signature.py` and its `workflow.lock` sidecars (which pin model hashes and pack commits) are the reference for projection. Projection is written new, in Python. Anything that names ComfyUI node types lives in `plexus/organs/cozy.py` or `plexus/organs/cozy/` (T8); L3 itself stays engine-neutral. **[v5 · Rust]** It moves to Rust only if a measurement shows it on the hot path.
 
 ---
 
@@ -177,10 +179,10 @@ v4.0 gave projection to Hanish. In v5 it is a Plexus-owned layer, with the rules
 
 The organ contract and the `PlexusOrganJob` / `PlexusOrganResult` schemas carry over from v4.0 §4.1 unchanged: serialized intent in, progress stream, assets with metadata and provenance out, capabilities declared, idempotency keys and cancel. **[v5.3 · from Spec]** Resume is not in the base contract. Spec v2.1 §8.1 (Patch 01-E) drops it because arbitrary graphs can't be checkpointed. An organ whose engine really can resume declares it as a capability string (deferred decision D8).
 
-- **[v5 · from Cozy] The first organ is Comfy-Cozy's ComfyUI path:** local execution, multi-worker endpoint pooling with failover, keyless run reports.
+- **[v5 · from Cozy] The first organ is a new ComfyUI organ,** written against the organ contract and ComfyUI's own HTTP API. Comfy-Cozy's ComfyUI path is the reference for what it must do: local execution, multi-worker endpoint pooling with failover, keyless run reports. The frozen names `plexus.organs.cozy` and `CozyOrgan` (CONTRACT.md, T7 and T8) stay. They name the organ, not Comfy-Cozy code.
 - **[v5 · new] The organ stays swappable by construction.** An Oct 3 chat noted that Comfy maintains official MCP servers for local and cloud ComfyUI (not re-checked for this draft). If so, either can be a second ComfyUI organ behind the same contract, which is the vendor rule doing its job.
 - **[v5 · new] Houdini would be an organ.** If Plexus ever drives Houdini, it does so through a Houdini organ that Plexus writes against its own organ contract. It exchanges USD layer files with Houdini's USD 0.26.5, and it imports nothing from SYNAPSE.
-- **Async boundary.** Organ calls never block the stage heartbeat, and a timeout voids a job rather than hanging it. **[v5 · Rust]** In the scheduler that is a tokio task with a deadline.
+- **Async boundary.** Organ calls never block the stage heartbeat, and a timeout voids a job rather than hanging it. **[v5 · Rust]** In the scheduler that is a task with a deadline: a Python thread for now, a tokio task once the scheduler moves to Rust.
 
 ---
 
@@ -196,18 +198,18 @@ The reason is independence. The thesis makes execution engines interchangeable o
 
 | Repo or package | Role in Plexus | Layer | How Plexus reaches it |
 |---|---|---|---|
-| **plexus** (seeded from Comfy-Cozy) | Everything Plexus is: stage, contracts, neuron runtime, projection, organs, surfaces, build harness | L0 to L5 | owns it |
+| **plexus** | Everything Plexus is: stage, contracts, neuron runtime, projection, organs, surfaces, build harness | L0 to L5 | owns it |
 | plexus `crates/` **[v5 · Rust]** | Rust core and Rust USD tooling (§13.3) | L0 to L2 | exposed as `plexus._core` |
 | `usd-core` 26.5 (Pixar, PyPI) | Composer of record | L0 | Composer contract |
 | `openusd` (external crate, MIT) | Layer tooling now, shadow composer | L0 | Composer contract |
 | SALUS (optional) | Path-safety rules behind the Safety contract | L1 | Plexus-written adapter |
 | Moneta (optional) | Memory engine behind the Memory contract | L1 | Plexus-written adapter |
 | Hanish (optional) | Forecast precommit and settlement | L1 | Plexus-written adapter |
-| Comfy-Cozy | Origin. Stays where it is, and Plexus diverges from its history. | n/a | none after seeding |
+| Comfy-Cozy (`G:\Comfy-Cozy`) | Predecessor and architecture reference. Stays where it is; the Plexus repo carries its history and diverges from it. | n/a | read as a reference; nothing imported or copied. Dev tooling may run its MCP server; Plexus code never does |
 
 **Not in Plexus:** SYNAPSE (reference only), Octavius, and SYNAPSE's substrate-loop harness.
 
-**[v5 · from Cozy] What Plexus keeps from Comfy-Cozy on day one:** the LIVRPS stage and delta layers, the gate (`agent/gate/`), zero-LLM recipes (a ready-made Reflex tier), `workflow.lock` provenance, the six LLM providers (the Wake and Reason tiers), and the MCP, CLI and panel surfaces. New Python lands in `plexus/`, and new Rust lands in `crates/`. One seeding fix: a Cozy workflow that told an agent to read a local SYNAPSE checkout was cut (`.claude/workflows/cozy-improve.workflow.js`).
+**[v5 · from Cozy] What Plexus learns from Comfy-Cozy:** the LIVRPS stage and delta layers, the pre-dispatch gate (`agent/gate/`, including what to avoid: it classifies unknown tools as REVERSIBLE, `risk_levels.py:249-252`, which F9 forbids), zero-LLM recipes (the shape of a Reflex tier), `workflow.lock` provenance, the six-provider LLM design (the Wake and Reason tiers), and the MCP, CLI and panel surfaces. Mission by mission, each gets a `cozy-mapper` verdict: reference, rebuild in Python, rebuild in Rust, or drop. New Python lands in `plexus/`, and new Rust lands in `crates/`. The seeded `agent/` and `cognitive/` stay in the repo as history until Joe decides otherwise, and nothing in `plexus/` or `crates/` imports them. One seeding fix stands: a Cozy workflow that told an agent to read a local SYNAPSE checkout was cut (`.claude/workflows/cozy-improve.workflow.js`).
 
 ---
 
@@ -215,9 +217,9 @@ The reason is independence. The thesis makes execution engines interchangeable o
 
 Phases follow v4.0's order, with Phase 0 changed. **[v5.3]** Phase 1's acceptance tests are the schema gate and T1 to T6 (Spec §3 and §9). Phase 2's are T7 and T8 (Spec §10). All of them are written and frozen in `tests/acceptance/`.
 
-- **Phase 0 · Seed and contracts. [v5 · fixed]** Was "Moneta base." Now it covers the plexus repo seeded from Comfy-Cozy with its history, the four contracts with honest `Unavailable` adapters, the identity registry, the transaction-layer write path, and the build harness (§12). **[v5 · Rust]** It also stands up the Cargo workspace, the `Outcome` envelope, the identity registry and the intent ledger in `plexus-core`, built into Python with maturin.
-- **Phase 1 · The slice.** Two isolated project layers, one shared exchange stack, one change observer, and one predicate-gated neuron proving live cross-project updates. **[v5 · Rust]** The predicate engine and scheduler are Rust from here on, fed batched stage diffs once per heartbeat.
-- **Phase 2 · Projection and the ComfyUI organ.** Stage to workflow through L3, with Cozy's ComfyUI path behind the organ contract with idempotency, cancel and progress. **[v5 · Rust]** The `openusd` shadow composer and its parity test start here (§13.4).
+- **Phase 0 · Seed and contracts. [v5 · fixed]** Was "Moneta base." Now it covers the plexus repo (which carries Comfy-Cozy's history as a record, not as code Plexus builds on), the four contracts with honest `Unavailable` adapters, the identity registry, the transaction-layer write path, and the build harness (§12). **[v5 · Rust]** It also stands up the Cargo workspace in `plexus-core`, built into Python with maturin. **[v5.4]** The `Outcome` envelope lands in its own mission (M2b), intent hashing at M3 and the intent lookup at M6. The writer identity registry lives in Python in Phase 1 (the exchange's participant list and the publication allowlist) until a mission needs it in Rust.
+- **Phase 1 · The slice.** Two isolated project layers, one shared exchange stack, one change observer, and one predicate-gated neuron proving live cross-project updates. **[v5 · Rust]** The predicate engine and budgets are Rust from here on, fed batched stage diffs once per heartbeat; the scheduler joins them when a measurement shows it on the hot path.
+- **Phase 2 · Projection and the ComfyUI organ.** Stage to workflow through L3, with a new ComfyUI organ behind the organ contract with idempotency, cancel and progress. Comfy-Cozy's ComfyUI path is the reference. **[v5 · Rust]** The `openusd` shadow composer and its parity test start here (§13.4).
 - **Phase 3 · Safety.** Pre-check every neuron action, post-check every organ result, fail closed when the checker is absent.
 - **Phase 4 · Triage and foresight.** Reflex, Wake and Reason with budgets and hysteresis. **[v5 · fixed]** Foresight is ledger precommits, measured by settlement rates.
 - **Phase 5 · Simultaneity.** Concurrent projects across the exchange membrane, under permissioning, gating and replay.
@@ -249,7 +251,7 @@ Joe's direction (Nov 1): Rust matters on the USD side and in orchestration.
 
 ### 13.1 · The rule
 
-Rust goes where code is hot, long-running or must be exact. Python stays where code must be flexible or is already written. In practice, Rust owns orchestration from Phase 0. Rust comes into USD in stages, at a pace set by the libraries' maturity.
+Rust goes where code is hot, long-running or must be exact. Python stays where code must be flexible, or where what Plexus calls is Python-only: usd-core (Pixar ships no official Rust bindings, §13.2) and the LLM SDKs. In practice, Rust owns orchestration from Phase 0. Rust comes into USD in stages, at a pace set by the libraries' maturity.
 
 ### 13.2 · What exists today, checked Nov 1, 2026
 
@@ -267,24 +269,24 @@ These were read from crates.io, PyPI, the projects' own repositories, and the AO
 
 ### 13.3 · How Rust meets Python
 
-**One host process, one extension module.** Python stays the host, because Comfy-Cozy's stage code, organs, LLM providers and surfaces all run unchanged that way. Rust ships as one extension module, `plexus._core`, built with maturin. One process also keeps "one conductor per stage root" simple.
+**One host process, one extension module.** Python stays the host, because usd-core, the composer of record, is Pixar's Python build (§13.2), and the LLM SDKs are Python. Rust ships as one extension module, `plexus._core`, built with maturin. One process also keeps "one conductor per stage root" simple.
 
 ```
 crates/
   plexus-core/   Outcome envelope · identity registry · intent ledger (F7)
-                 provenance hash chain (F4) · predicate engine · scheduler (tokio)
+                 provenance hash chain (F4) · predicate engine · budgets · scheduler (tokio, later)
                  Composer contract (trait + plain-data types)
                  PyO3 bindings behind a feature -> plexus._core
   plexus-usd/    openusd side: layer hashing for provenance, layer diff and
                  validation, the shadow composer
 plexus/          Python: contract adapters, the usd-core composer, projection,
-                 organs, surfaces (from Cozy)
+                 organs, surfaces (all written new)
 harness/plexus_loop/   the build harness (§12)
 ```
 
 Two crates, not more, because each extra crate is more for the CPU worker to compile beside Houdini.
 
-**How a stage change flows.** The composer of record emits a change notice. Python batches the notices once per heartbeat into a plain-data diff and hands it to the Rust predicate engine, which evaluates every neuron's predicate outside the interpreter lock. Only woken neurons come back to Python as wake events. Organ jobs run as tokio tasks with deadlines. Results come back as opinions through a transaction layer (§6).
+**How a stage change flows.** The composer of record emits a change notice. Python batches the notices once per heartbeat into a plain-data diff and hands it to the Rust predicate engine, which evaluates every neuron's predicate in microseconds on the dispatcher thread. Only woken neurons come back to Python as wake events. Organ jobs run with deadlines: Python threads for now, tokio tasks once the scheduler moves. Results come back as opinions through a transaction layer (§6).
 
 **Where the two USD worlds meet.** A pure-Rust stage and a Pixar C++ stage can't share in-memory objects. They meet at layers: `.usda` or `.usdc` files, or serialized anonymous layers. Writer sublayers are already Plexus's unit of exchange, so that is a natural seam. It is also how Plexus exchanges with Houdini, which runs its own build of Pixar's USD.
 
@@ -339,13 +341,14 @@ So the two documents split the work. **The Spec is normative for what gets teste
 
 ### 14.2 · What the package said that v5 supersedes
 
-- **Thin glue and imports (Spec §1, Blueprint §6).** The package reused Cozy, Synapse and Moneta by importing them, and called a copied file a defect. Now Plexus is cloned from Comfy-Cozy, so that code is Plexus's own. SYNAPSE is a reference only, with nothing imported. Moneta, SALUS and Hanish are optional, behind Plexus-written adapters.
-- **LLM access through Cozy's provider abstraction "imported, not copied" (Spec §1).** The six providers come with the clone and are Plexus's own.
+- **Thin glue and imports (Spec §1, Blueprint §6).** The package reused Cozy, Synapse and Moneta by importing them, and called a copied file a defect. v5.4 keeps the second half and drops the first: Plexus neither imports nor copies Comfy-Cozy or SYNAPSE, and both are architecture references only. Moneta, SALUS and Hanish are optional, behind Plexus-written adapters.
+- **LLM access through Cozy's provider abstraction "imported, not copied" (Spec §1).** Neither. Plexus writes its own LLM providers in `plexus/` (the Wake and Reason tiers), with Comfy-Cozy's six-provider design as the reference. Whether providers sit behind an L1 contract is open.
 - **The Houdini organ "via Synapse" (A4, D5).** If Plexus drives Houdini, it uses a Houdini organ that Plexus writes against its own organ protocol, and it imports nothing from SYNAPSE (§8).
-- **License compatibility (D6).** "PLEXUS imports all three" no longer holds. Comfy-Cozy's MIT code comes with its license notice kept. SYNAPSE contributes no code. What's left of D6 is whether a Moneta adapter can ship publicly, and that stays a Phase 5 gate.
+- **License compatibility (D6).** "PLEXUS imports all three" no longer holds. Comfy-Cozy is Joe's own MIT code (the same copyright holder, `LICENSE` line 3 in both repos), which reads as leaving D6 nothing to clear there: not for `plexus/` and `crates/`, which carry none of it, not for the seeded `agent/` and `cognitive/`, and not for the history a public repo would carry. **That is a legal reading Joe has not yet confirmed (Nov 15), so D6 stays open until he does.** SYNAPSE contributes no code. What's left of D6 is whether a Moneta adapter can ship publicly, and that stays a Phase 5 gate.
 - **Phase 1 "assembled from tested siblings" (Blueprint §6).** It's still small, but it's written in Plexus. A throwaway prototype passed every acceptance test on Nov 1 in about 350 lines of Python, which is a fair read on the distance.
 - **Phase order.** The package runs Paper, Slice, Organ, Triage and Foresight, Simultaneity, then Aperture. v5 keeps v4.0's order, which adds a Seed and contracts phase at 0 and a Safety phase at 3. **Proposed, not decided:** add the package's Aperture as Phase 6 (a minimal stage inspector, README and the public repo, with UI last).
-- **Python ≥ 3.11 (Spec §1).** That stands for Plexus. The seed still says 3.10 because Comfy-Cozy did, and its CI tests 3.10. Both move to 3.11 when `plexus/` lands.
+- **Python ≥ 3.11 (Spec §1).** That stands for Plexus. The root `pyproject.toml` is still Comfy-Cozy's (3.10), and its CI tests 3.10 to 3.13. Plexus's own package requires ≥ 3.11 when `plexus/` lands; what happens to the seed's packaging and CI is Joe's call.
+- **Spec lines that assumed Comfy-Cozy code (v5.4).** Spec §2's "ComfyUI organ via Comfy-Cozy MCP", §6 step 4's "Cozy default-deny classifier (imported)" and §8.2's mapping onto Comfy-Cozy surfaces now read as references. The organ talks to ComfyUI's own HTTP API, as T7's fake server already expects. The risk gate is a Plexus-owned default-deny tool classifier (unclassified → `Blocked`, F9), landing with Phase 3 Safety (§11); where it sits relative to the §4 Safety contract, whose `check` takes no tool, is open. §8.2's table still says what the new organ must provide, and Comfy-Cozy's versions of those pieces are the reference.
 
 ### 14.3 · Gaps in the Spec that the tests had to fill
 

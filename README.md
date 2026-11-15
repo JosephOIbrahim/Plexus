@@ -236,7 +236,7 @@ python -m harness.plexus_loop stop
 | `crates/` | The Rust core, `plexus-core`: predicates and budgets, imported as `plexus._core` | The worker, through the harness |
 | `tests/acceptance/` | The frozen judge, and `CONTRACT.md` | Joe only |
 | `harness/plexus_loop/` | The build harness, its `program.md`, and the mission files | Joe, and Claude when Joe says so |
-| `docs/plexus/` | Blueprint v5.3, diagrams, the voice guide | Joe |
+| `docs/plexus/` | Blueprint v5.4, diagrams, the voice guide | Joe |
 | `PLEXUS_SPEC.md` | Engineering Spec v2.1 + Patch 01 | Joe |
 | `agent/`, `cognitive/`, … | Seeded Comfy-Cozy code, kept as history. Plexus doesn't build on it. | Joe decides whether it stays |
 
