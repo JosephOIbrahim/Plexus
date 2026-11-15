@@ -147,14 +147,14 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: ruff check harness/ tests/harness_plexus_loop examples/
 
-      - name: Gate unit (harness tests and the two seeded files the gate names)
+      - name: Gate unit (the harness suite)
         # The mission toml's unit command without -x, so that one run reports every failure.
         # It needs no plexus._core: 458 passed and 1 skipped without it in WSL on Nov 11.
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         timeout-minutes: 20
         run: >-
           python -m pytest -q -ra -m "not integration"
-          tests/harness_plexus_loop tests/test_portability_guards.py tests/test_workflow_patch_engine_live.py
+          tests/harness_plexus_loop
           --junitxml="$RUNNER_TEMP/reports/unit.xml"
 
       - name: Frozen phase 1 (T0 to T6, and the five files beside them)

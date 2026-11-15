@@ -72,9 +72,8 @@ timeout_s = 900
 
 [[gates]]
 name = "unit"
-cmd = ["python", "-m", "pytest", "-q", "-x", "-m", "not integration",
-       "tests/harness_plexus_loop", "tests/test_portability_guards.py",
-       "tests/test_workflow_patch_engine_live.py"]
+# The seeded test files left with the seed (Nov 15, tag cozy-seed-final); the gate is the harness suite alone.
+cmd = ["python", "-m", "pytest", "-q", "-x", "-m", "not integration", "tests/harness_plexus_loop"]
 timeout_s = 1800
 
 [worker]
