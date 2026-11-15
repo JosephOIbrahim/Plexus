@@ -12,6 +12,7 @@ Check, in this order, and stop at the first hard failure:
 
 1. **Frozen tests untouched.** No path in `.claude/frozen_paths.txt` (tests/acceptance/) appears in the diff. No new `skip`, `xfail`, `-k`, `deselect` or marker that would change what the frozen tests assert.
 2. **Nothing from Synapse.** No import, dependency, copied file, or shared contract. A docstring saying "inspired by" is fine only if the idea is justified on Plexus's terms in the commit message.
+2b. **Nothing from Comfy-Cozy in `plexus/` or `crates/`** (Blueprint v5.4, §0 item 9). No `agent.*` or `cognitive.*` import at module or function scope, no load of either by name (`import_module`, `__import__`, PyO3 `import`), and no file copied from `agent/`, `cognitive/` or `G:\Comfy-Cozy`. Any of these is a hard failure.
 3. **Composition is the wire (A1).** Events originate from `Tf.Notice` on the composed stage, not from a write-side emit. If the attempt wires the axon off `cognitive_stage.write()`, that is a hard failure.
 4. **One writer per layer (A6).** Every opinion lands in its author's own edit-target layer. Any other edit target is a hard failure.
 5. **No engine terms in the core.** `KSampler`, `cfg`, ComfyUI node class names, `prompt_id` do not appear in the Rust crate or in `plexus/`. (T8 is mission 02, but a leak now is cheaper to catch now.)

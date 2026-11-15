@@ -4,12 +4,14 @@ Blocks:
   1. Any edit to a frozen test path (belt; permissions.deny is the braces).
   2. Code or dependency content that imports Synapse, or that imports the old Moneta integration.
      Prose files (docs/, harness/, *.md) may name Synapse as a reference.
+  3. Code under plexus/ or crates/ that imports the seeded Comfy-Cozy packages, agent.* or cognitive.*, or loads them
+     by name (Blueprint v5.4, §0 item 9).
 """
 from __future__ import annotations
 
 import sys as _s, pathlib as _p
 _s.path.insert(0, str(_p.Path(__file__).resolve().parent))
-from _common import MONETA_OLD, SYNAPSE_CODE, block, is_frozen, is_prose, read_event, rel
+from _common import COZY_IMPORT, MONETA_OLD, SYNAPSE_CODE, block, is_frozen, is_plexus_code, is_prose, read_event, rel
 
 ev = read_event()
 tool = ev.get("tool_name", "")
@@ -46,5 +48,11 @@ if new_text and path and not is_prose(path):
             f"Blocked: '{rel(path)}' would import agent.integrations.moneta (the old integration). Plexus "
             "runs without Moneta; the future adapter is Plexus-written and starts from the Memory contract."
         )
+if new_text and path and is_plexus_code(path) and COZY_IMPORT.search(new_text):
+    block(
+        f"Blocked: '{rel(path)}' would import Comfy-Cozy's agent.* or cognitive.*. Comfy-Cozy is an architecture "
+        "reference only (Joe, Nov 1; Blueprint v5.4): Plexus copies nothing from it and imports nothing from it. "
+        "Write the idea fresh in plexus/ and justify it on Plexus's terms."
+    )
 
 raise SystemExit(0)

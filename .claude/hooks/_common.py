@@ -77,6 +77,22 @@ SYNAPSE_CODE = re.compile(
 )
 MONETA_OLD = re.compile(r"agent[./]integrations[./]moneta", re.IGNORECASE)
 
+# Comfy-Cozy is an architecture reference only (Joe, Nov 1; Blueprint v5.4, §0 item 9): nothing under plexus/ or crates/
+# imports the seeded agent.* or cognitive.*, at module or function scope, or loads them by name. The worker's code is held
+# to the same rule by the `layers` gate (harness/plexus_loop/guards/test_layers.py); this catches Claude's own edits.
+COZY_IMPORT = re.compile(
+    r"^[ \t]*from[ \t]+(?:agent|cognitive)(?:\.[\w.]+)?[ \t]+import\b"  # from agent.x import y
+    r"|^[ \t]*import[ \t]+(?:[\w.]+(?:[ \t]+as[ \t]+\w+)?[ \t]*,[ \t]*)*(?:agent|cognitive)(?:\.[\w.]+)?(?![\w.])"  # import a, agent.x
+    r"|(?:import_module|__import__|\bimport)\(\s*[\"'](?:agent|cognitive)[.\"']",  # importlib, __import__, PyO3 py.import("agent")
+    re.MULTILINE,
+)
+
+
+def is_plexus_code(path_str: str) -> bool:
+    """plexus/ or crates/, where Plexus's own code lives; prose there (.md) is not code."""
+    r = rel(path_str)
+    return r.startswith(("plexus/", "crates/")) and not r.endswith(".md")
+
 PROSE_DIRS = ("docs/", "harness/", ".claude/", "README", "CHANGELOG", "CLAUDE.md")
 
 
