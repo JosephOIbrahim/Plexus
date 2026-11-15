@@ -45,7 +45,7 @@ Read `CLAUDE.md`, `harness/plexus_loop/program.md`, `tests/acceptance/CONTRACT.m
    - the base fails, each case for its own reason;
    - the reference passes, three times;
    - phase 1 and phase 2 pass whole;
-   - the guards and the six gates pass;
+   - the guards and the gates pass;
    - a mutant run, and an adversary pass in its own worktree.
 5. **The mission files**, in the scratchpad: the toml (one step per change, the reference verbatim), the worker brief, the plan, and the program.md rule 2 diff.
 6. **The placement script.** It pins each frozen file's sha256 and refuses anything else.
