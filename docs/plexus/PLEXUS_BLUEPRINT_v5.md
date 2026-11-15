@@ -217,7 +217,7 @@ The reason is independence. The thesis makes execution engines interchangeable o
 
 Phases follow v4.0's order, with Phase 0 changed. **[v5.3]** Phase 1's acceptance tests are the schema gate and T1 to T6 (Spec §3 and §9). Phase 2's are T7 and T8 (Spec §10). All of them are written and frozen in `tests/acceptance/`.
 
-- **Phase 0 · Seed and contracts. [v5 · fixed]** Was "Moneta base." Now it covers the plexus repo (which carries Comfy-Cozy's history as a record, not as code Plexus builds on), the four contracts with honest `Unavailable` adapters, the identity registry, the transaction-layer write path, and the build harness (§12). **[v5 · Rust]** It also stands up the Cargo workspace in `plexus-core`, built into Python with maturin. **[v5.4]** The `Outcome` envelope lands in its own mission (M2b), intent hashing at M3 and the intent lookup at M6. The writer identity registry lives in Python in Phase 1 (the exchange's participant list and the publication allowlist) until a mission needs it in Rust.
+- **Phase 0 · Seed and contracts. [v5 · fixed]** Was "Moneta base." Now it covers the plexus repo (which carries Comfy-Cozy's history as a record, not as code Plexus builds on), the four contracts with honest `Unavailable` adapters, the identity registry, the transaction-layer write path, and the build harness (§12). **[v5 · Rust]** It also stands up the Cargo workspace in `plexus-core`, built into Python by `harness/plexus_loop/build_core.py`, which runs cargo and copies the library in as `plexus/_core.pyd` or `plexus/_core.so`; there is no maturin step (Joe, Nov 1). **[v5.4]** The `Outcome` envelope lands in its own mission (M2b), intent hashing at M3 and the intent lookup at M6. The writer identity registry lives in Python in Phase 1 (the exchange's participant list and the publication allowlist) until a mission needs it in Rust.
 - **Phase 1 · The slice.** Two isolated project layers, one shared exchange stack, one change observer, and one predicate-gated neuron proving live cross-project updates. **[v5 · Rust]** The predicate engine and budgets are Rust from here on, fed batched stage diffs once per heartbeat; the scheduler joins them when a measurement shows it on the hot path.
 - **Phase 2 · Projection and the ComfyUI organ.** Stage to workflow through L3, with a new ComfyUI organ behind the organ contract with idempotency, cancel and progress. Comfy-Cozy's ComfyUI path is the reference. **[v5 · Rust]** The `openusd` shadow composer and its parity test start here (§13.4).
 - **Phase 3 · Safety.** Pre-check every neuron action, post-check every organ result, fail closed when the checker is absent.
@@ -269,7 +269,7 @@ These were read from crates.io, PyPI, the projects' own repositories, and the AO
 
 ### 13.3 · How Rust meets Python
 
-**One host process, one extension module.** Python stays the host, because usd-core, the composer of record, is Pixar's Python build (§13.2), and the LLM SDKs are Python. Rust ships as one extension module, `plexus._core`, built with maturin. One process also keeps "one conductor per stage root" simple.
+**One host process, one extension module.** Python stays the host, because usd-core, the composer of record, is Pixar's Python build (§13.2), and the LLM SDKs are Python. Rust ships as one extension module, `plexus._core`, built by `harness/plexus_loop/build_core.py` with cargo; there is no maturin step (Joe, Nov 1). One process also keeps "one conductor per stage root" simple.
 
 ```
 crates/
