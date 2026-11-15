@@ -19,17 +19,17 @@ GitHub draws these directly. In other viewers, paste a block into [mermaid.live]
 
 ## 1 · Roadmap: you are here
 
-**Phases 1 and 2 are done; Phase 0 is partly done** (the seed, the frozen tests, the harness and the `plexus/` + `crates/` code exist; the four contracts don't yet). **Phase 3 is next.** Green is kept for done; the thick outline is the next phase.
+**Phase 1 is done and Phase 2's frozen tests pass; Phase 0 is partly done** (the seed, the frozen tests, the harness and the `plexus/` + `crates/` code exist; the four contracts don't yet). L3 projection and the `openusd` shadow composer with its parity test, which the Blueprint also places in Phase 2, are not built yet. **Phase 3 is next.** Green is kept for done; the thick outline is the next phase.
 
 <!-- plexus:status -->
-**Phase 1 · 30 of 30 frozen tests pass · Phase 2 · 270 of 270 on Windows + 3 of 3 under WSL** · `mission/organ-spawn` · unreleased alpha.13 candidate · latest release `plexus-0.1.0-alpha.12` · Nov 12, 2026
+**Phase 1 · 30 of 30 frozen tests pass · Phase 2 · 270 of 270 on Windows + 3 of 3 under WSL** · `plexus-0.1.0-alpha.13` on `mission/organ-spawn` · Nov 15, 2026
 <!-- /plexus:status -->
 
 ```mermaid
 flowchart LR
     P0["Phase 0<br/>Seed + contracts<br/>(partly done)"]:::partial
     P1["Phase 1<br/>The slice<br/>tests T0 to T6<br/>(done)"]:::done
-    P2["Phase 2<br/>The first organ<br/>tests T7, T8<br/>(done)"]:::done
+    P2["Phase 2<br/>The first organ<br/>tests T7, T8<br/>(tests pass; projection<br/>+ parity not built)"]:::done
     P3["Phase 3<br/>Safety<br/>(next)"]:::next
     P4["Phase 4<br/>Triage +<br/>foresight"]
     P5["Phase 5<br/>Simultaneity"]

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  OpenUSD runtime &nbsp;·&nbsp; Rust core, Python around it &nbsp;·&nbsp; <code>plexus-0.1.0-alpha.12</code> &nbsp;·&nbsp; <a href="LICENSE">MIT</a>
+  OpenUSD runtime &nbsp;·&nbsp; Rust core, Python around it &nbsp;·&nbsp; <code>plexus-0.1.0-alpha.13</code> &nbsp;·&nbsp; <a href="LICENSE">MIT</a>
 </p>
 
 ---
@@ -23,8 +23,8 @@
 
 | | |
 |---|---|
-| **Where it stands** | The latest published release is `plexus-0.1.0-alpha.12`. On `mission/organ-spawn`, the **unreleased alpha.13 candidate**, Phase 1 and Phase 2 are done. Phase 1 passes **30 of 30** frozen tests on Windows. Phase 2 passes **270 of 270** on Windows, and its **3 POSIX-only** cases pass under WSL. Organs sit on the stage, and Plexus can start, stop and measure a ComfyUI through comfy-cli. Given an instance folder, that ComfyUI keeps its own user folder, database, temp folder and output; on Windows its process tree is held in a Job Object. The candidate's CreateProcessW spawn creates the child inside the job from its first instruction. |
-| **What's next** | Phase 3, Safety: the four contracts. Alpha.13's spawn and lifecycle work is on `mission/organ-spawn`; the latest state is in [`harness/CAPSULE.md`](harness/CAPSULE.md). |
+| **Where it stands** | The latest release is `plexus-0.1.0-alpha.13`, on `mission/organ-spawn`. Phase 1 is done: **30 of 30** frozen tests pass on Windows. Phase 2's frozen tests pass: **270 of 270** on Windows, and its **3 POSIX-only** cases under WSL. L3 projection and the `openusd` shadow composer with its parity test, which the Blueprint also places in Phase 2, are not built yet. Organs sit on the stage, and Plexus can start, stop and measure a ComfyUI through comfy-cli. Given an instance folder, that ComfyUI keeps its own user folder, database, temp folder and output; on Windows its process tree is held in a Job Object, and the child is created inside that job from its first instruction. |
+| **What's next** | Phase 3, Safety: the four contracts. The latest state is in [`harness/CAPSULE.md`](harness/CAPSULE.md). |
 | **Start here** | [01 · The idea](#01--the-idea) for why, [05 · Run it](#05--run-it) for how. One diagram of a round trip is in [03](#03--how-it-works); the rest is below that. |
 | **The one number that matters** | **303 acceptance tests pass**: 30 in phase 1, 270 phase 2 cases on Windows and 3 POSIX-only cases under WSL. The full suite has no failures. Everything else here is how. |
 
@@ -46,13 +46,13 @@
 
 ## 02 · Where it stands
 
-**Two phases done, three ahead.** The outlined box is the next one.
+**Phase 1 done, Phase 2's frozen tests passing, three phases ahead.** The outlined box is the next one.
 
 ```mermaid
 flowchart LR
     P0["Phase 0<br/>Seed + contracts<br/>partly done"]:::part
     P1["Phase 1<br/>The slice<br/>T0 – T6 · 30 of 30"]:::done
-    P2["Phase 2<br/>The first organ<br/>T7 + T8 · 270 of 270 Windows<br/>3 of 3 POSIX under WSL"]:::done
+    P2["Phase 2<br/>The first organ<br/>T7 + T8 · 270 of 270 Windows<br/>3 of 3 POSIX under WSL<br/>projection + parity not built"]:::done
     P3["Phase 3<br/>Safety"]:::next
     P4["Phase 4<br/>Triage + foresight"]
     P5["Phase 5<br/>Simultaneity"]
@@ -65,10 +65,11 @@ flowchart LR
 | Done | Not yet |
 |---|---|
 | **Phase 1:** schemas, propagation in under 250 ms, predicates, budgets, provenance, the publication gate, truth on disk | **The four contracts:** Safety, Memory, Ledger, Composer |
-| **Phase 2:** the ComfyUI organ behind the organ contract, `ctx.author_asset`, organs on the stage (`publish_organ`, `publish_organ_state`), ComfyUI's lifecycle through comfy-cli (`CozyLifecycle`), an instance folder per ComfyUI, a Job Object around its process tree, and a CreateProcessW spawn on `mission/organ-spawn` | **A real engine on every release:** the frozen tests run against a fake ComfyUI. The live job test (`tests/acceptance/live/`, 5 cases) last passed on the organ from mission `organ-live`, before alpha.8, and has not run since. `CozyLifecycle` ran by hand against the real comfy-cli on Nov 12 on the spawn's first version, `be31478`, with an instance folder (11 of 11 checks) |
+| **Phase 2, by its frozen tests (T7, T8 and the organ files):** the ComfyUI organ behind the organ contract, `ctx.author_asset`, organs on the stage (`publish_organ`, `publish_organ_state`), ComfyUI's lifecycle through comfy-cli (`CozyLifecycle`), an instance folder per ComfyUI, and a Job Object around its process tree that the child is created inside | **The rest of Phase 2:** L3 projection and the `openusd` shadow composer with its parity test (Blueprint §11). Neither is built; Blueprint v5.4, once applied, moves them to missions M7 and M9 |
+| | **A real engine on every release:** the frozen tests run against a fake ComfyUI. The live job test (`tests/acceptance/live/`, 5 cases) last passed on the organ from mission `organ-live`, before alpha.8, and has not run since. `CozyLifecycle` ran by hand against the real comfy-cli most recently on Nov 15 on alpha.13's `5225d9e`, with an instance folder (11 of 11 checks) |
 | **The build harness**, `harness/plexus_loop/`, with eight missions run: `acceptance`, `organ`, `organ-live`, `organ-registry`, `organ-lifecycle`, `organ-isolation`, `organ-hardening` and `organ-closeout` | **Packaging:** nothing is on `main` yet |
 
-**Releases:** pre-releases only, tagged `plexus-*` on the mission branch. The latest is [`plexus-0.1.0-alpha.12`](https://github.com/JosephOIbrahim/Plexus/releases/tag/plexus-0.1.0-alpha.12). Where the last session stopped: [`harness/CAPSULE.md`](harness/CAPSULE.md).
+**Releases:** pre-releases only, tagged `plexus-*` on the mission branch. The latest is [`plexus-0.1.0-alpha.13`](https://github.com/JosephOIbrahim/Plexus/releases/tag/plexus-0.1.0-alpha.13). Where the last session stopped: [`harness/CAPSULE.md`](harness/CAPSULE.md).
 
 ---
 
