@@ -360,6 +360,7 @@ if os.name == 'nt':
     _K32.AssignProcessToJobObject.restype = wintypes.BOOL
     _K32.TerminateJobObject.restype = wintypes.BOOL
     _K32.CloseHandle.restype = wintypes.BOOL
+    _INVALID_HANDLE = ctypes.c_void_p(-1).value  # INVALID_HANDLE_VALUE as a HANDLE restype reads it
     _NT = ctypes.WinDLL('ntdll')
     _NT.NtResumeProcess.restype = ctypes.c_long  # NTSTATUS; 0 is STATUS_SUCCESS
     _NT.NtResumeProcess.argtypes = (wintypes.HANDLE,)
@@ -371,6 +372,15 @@ if os.name == 'nt':
                     ('scheduling', wintypes.DWORD), ('io', ctypes.c_uint64 * 6), ('memory', ctypes.c_size_t * 4)]
 else:
     import fcntl
+
+
+def _ms(seconds: float) -> int:
+    """Seconds as a WaitForSingleObject timeout in milliseconds, clamped to 0 and to the longest finite wait.
+
+    ctypes masks a DWORD instead of checking it, so a negative time would wait about 49.7 days and one past 2**32 ms would wrap to a
+    short wait or to INFINITE (0xFFFFFFFF). A negative time waits not at all, and the longest finite wait is 0xFFFFFFFE.
+    """
+    return max(0, min(int(seconds * 1000), 0xFFFFFFFE))
 
 
 class _Child:
@@ -392,7 +402,7 @@ class _Child:
 
     def wait(self, timeout=None):
         """Wait for the process to end, in milliseconds when a timeout is given; raise TimeoutExpired as Popen does."""
-        ms = 0xFFFFFFFF if timeout is None else int(timeout * 1000)
+        ms = 0xFFFFFFFF if timeout is None else _ms(timeout)
         if _K32.WaitForSingleObject(self.handle, ms) == 0x00000102:
             raise subprocess.TimeoutExpired('comfy-cli', timeout)
         return self.poll()
@@ -413,11 +423,18 @@ def _job_for(pid_holder) -> object:
 
 
 def _pipe_eof():
-    """A pipe with no writer left in this process, its read end inheritable and nothing else: every read returns end of file at once."""
+    """A pipe with no writer left in this process, its read end inheritable and nothing else: every read returns end of file at once.
+
+    The caller owns the read end it returns and closes it once the child holds its own copy.
+    """
     read_end, write_end = wintypes.HANDLE(), wintypes.HANDLE()
     if not _K32.CreatePipe(ctypes.byref(read_end), ctypes.byref(write_end), None, 0):
-        raise OSError(ctypes.get_last_error(), "CreatePipe failed")
-    _K32.SetHandleInformation(read_end, 1, 1)  # HANDLE_FLAG_INHERIT on the read end alone
+        raise ctypes.WinError(ctypes.get_last_error())
+    if not _K32.SetHandleInformation(read_end, 1, 1):  # HANDLE_FLAG_INHERIT on the read end alone
+        error = ctypes.WinError(ctypes.get_last_error())
+        _K32.CloseHandle(read_end)
+        _K32.CloseHandle(write_end)
+        raise error
     _K32.CloseHandle(write_end)
     return read_end.value
 
@@ -425,62 +442,84 @@ def _pipe_eof():
 def _spawned(argv, env, cwd: str, log_fd: int | None):
     """Create the child already inside a new kill-on-close job, with CreateProcessW and PROC_THREAD_ATTRIBUTE_JOB_LIST.
 
-    Returns (process_handle, pid, job, None) or (None, 0, None, error). No instant exists in which the child is alive and
-    outside the job, so a host that dies here leaves nothing behind: Windows closes the job with the host's last handle.
+    Returns (process_handle, pid, job, None) or (None, 0, None, error), where error is an OSError naming what failed. No instant
+    exists in which the child is alive and outside the job, so a host that dies here leaves nothing behind: Windows closes the job
+    with the host's last handle. Every handle opened for the creation is closed again on every path, a raised one included; only the
+    process handle and the job outlive the call, and only when the child was created.
     """
     job, error = _job_for(None)
     if job is None:
         return None, 0, None, error
-    size = ctypes.c_size_t(0)
-    _K32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
-    buf = ctypes.create_string_buffer(size.value)
-    if not _K32.InitializeProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p), 1, 0, ctypes.byref(size)):
-        error = ctypes.WinError(ctypes.get_last_error())
-        _K32.CloseHandle(job)
+    attrs = stdin_handle = nul = log_handle = process = None
+    try:
+        size = ctypes.c_size_t(0)
+        _K32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
+        buf = ctypes.create_string_buffer(size.value)
+        if not _K32.InitializeProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p), 1, 0, ctypes.byref(size)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        attrs = buf
+        job_ref = ctypes.c_void_p(job)
+        if not _K32.UpdateProcThreadAttribute(ctypes.cast(attrs, ctypes.c_void_p), 0, 0x0002000D,  # PROC_THREAD_ATTRIBUTE_JOB_LIST
+                                              ctypes.byref(job_ref), ctypes.sizeof(job_ref), None, None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        si = _StartupInfoEx()
+        si.StartupInfo.cb = ctypes.sizeof(si)
+        # stdin is a pipe whose write end is already closed here, so a read returns end of file at once as Popen's DEVNULL does. Only
+        # its read end is inheritable, so the child receives a reader with no writer. stdout and stderr go to the log when there is
+        # one, and to a write-only NUL when there is not; with a log no NUL is opened, so none is inherited as a stray.
+        stdin_handle = _pipe_eof()
+        if log_fd is None:
+            nul = _K32.CreateFileW("NUL", 0x40000000, 0x00000001 | 0x00000002, None, 3, 0, None)  # GENERIC_WRITE, share both, OPEN_EXISTING
+            if not nul or nul == _INVALID_HANDLE:
+                nul = None
+                raise ctypes.WinError(ctypes.get_last_error())
+            out_handle = nul
+        else:
+            out_handle = log_handle = msvcrt.get_osfhandle(log_fd)
+        if not _K32.SetHandleInformation(wintypes.HANDLE(out_handle), 1, 1):  # HANDLE_FLAG_INHERIT
+            raise ctypes.WinError(ctypes.get_last_error())
+        si.StartupInfo.hStdInput = wintypes.HANDLE(stdin_handle)
+        si.StartupInfo.hStdOutput = wintypes.HANDLE(out_handle)
+        si.StartupInfo.hStdError = wintypes.HANDLE(out_handle)
+        si.StartupInfo.dwFlags |= 0x00000100  # STARTF_USESTDHANDLES
+        si.lpAttributeList = ctypes.cast(attrs, ctypes.c_void_p)
+        block = ["%s=%s" % (k, v) for k, v in sorted(env.items(), key=lambda kv: kv[0].upper())]
+        # No size is passed, so ctypes counts UTF-16 units itself: a character outside the BMP takes the two units it needs.
+        env_buf = ctypes.create_unicode_buffer("\0".join(block) + "\0\0")
+        command = ctypes.create_unicode_buffer(subprocess.list2cmdline(list(argv)))
+        info = _ProcessInfo()
+        # CREATE_NO_WINDOW gives the child a console with no window, as alpha.12's Popen did. CREATE_NEW_CONSOLE (0x10) would open a
+        # visible one, and closing that window would end the engine outside this lifecycle.
+        flags = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+                 | 0x00000400   # CREATE_UNICODE_ENVIRONMENT
+                 | 0x00080000)  # EXTENDED_STARTUPINFO_PRESENT
+        if not _K32.CreateProcessW(None, command, None, None, True, flags,
+                                   ctypes.cast(env_buf, ctypes.c_void_p), cwd, ctypes.byref(si), ctypes.byref(info)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        process = info.hProcess
+        _K32.CloseHandle(info.hThread)
+        created = (process, info.dwProcessId, job, None)
+        process = job = None  # both are the caller's now
+        return created
+    except OSError as e:
+        return None, 0, None, e
+    except (TypeError, ValueError) as e:  # an argument or environment Windows cannot take, reported as the OSError _spawn names
+        error = OSError(f"{type(e).__name__}: {e}")
+        error.__cause__ = e
         return None, 0, None, error
-    job_ref = ctypes.c_void_p(job)
-    if not _K32.UpdateProcThreadAttribute(ctypes.cast(buf, ctypes.c_void_p), 0, 0x0002000D,  # PROC_THREAD_ATTRIBUTE_JOB_LIST
-                                          ctypes.byref(job_ref), ctypes.sizeof(job_ref), None, None):
-        error = ctypes.WinError(ctypes.get_last_error())
-        _K32.DeleteProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p))
-        _K32.CloseHandle(job)
-        return None, 0, None, error
-    si = _StartupInfoEx()
-    si.StartupInfo.cb = ctypes.sizeof(si)
-    # stdin is a pipe whose write end is already closed here, so a read returns end of file at once as Popen's DEVNULL does. Only its
-    # read end is made inheritable, so the child receives a reader with no writer. stdout and stderr stay a write-only NUL.
-    stdin_handle = _pipe_eof()
-    nul = _K32.CreateFileW("NUL", 0x40000000, 0x00000001 | 0x00000002, None, 3, 0, None)
-    _K32.SetHandleInformation(wintypes.HANDLE(nul), 1, 1)
-    si.StartupInfo.hStdInput = wintypes.HANDLE(stdin_handle)
-    si.StartupInfo.hStdOutput = wintypes.HANDLE(nul)
-    si.StartupInfo.hStdError = wintypes.HANDLE(nul)
-    si.StartupInfo.dwFlags |= 0x00000100  # STARTF_USESTDHANDLES
-    si.lpAttributeList = ctypes.cast(buf, ctypes.c_void_p)
-    inherit = True
-    if log_fd is not None:
-        import msvcrt
-
-        handle = msvcrt.get_osfhandle(log_fd)
-        _K32.SetHandleInformation(wintypes.HANDLE(handle), 1, 1)  # HANDLE_FLAG_INHERIT
-        si.StartupInfo.hStdOutput = wintypes.HANDLE(handle)
-        si.StartupInfo.hStdError = wintypes.HANDLE(handle)
-    block = ["%s=%s" % (k, v) for k, v in sorted(env.items(), key=lambda kv: kv[0].upper())]
-    env_buf = ctypes.create_unicode_buffer("\0".join(block) + "\0\0", sum(len(x) for x in block) + 2 * len(block) + 2)
-    command = ctypes.create_unicode_buffer(subprocess.list2cmdline(list(argv)))
-    info = _ProcessInfo()
-    flags = 0x00000010 | 0x00000200 | 0x00000400 | 0x00080000  # UNICODE_ENVIRONMENT | NEW_PROCESS_GROUP | NO_WINDOW | EXTENDED_STARTUPINFO
-    ok = _K32.CreateProcessW(None, command, None, None, inherit, flags,
-                             ctypes.cast(env_buf, ctypes.c_void_p), cwd, ctypes.byref(si), ctypes.byref(info))
-    if not ok:
-        error = ctypes.WinError(ctypes.get_last_error())
-        _K32.DeleteProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p))
-        _K32.CloseHandle(job)
-        return None, 0, None, error
-    _K32.DeleteProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p))
-    _K32.CloseHandle(info.hThread)
-    _K32.CloseHandle(nul)
-    return info.hProcess, info.dwProcessId, job, None
+    finally:
+        if attrs is not None:
+            _K32.DeleteProcThreadAttributeList(ctypes.cast(attrs, ctypes.c_void_p))
+        if stdin_handle is not None:
+            _K32.CloseHandle(stdin_handle)  # the child holds its own copy; this one would leak, inheritable, into every later tree
+        if nul is not None:
+            _K32.CloseHandle(nul)
+        if log_handle is not None:
+            _K32.SetHandleInformation(wintypes.HANDLE(log_handle), 1, 0)  # the log stays the caller's to close, no longer inheritable
+        if process is not None:
+            _K32.CloseHandle(process)
+        if job is not None:
+            _K32.CloseHandle(job)  # kill-on-close: a child created before an interruption ends with its job
 
 
 def _exited(proc) -> int | None:
@@ -761,8 +800,8 @@ class CozyLifecycle:
                 raise
             try:
                 if os.name == 'nt':
-                    _K32.TerminateProcess(proc.handle, 1)  # created inside the job, so this is the whole tree
-                    _K32.WaitForSingleObject(proc.handle, int(self._stop_s * 1000))
+                    _K32.TerminateProcess(proc.handle, 1)  # ends the root; closing the job below ends whatever it started (kill-on-close)
+                    _K32.WaitForSingleObject(proc.handle, _ms(self._stop_s))
                     _K32.CloseHandle(proc.handle)
                 else:
                     proc.kill()
@@ -776,8 +815,8 @@ class CozyLifecycle:
             self._tell('unavailable')
             if not isinstance(e, Exception):
                 raise
-            raise OrganError(f"Unavailable: comfy-cli's process could not be held in a job object and let run ({e}), so it was killed "
-                             f"before it ran, and nothing runs on port {self._port}") from e
+            raise OrganError(f"Unavailable: comfy-cli's process was created inside its job, but the start could not finish ({e}), so its "
+                             f"tree was killed, and nothing runs on port {self._port}") from e
         self._proc, self._job = proc, job
 
     def _kill(self) -> None:
@@ -804,7 +843,7 @@ class CozyLifecycle:
                                      "it is still this lifecycle's, so stop() can try again") from e
         try:
             if os.name == 'nt':
-                if _K32.WaitForSingleObject(proc.handle, int(self._stop_s * 1000)) == 0x00000102:  # WAIT_TIMEOUT
+                if _K32.WaitForSingleObject(proc.handle, _ms(self._stop_s)) == 0x00000102:  # WAIT_TIMEOUT
                     raise OrganError(f"the process comfy-cli runs in on port {self._port} did not end within {self._stop_s:g} s of the kill; "
                                      f"it is still this lifecycle's, so stop() can try again")
             else:
