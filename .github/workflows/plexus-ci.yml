@@ -1,0 +1,181 @@
+# Plexus CI. Drafted Nov 11 beside organ-hardening (session 0e857ac5, m32\ci), refreshed and placed Nov 15 on Joe's decision 05.
+#
+# On every push to a mission/** or plexus-loop/** branch, this runs the harness's own
+# gates (layers, core, predicate_smoke, cargo, unit; see missions/organ-closeout.toml)
+# and then the frozen acceptance tests, phase 1 and phase 2, on Windows and on Linux.
+# A correct branch is one the harness would keep: every gate green, and phase 1 and
+# phase 2 at zero failures. The mission gate neuron_unchanged is left out: it compares
+# neuron.py with one mission's base and the names that mission may add, so it has no
+# meaning outside a run.
+#
+# It never starts a real ComfyUI or connects to port 8188. It never calls the worker or
+# Ollama, never runs `python -m harness.plexus_loop run|check`, never collects
+# tests/acceptance/live (integration) or tests/acceptance/pending, and never pushes,
+# tags or merges. It reads the repository and nothing else (permissions: contents read).
+#
+# Why a file of its own rather than new branch filters on ci.yml: ci.yml tests the
+# seeded Comfy-Cozy package on Python 3.10 to 3.13, and builds no plexus._core.
+# plexus._core is built abi3-py311, and the guards import tomllib, so a 3.10 leg could
+# never be green.
+#
+# GitHub reads a push workflow from the pushed commit, so it fires only on branches that
+# hold this file. Every mission toml freezes .github/** for the worker.
+
+name: Plexus CI
+
+on:
+  push:
+    branches:
+      - "mission/**"
+      - "plexus-loop/**"
+    paths-ignore:
+      # Capsule, README, image and Claude Code config commits change nothing a test reads.
+      # Mission tomls and worker briefs are not ignored: the harness tests read them.
+      - "README.md"
+      - "harness/CAPSULE.md"
+      - "assets/**"
+      - ".claude/**"
+  # Manual runs. The Actions tab offers this only once the file is on the default branch.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to the same branch replaces the run in flight.
+  group: plexus-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.14"     # every recorded green run used 3.14.2; usd-core 26.5 ships cp314 wheels for both OSes
+  RUST_TOOLCHAIN: "1.99.1"   # the toolchain the harness builds plexus._core with on Joe's machine
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  plexus:
+    name: plexus (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    # Windows is the platform of record. Every green run so far was on Windows, the Job
+    # Object path runs only there, and the cases that read it skip off Windows.
+    # Linux reports but does not fail the run until it has passed once (Joe, Nov 14, decision 05).
+    # Under WSL, the lifecycle and isolation cases that need no core passed on Nov 11, and the
+    # three cases of test_organ_hardening_posix.py passed on Nov 15. The cases that need
+    # plexus._core have never run on Linux. Remove this line once a Linux run is green.
+    continue-on-error: ${{ matrix.os == 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        id: py
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install Python dependencies
+        id: deps
+        # `-e .` installs the seeded package's dependencies. tests/conftest.py's autouse
+        # fixtures import agent.* for every test under tests/, the frozen ones included,
+        # so usd-core and pytest alone are not enough. Test tools are pinned to the
+        # versions of the last green run. usd-core 26.5 is the composer of record.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . "usd-core==26.5" "pytest==8.4.2" "pytest-asyncio==0.26.0" "ruff==0.15.10"
+          python -c "from pxr import Usd; v = Usd.GetVersion(); print('usd-core', v); assert v == (0, 26, 5), v"
+
+      # Rust comes after the Python install, so a toolchain download that fails still leaves
+      # the checks that need no Rust (layers, lint, unit) running.
+      - name: Set up Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-py${{ env.PYTHON_VERSION }}-
+
+      # Each check below runs whatever happened to the ones before it, so one run reports
+      # every failure. Only predicate_smoke and the two frozen phases need plexus._core.
+      - name: Gate layers (import-layer guards)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: python -m pytest -q harness/plexus_loop/guards
+
+      - name: Gate core (build plexus._core and import it)
+        id: core
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        # build_core.py runs `cargo build --release --features python -p plexus-core` and
+        # copies the library to plexus/_core.pyd on Windows or plexus/_core.so on Linux.
+        # There is no maturin step, per Joe's decision of Nov 1. PYO3_PYTHON names the
+        # interpreter pyo3's build script reads.
+        env:
+          PYO3_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: |
+          python harness/plexus_loop/build_core.py
+          python -c "import plexus._core as c; print('plexus._core', c.__version__, c.__file__)"
+
+      - name: Gate predicate_smoke
+        if: ${{ !cancelled() && steps.core.outcome == 'success' }}
+        run: python -I harness/plexus_loop/predicate_smoke.py
+
+      - name: Gate cargo (cargo test)
+        # Built without the python feature, so it says something even when the core build fails.
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: cargo test --workspace --quiet
+
+      - name: Lint (ruff, the release checklist's scope)
+        # plexus/ is left out: it has carried the same seven ruff findings since alpha.9, so linting it would fail a correct branch.
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: ruff check harness/ tests/harness_plexus_loop examples/
+
+      - name: Gate unit (harness tests and the two seeded files the gate names)
+        # The mission toml's unit command without -x, so that one run reports every failure.
+        # It needs no plexus._core: 458 passed and 1 skipped without it in WSL on Nov 11.
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        timeout-minutes: 20
+        run: >-
+          python -m pytest -q -ra -m "not integration"
+          tests/harness_plexus_loop tests/test_portability_guards.py tests/test_workflow_patch_engine_live.py
+          --junitxml="$RUNNER_TEMP/reports/unit.xml"
+
+      - name: Frozen phase 1 (T0 to T6, and the five files beside them)
+        if: ${{ !cancelled() && steps.core.outcome == 'success' }}
+        timeout-minutes: 10
+        run: python -m pytest -q -ra -m "not integration" tests/acceptance/phase1 --junitxml="$RUNNER_TEMP/reports/phase1.xml"
+
+      - name: Frozen phase 2 (T7, T8 and the organ files)
+        if: ${{ !cancelled() && steps.core.outcome == 'success' }}
+        timeout-minutes: 15
+        run: python -m pytest -q -ra -m "not integration" tests/acceptance/phase2 --junitxml="$RUNNER_TEMP/reports/phase2.xml"
+
+      - name: Upload test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: plexus-reports-${{ matrix.os }}
+          path: ${{ runner.temp }}/reports/
+          retention-days: 7
+          if-no-files-found: ignore
