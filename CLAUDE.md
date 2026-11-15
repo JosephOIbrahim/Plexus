@@ -7,10 +7,10 @@ This file advises. The hooks in `.claude/settings.json` enforce. A rule that mat
 ## Source of truth, in order
 
 1. `tests/acceptance/` — frozen. `tests/acceptance/CONTRACT.md` is the Python surface the tests call; everything below it is free. Never edited, skipped or re-marked by Claude or the worker. Joe may.
-2. `docs/plexus/PLEXUS_BLUEPRINT_v5.md` (v5.3). Overrides the August baseline wherever they conflict. Where v5.3 calls Comfy-Cozy the seed code, or says Plexus keeps or imports its code, the Nov 1 decision above wins until v5.4 lands (`docs/plexus/BLUEPRINT_v5.4_DRAFT_CHANGES.md`).
-3. `PLEXUS_SPEC.md` (v2.1 + Patch 01) for what v5.3 does not cover: schemas, predicate grammar v0, organ contract, test definitions. Patch record: `docs/plexus/package-2026-11-01/04_PLEXUS_SPEC_PATCH_01.md`.
+2. `docs/plexus/PLEXUS_BLUEPRINT_v5.md` (v5.4). Overrides the August baseline wherever they conflict. v5.4, ratified by Joe on Nov 15, makes Comfy-Cozy an architecture reference only, as the Nov 1 decision above says; the record of its changes is `docs/plexus/BLUEPRINT_v5.4_DRAFT_CHANGES.md`.
+3. `PLEXUS_SPEC.md` (v2.1 + Patch 01) for what v5.4 does not cover: schemas, predicate grammar v0, organ contract, test definitions. Patch record: `docs/plexus/package-2026-11-01/04_PLEXUS_SPEC_PATCH_01.md`.
 
-Where v5.3 wins over the spec: the runtime is Rust, not the spec's Python repo shape; predicates compile in Rust; usd-core 0.26.5 is the composer of record and the pure-Rust openusd crate stays behind its parity test; "resume" is not in the organ contract.
+Where v5.4 wins over the spec: the runtime is Rust, not the spec's Python repo shape; predicates compile in Rust; usd-core 0.26.5 is the composer of record and the pure-Rust openusd crate stays behind its parity test; "resume" is not in the organ contract.
 
 ## The harness
 
@@ -21,7 +21,7 @@ What Claude does without asking during a mission is in program.md, under "What C
 ## Hard rules
 
 - Nothing from Synapse comes into Plexus. No code, imports, packages, shared contracts or dependencies. Synapse is one architectural reference among several (the v4.0 blueprint, comfy-cozy, the AOUSD spec, the Rust ecosystem). A borrowed idea is justified on Plexus's own terms in the plan or commit message.
-- Nothing from Comfy-Cozy comes into `plexus/` or `crates/` either: no `agent.*` or `cognitive.*` import, at module or function scope, and no copied file. Like Synapse, it is a reference. No hook enforces this yet.
+- Nothing from Comfy-Cozy comes into `plexus/` or `crates/` either: no `agent.*` or `cognitive.*` import, at module or function scope, and no copied file. Like Synapse, it is a reference. `.claude/hooks/guard_edit.py` blocks such an import in Claude's edits, the `layers` gate holds the worker to it, and the reviewer treats it as a hard failure.
 - Plexus runs without SALUS, Moneta and Hanish. Nothing imports `agent/integrations/moneta.py`. Memory means the Plexus-local store.
 - Branches only. Never push to main, never merge into main, never force-push.
 - Claude plans and reviews. The worker writes implementation code. Claude does not hand-write implementation to rescue a stalled attempt; it revises the mission file or the plan. Scaffolding the worker cannot reach (the mission freezes `pyproject.toml` and `harness/**`) is Claude's, done before `run`, in its own commit, shown to Joe.
