@@ -440,33 +440,23 @@ def _pipe_eof():
 
 
 def _spawned(argv, env, cwd: str, log_fd: int | None):
-    """Create the child already inside a new kill-on-close job, with CreateProcessW and PROC_THREAD_ATTRIBUTE_JOB_LIST.
+    """Create the child already inside a new kill-on-close job, with CreateProcessW, PROC_THREAD_ATTRIBUTE_JOB_LIST and
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST.
 
     Returns (process_handle, pid, job, None) or (None, 0, None, error), where error is an OSError naming what failed. No instant
     exists in which the child is alive and outside the job, so a host that dies here leaves nothing behind: Windows closes the job
-    with the host's last handle. Every handle opened for the creation is closed again on every path, a raised one included; only the
-    process handle and the job outlive the call, and only when the child was created.
+    with the host's last handle. The child inherits its three std handles and nothing else the host holds. Every handle opened for
+    the creation is closed again on every path, a raised one included; only the process handle and the job outlive the call, and
+    only when the child was created.
     """
     job, error = _job_for(None)
     if job is None:
         return None, 0, None, error
     attrs = stdin_handle = nul = log_handle = process = None
     try:
-        size = ctypes.c_size_t(0)
-        _K32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
-        buf = ctypes.create_string_buffer(size.value)
-        if not _K32.InitializeProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p), 1, 0, ctypes.byref(size)):
-            raise ctypes.WinError(ctypes.get_last_error())
-        attrs = buf
-        job_ref = ctypes.c_void_p(job)
-        if not _K32.UpdateProcThreadAttribute(ctypes.cast(attrs, ctypes.c_void_p), 0, 0x0002000D,  # PROC_THREAD_ATTRIBUTE_JOB_LIST
-                                              ctypes.byref(job_ref), ctypes.sizeof(job_ref), None, None):
-            raise ctypes.WinError(ctypes.get_last_error())
-        si = _StartupInfoEx()
-        si.StartupInfo.cb = ctypes.sizeof(si)
         # stdin is a pipe whose write end is already closed here, so a read returns end of file at once as Popen's DEVNULL does. Only
         # its read end is inheritable, so the child receives a reader with no writer. stdout and stderr go to the log when there is
-        # one, and to a write-only NUL when there is not; with a log no NUL is opened, so none is inherited as a stray.
+        # one, and to a write-only NUL when there is not; with a log no NUL is opened at all.
         stdin_handle = _pipe_eof()
         if log_fd is None:
             nul = _K32.CreateFileW("NUL", 0x40000000, 0x00000001 | 0x00000002, None, 3, 0, None)  # GENERIC_WRITE, share both, OPEN_EXISTING
@@ -478,6 +468,26 @@ def _spawned(argv, env, cwd: str, log_fd: int | None):
             out_handle = log_handle = msvcrt.get_osfhandle(log_fd)
         if not _K32.SetHandleInformation(wintypes.HANDLE(out_handle), 1, 1):  # HANDLE_FLAG_INHERIT
             raise ctypes.WinError(ctypes.get_last_error())
+        # The handle list names the child's std handles and nothing else, so no other handle the host holds inheritable, such as
+        # another thread's pipe or a second lifecycle's log, reaches the engine. Each handle is named once: stdout and stderr are one
+        # handle, and Windows refuses a list that names a handle twice with error 87 (measured Nov 15).
+        listed = list(dict.fromkeys((stdin_handle, out_handle, out_handle)))
+        handles = (wintypes.HANDLE * len(listed))(*listed)
+        size = ctypes.c_size_t(0)
+        _K32.InitializeProcThreadAttributeList(None, 2, 0, ctypes.byref(size))
+        buf = ctypes.create_string_buffer(size.value)
+        if not _K32.InitializeProcThreadAttributeList(ctypes.cast(buf, ctypes.c_void_p), 2, 0, ctypes.byref(size)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        attrs = buf
+        job_ref = ctypes.c_void_p(job)
+        if not _K32.UpdateProcThreadAttribute(ctypes.cast(attrs, ctypes.c_void_p), 0, 0x0002000D,  # PROC_THREAD_ATTRIBUTE_JOB_LIST
+                                              ctypes.byref(job_ref), ctypes.sizeof(job_ref), None, None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if not _K32.UpdateProcThreadAttribute(ctypes.cast(attrs, ctypes.c_void_p), 0, 0x00020002,  # PROC_THREAD_ATTRIBUTE_HANDLE_LIST
+                                              ctypes.cast(handles, ctypes.c_void_p), ctypes.sizeof(handles), None, None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        si = _StartupInfoEx()
+        si.StartupInfo.cb = ctypes.sizeof(si)
         si.StartupInfo.hStdInput = wintypes.HANDLE(stdin_handle)
         si.StartupInfo.hStdOutput = wintypes.HANDLE(out_handle)
         si.StartupInfo.hStdError = wintypes.HANDLE(out_handle)
@@ -493,6 +503,7 @@ def _spawned(argv, env, cwd: str, log_fd: int | None):
         flags = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
                  | 0x00000400   # CREATE_UNICODE_ENVIRONMENT
                  | 0x00080000)  # EXTENDED_STARTUPINFO_PRESENT
+        # bInheritHandles must be TRUE for a handle list to apply, and the list then limits inheritance to the handles it names.
         if not _K32.CreateProcessW(None, command, None, None, True, flags,
                                    ctypes.cast(env_buf, ctypes.c_void_p), cwd, ctypes.byref(si), ctypes.byref(info)):
             raise ctypes.WinError(ctypes.get_last_error())
