@@ -1,0 +1,516 @@
+# Ninth Plexus mission, M2b: outcome-envelope. Phase 3 starts here. Blueprint v5.4 §4: every Plexus call returns one envelope,
+# Outcome, with a status (Ok, Unavailable, Blocked), a payload, and a reason required whenever the status is not Ok. It is defined
+# once in Rust, in plexus-core's outcome.rs, and py.rs shows it to Python as plexus._core.Outcome. Joe decided its shape on Nov 1
+# (NEXTGEN_SCAFFOLD_PLAN.md, rust.outcome-and-errors) and that it lands in its own mission, M2b, before identity.
+# Plan: missions/outcome-envelope.plan.md.
+
+[mission]
+name = "outcome-envelope"
+goal = "Make Joe's frozen tests/acceptance/phase3/test_outcome.py pass with one step, E1, that writes crates/plexus-core/src/outcome.rs (new), py.rs and lib.rs: the Outcome envelope in Rust, with its rules in Outcome::new, and plexus._core.Outcome, a frozen class built only through it. Break no phase 1 test: py.rs keeps PredicateError, Predicate, Budget and compile_predicate exactly as they are. tests/acceptance/CONTRACT.md is the Python surface; harness/plexus_loop/missions/outcome-envelope.worker.md says what the step is."
+requires = ["tests/acceptance/phase3/test_outcome.py", "tests/acceptance/phase1"]
+focus = ["crates/plexus-core/src/outcome.rs", "crates/plexus-core/src/py.rs", "crates/plexus-core/src/lib.rs"]
+frozen = ["tests/acceptance/**", "harness/**", "docs/plexus/**", "PLEXUS_SPEC.md", ".github/**", "pyproject.toml", "Cargo.toml", "Cargo.lock", "crates/plexus-core/Cargo.toml"]
+context = [
+  "harness/plexus_loop/missions/outcome-envelope.worker.md",
+  "tests/acceptance/CONTRACT.md",
+]
+
+[metric]
+kind = "pytest_failures"
+target = "tests/acceptance/phase3/test_outcome.py"
+direction = "lower"
+min_delta = 1
+timeout_s = 600
+
+[[gates]]
+name = "layers"
+cmd = ["python", "-m", "pytest", "-q", "harness/plexus_loop/guards"]
+timeout_s = 600
+
+[[gates]]
+name = "core"
+cmd = ["python", "harness/plexus_loop/build_core.py"]
+timeout_s = 1800
+
+[[gates]]
+name = "predicate_smoke"
+cmd = ["python", "-I", "harness/plexus_loop/predicate_smoke.py"]
+timeout_s = 120
+
+[[gates]]
+name = "phase1"
+# py.rs is sent whole, and Budget is read by no case in the target, so every phase 1 test runs against the new core
+# (outcome-envelope plan, D11). 30 passed in 35 s on the reference.
+cmd = ["python", "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", "tests/acceptance/phase1"]
+timeout_s = 600
+
+[[gates]]
+name = "cargo"
+cmd = ["cargo", "test", "--workspace", "--quiet"]
+timeout_s = 1800
+
+[[gates]]
+name = "posix"
+# The only gate that builds plexus._core for Linux, so it is kept for a py.rs change (plan, D11). It runs the lifecycle's POSIX
+# cases under WSL2 Ubuntu; harness/plexus_loop/posix_gate.py says what it needs inside WSL.
+cmd = ["python", "harness/plexus_loop/posix_gate.py"]
+timeout_s = 900
+
+[[gates]]
+name = "unit"
+cmd = ["python", "-m", "pytest", "-q", "-x", "-m", "not integration", "tests/harness_plexus_loop"]
+timeout_s = 1800
+
+[worker]
+kind = "ollama"
+model = "qwen3-coder:30b"
+host = "http://127.0.0.1:11434"
+timeout_s = 7200
+context_chars = 95000
+num_ctx = 49152
+
+[router]
+kind = "first"
+
+[[steps]]
+id = "E1"
+targets = ["tests/acceptance/phase3/test_outcome.py"]
+files = ["crates/plexus-core/src/outcome.rs", "crates/plexus-core/src/py.rs", "crates/plexus-core/src/lib.rs"]
+text = '''Your reply is exactly three fenced blocks, in this order: ```file:crates/plexus-core/src/outcome.rs, then ```file:crates/plexus-core/src/py.rs, then ```file:crates/plexus-core/src/lib.rs. Each holds its file whole, from its first line to its last, and never a ```diff block. outcome.rs is new. py.rs is the file under Files with the Outcome class added and nothing else changed: PredicateError, Predicate, Budget and compile_predicate stay exactly as they are. lib.rs gains one line, pub mod outcome;. Write no new tests: the six at the end of outcome.rs are part of the file, copied as written. Frozen test_outcome.py reads plexus._core.Outcome: the three statuses spelled exactly, a snake_case reason_code and a reason that is not blank whenever the status is not ok, a payload for ok alone, missing for unavailable alone and back as a tuple, and a frozen object. Send the three files below whole and unchanged: they are the exact text that passes every frozen case.
+
+```file:crates/plexus-core/src/outcome.rs
+//! The Outcome envelope (Blueprint v5.4 §4). Every Plexus call returns one: a status, a payload,
+//! and a reason that is required whenever the status is not Ok. It is defined once, here; py.rs
+//! shows it to Python as plexus._core.Outcome and builds every one through Outcome::new, so the
+//! rules below are written in this file and nowhere else.
+#![deny(clippy::unwrap_used, clippy::expect_used)]
+
+/// Where a call stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    /// The call did what was asked. The payload, if there is one, is its result.
+    Ok,
+    /// Something the call needs is not there: a substrate, a model, a value it can hash.
+    Unavailable,
+    /// The call was refused: a gate denied it, or a limit was reached.
+    Blocked,
+}
+
+impl Status {
+    /// The status as Python spells it: "ok", "unavailable" or "blocked".
+    pub fn name(self) -> &'static str {
+        match self {
+            Status::Ok => "ok",
+            Status::Unavailable => "unavailable",
+            Status::Blocked => "blocked",
+        }
+    }
+
+    /// The status a name spells, exactly and in lowercase, or None for any other text.
+    pub fn from_name(name: &str) -> Option<Status> {
+        match name {
+            "ok" => Some(Status::Ok),
+            "unavailable" => Some(Status::Unavailable),
+            "blocked" => Some(Status::Blocked),
+            _ => None,
+        }
+    }
+}
+
+/// Why a call is not Ok.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reason {
+    /// A snake_case code a caller can branch on, such as "non_finite".
+    pub code: String,
+    /// A sentence a person can read.
+    pub detail: String,
+    /// What is missing, in order: field names, paths, model ids. Unavailable alone names any.
+    pub missing: Vec<String>,
+}
+
+/// A status, a payload for Ok alone, and a reason for every other status.
+///
+/// The fields are private, so an Outcome exists only through the constructors below, and each of
+/// them keeps these rules:
+/// - Ok carries no reason, and may carry a payload;
+/// - Unavailable and Blocked carry no payload, and a reason whose code is snake_case and whose
+///   detail is not blank;
+/// - only Unavailable names what is missing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Outcome<T> {
+    status: Status,
+    payload: Option<T>,
+    reason: Option<Reason>,
+}
+
+impl<T> Outcome<T> {
+    /// Ok, carrying payload.
+    pub fn ok(payload: T) -> Self {
+        Outcome { status: Status::Ok, payload: Some(payload), reason: None }
+    }
+
+    /// Unavailable: something the call needs is not there. missing names it, in order.
+    pub fn unavailable(code: &str, detail: &str, missing: Vec<String>) -> Result<Self, String> {
+        let reason = Reason { code: code.to_string(), detail: detail.to_string(), missing };
+        Self::new(Status::Unavailable, None, Some(reason))
+    }
+
+    /// Blocked: the call was refused.
+    pub fn blocked(code: &str, detail: &str) -> Result<Self, String> {
+        let reason = Reason { code: code.to_string(), detail: detail.to_string(), missing: Vec::new() };
+        Self::new(Status::Blocked, None, Some(reason))
+    }
+
+    /// Any outcome, checked against the rules on the type. Err names the rule it breaks.
+    pub fn new(status: Status, payload: Option<T>, reason: Option<Reason>) -> Result<Self, String> {
+        let name = status.name();
+        match (status, &reason) {
+            (Status::Ok, None) => {}
+            (Status::Ok, Some(_)) => {
+                return Err("an ok outcome carries no reason: leave reason_code, reason and missing out".to_string());
+            }
+            (_, None) => {
+                return Err(format!("a {name} outcome needs a reason: give a reason_code and a reason"));
+            }
+            (_, Some(r)) => {
+                if payload.is_some() {
+                    return Err(format!("a {name} outcome carries no payload; only an ok outcome does"));
+                }
+                if !is_snake_case(&r.code) {
+                    return Err(format!(
+                        "reason_code {:?} is not snake_case: a lowercase letter, then lowercase letters, digits and underscores",
+                        r.code
+                    ));
+                }
+                if r.detail.trim().is_empty() {
+                    return Err(format!("a {name} outcome needs a reason that is not blank"));
+                }
+                if status != Status::Unavailable && !r.missing.is_empty() {
+                    return Err(format!("a {name} outcome names nothing missing; only an unavailable outcome does"));
+                }
+            }
+        }
+        Ok(Outcome { status, payload, reason })
+    }
+
+    /// The status.
+    pub fn status(&self) -> Status {
+        self.status
+    }
+
+    /// True exactly when the status is Ok.
+    pub fn is_ok(&self) -> bool {
+        self.status == Status::Ok
+    }
+
+    /// The payload, which only an Ok outcome may carry.
+    pub fn payload(&self) -> Option<&T> {
+        self.payload.as_ref()
+    }
+
+    /// The reason, which every outcome but Ok carries.
+    pub fn reason(&self) -> Option<&Reason> {
+        self.reason.as_ref()
+    }
+
+    /// The same outcome with its payload passed through f. The status and the reason do not change.
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Outcome<U> {
+        Outcome { status: self.status, payload: self.payload.map(f), reason: self.reason }
+    }
+}
+
+/// A lowercase ASCII letter, then lowercase ASCII letters, digits and underscores.
+fn is_snake_case(code: &str) -> bool {
+    let mut chars = code.chars();
+    matches!(chars.next(), Some('a'..='z'))
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ok_carries_its_payload_and_no_reason() {
+        let o = Outcome::ok(7);
+        assert_eq!(o.status(), Status::Ok);
+        assert!(o.is_ok());
+        assert_eq!(o.payload(), Some(&7));
+        assert_eq!(o.reason(), None);
+    }
+
+    #[test]
+    fn unavailable_and_blocked_carry_a_reason_and_no_payload() -> Result<(), String> {
+        let u: Outcome<i32> = Outcome::unavailable("non_finite", "temperature is NaN", vec!["temperature".to_string()])?;
+        assert_eq!(u.status(), Status::Unavailable);
+        assert!(!u.is_ok());
+        assert_eq!(u.payload(), None);
+        let r = u.reason().ok_or("an unavailable outcome lost its reason")?;
+        assert_eq!((r.code.as_str(), r.detail.as_str()), ("non_finite", "temperature is NaN"));
+        assert_eq!(r.missing, vec!["temperature".to_string()]);
+        let b: Outcome<i32> = Outcome::blocked("gate_denied", "the gate refused the write")?;
+        assert_eq!(b.status(), Status::Blocked);
+        assert_eq!(b.reason().map(|r| r.missing.len()), Some(0));
+        Ok(())
+    }
+
+    #[test]
+    fn a_reason_is_required_whenever_the_status_is_not_ok() {
+        assert!(Outcome::<i32>::new(Status::Unavailable, None, None).is_err());
+        assert!(Outcome::<i32>::new(Status::Blocked, None, None).is_err());
+        assert!(Outcome::<i32>::unavailable("", "a sentence", Vec::new()).is_err());
+        assert!(Outcome::<i32>::blocked("gate_denied", " \t").is_err());
+    }
+
+    #[test]
+    fn each_rule_is_checked() {
+        let reason = |missing: Vec<String>| Some(Reason { code: "x".to_string(), detail: "y".to_string(), missing });
+        assert!(Outcome::new(Status::Ok, Some(1), reason(Vec::new())).is_err());
+        assert!(Outcome::new(Status::Unavailable, Some(1), reason(Vec::new())).is_err());
+        assert!(Outcome::<i32>::new(Status::Blocked, None, reason(vec!["z".to_string()])).is_err());
+        assert!(Outcome::<i32>::new(Status::Unavailable, None, reason(vec!["z".to_string()])).is_ok());
+        assert!(Outcome::<i32>::new(Status::Ok, None, None).is_ok());
+        for bad in ["NonFinite", "non-finite", "2fast", "_x", "non finite", "Non_finite"] {
+            assert!(Outcome::<i32>::blocked(bad, "a sentence").is_err(), "{bad} passed as snake_case");
+        }
+        for good in ["non_finite", "unsupported_type", "limit2", "x"] {
+            assert!(Outcome::<i32>::blocked(good, "a sentence").is_ok(), "{good} failed as snake_case");
+        }
+    }
+
+    #[test]
+    fn names_round_trip() {
+        for s in [Status::Ok, Status::Unavailable, Status::Blocked] {
+            assert_eq!(Status::from_name(s.name()), Some(s));
+        }
+        assert_eq!(Status::from_name("Ok"), None);
+        assert_eq!(Status::from_name(""), None);
+    }
+
+    #[test]
+    fn map_changes_the_payload_alone() -> Result<(), String> {
+        assert_eq!(Outcome::ok(2).map(|x| x * 10).payload(), Some(&20));
+        let b = Outcome::<i32>::blocked("limit_reached", "the window is full")?.map(|x| x.to_string());
+        assert_eq!(b.status(), Status::Blocked);
+        assert_eq!(b.reason().map(|r| r.code.as_str()), Some("limit_reached"));
+        Ok(())
+    }
+}
+```
+
+```file:crates/plexus-core/src/py.rs
+//! The Python extension module `plexus._core`. The only file that names pyo3.
+
+use std::collections::HashMap;
+
+use pyo3::create_exception;
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyString, PyTuple};
+
+use crate::outcome::{Outcome, Reason, Status};
+use crate::predicate::Value;
+
+create_exception!(plexus._core, PredicateError, PyValueError);
+
+/// dict[str, float | int | bool | str | None] -> Rust values. None and other types are left out.
+fn to_values(d: &Bound<'_, PyDict>) -> PyResult<HashMap<String, Value>> {
+    let mut out = HashMap::new();
+    for (k, v) in d.iter() {
+        let key: String = k.extract()?;
+        let val = if let Ok(b) = v.extract::<bool>() {
+            Value::Bool(b) // bool first: True also extracts as 1.0
+        } else if let Ok(x) = v.extract::<f64>() {
+            Value::Num(x)
+        } else if let Ok(s) = v.extract::<String>() {
+            Value::Str(s)
+        } else {
+            continue;
+        };
+        out.insert(key, val);
+    }
+    Ok(out)
+}
+
+#[pyclass(name = "Predicate")]
+struct PyPredicate {
+    inner: crate::predicate::Predicate,
+}
+
+#[pymethods]
+impl PyPredicate {
+    fn paths(&self) -> Vec<String> {
+        self.inner.paths()
+    }
+    fn seed(&mut self, values: &Bound<'_, PyDict>) -> PyResult<()> {
+        self.inner.seed(&to_values(values)?);
+        Ok(())
+    }
+    fn eval(&self, changed: Vec<String>, values: &Bound<'_, PyDict>) -> PyResult<bool> {
+        Ok(self.inner.eval(&changed, &to_values(values)?))
+    }
+    fn commit_wake(&mut self, values: &Bound<'_, PyDict>) -> PyResult<()> {
+        self.inner.commit_wake(&to_values(values)?);
+        Ok(())
+    }
+}
+
+#[pyfunction]
+fn compile_predicate(source: &str, scope: &str) -> PyResult<PyPredicate> {
+    crate::predicate::compile(source, scope)
+        .map(|inner| PyPredicate { inner })
+        .map_err(PredicateError::new_err)
+}
+
+#[pyclass(name = "Budget")]
+struct PyBudget {
+    inner: crate::budget::Budget,
+}
+
+#[pymethods]
+impl PyBudget {
+    #[new]
+    fn new(wakes: u32, window_s: f64) -> Self {
+        PyBudget { inner: crate::budget::Budget::new(wakes, window_s) }
+    }
+    fn peek(&self, now: f64) -> &'static str {
+        self.inner.peek(now)
+    }
+    fn admit(&mut self, now: f64) -> &'static str {
+        self.inner.admit(now)
+    }
+}
+
+/// plexus._core.Outcome, the envelope every Plexus call returns. Frozen, and built only through
+/// crate::outcome::Outcome::new, so a broken rule raises ValueError here and is written nowhere else.
+#[pyclass(name = "Outcome", module = "plexus._core", frozen)]
+struct PyOutcome {
+    inner: Outcome<Py<PyAny>>,
+}
+
+#[pymethods]
+impl PyOutcome {
+    #[new]
+    #[pyo3(signature = (status, payload = None, *, reason_code = None, reason = None, missing = Vec::new()))]
+    fn new(
+        status: &str,
+        payload: Option<Py<PyAny>>,
+        reason_code: Option<String>,
+        reason: Option<String>,
+        missing: Vec<String>,
+    ) -> PyResult<Self> {
+        let Some(parsed) = Status::from_name(status) else {
+            return Err(PyValueError::new_err(format!(
+                "status {status:?} is not \"ok\", \"unavailable\" or \"blocked\""
+            )));
+        };
+        let reason = if reason_code.is_none() && reason.is_none() && missing.is_empty() {
+            None
+        } else {
+            Some(Reason { code: reason_code.unwrap_or_default(), detail: reason.unwrap_or_default(), missing })
+        };
+        Outcome::new(parsed, payload, reason).map(|inner| PyOutcome { inner }).map_err(PyValueError::new_err)
+    }
+
+    #[getter]
+    fn status(&self) -> &'static str {
+        self.inner.status().name()
+    }
+
+    #[getter]
+    fn ok(&self) -> bool {
+        self.inner.is_ok()
+    }
+
+    #[getter]
+    fn payload(&self, py: Python<'_>) -> Py<PyAny> {
+        self.inner.payload().map_or_else(|| py.None(), |p| p.clone_ref(py))
+    }
+
+    #[getter]
+    fn reason_code(&self) -> Option<&str> {
+        self.inner.reason().map(|r| r.code.as_str())
+    }
+
+    #[getter]
+    fn reason(&self) -> Option<&str> {
+        self.inner.reason().map(|r| r.detail.as_str())
+    }
+
+    #[getter]
+    fn missing<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+        let names: &[String] = self.inner.reason().map_or(&[], |r| r.missing.as_slice());
+        PyTuple::new(py, names)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        let status = PyString::new(py, self.inner.status().name()).repr()?;
+        let Some(r) = self.inner.reason() else {
+            return Ok(format!("Outcome({status}, {})", self.payload(py).bind(py).repr()?));
+        };
+        let code = PyString::new(py, &r.code).repr()?;
+        let detail = PyString::new(py, &r.detail).repr()?;
+        let missing = if r.missing.is_empty() {
+            String::new()
+        } else {
+            format!(", missing={}", self.missing(py)?.repr()?)
+        };
+        Ok(format!("Outcome({status}, reason_code={code}, reason={detail}{missing})"))
+    }
+}
+
+#[pymodule]
+fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    m.add("PredicateError", m.py().get_type::<PredicateError>())?;
+    m.add_class::<PyPredicate>()?;
+    m.add_class::<PyBudget>()?;
+    m.add_class::<PyOutcome>()?;
+    m.add_function(wrap_pyfunction!(compile_predicate, m)?)?;
+    Ok(())
+}
+```
+
+```file:crates/plexus-core/src/lib.rs
+//! Plexus core. This file only declares modules; the layers guard checks their ranks.
+
+pub mod outcome;
+mod predicate;
+mod budget;
+
+#[cfg(feature = "python")]
+mod py;
+```
+'''
+
+[budget]
+attempts = 6
+hours = 4
+max_consecutive_failures = 6
+
+[houdini]
+cpu_threads = 8
+cargo_jobs = 4
+
+[fix_router]
+kind = "none"
+
+[[known_fixes]]
+match = "cannot import name 'Outcome'"
+file = "harness/plexus_loop/missions/outcome-envelope.worker.md"
+anchor = "`plexus._core.Outcome is registered`"
+
+[[known_fixes]]
+match = "lib.rs may only declare modules|outcome.rs.*rank|only py.rs may name pyo3"
+file = "harness/plexus_loop/missions/outcome-envelope.worker.md"
+anchor = "`lib.rs` may only declare modules."
+
+[[known_fixes]]
+match = "test_status_is_one_of_three_lowercase_words"
+file = "harness/plexus_loop/missions/outcome-envelope.worker.md"
+anchor = "with no lowercasing and no trimming"
+
+[[known_fixes]]
+match = "phase1|test_t[0-6]_|Budget"
+file = "harness/plexus_loop/missions/outcome-envelope.worker.md"
+anchor = "`py.rs` keeps `PredicateError`, `Predicate`, `Budget` and `compile_predicate` exactly as they are"
