@@ -893,17 +893,18 @@ def test_an_instance_another_host_runs_is_refused_until_that_host_ends(rig):
     stopped = value_of(within(life.stop, "stop()", STOP_S), "stop()", SENTENCE_H7)
     assert stopped == "stopped", f"stop() returned {stopped!r}. {SENTENCE_H7}"
 
-# ---------- the spawn's contract: five guards ----------
+# ---------- the spawn's contract: six guards ----------
 
 
 SPAWN_SENTENCE = (
     "CONTRACT: start() runs the command in the foreground with the argv below, in the workspace, with stdin at end of file, the "
-    "lifecycle's environment, and the tree held in a job from creation.")
+    "lifecycle's environment, the tree held in a job from creation, and no console window of its own.")
 
 PROBE_ROOT = r'''
 import ctypes, json, os, sys
 out = sys.argv[1]
 in_job = -1
+console_window = None
 if os.name == "nt":
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.IsProcessInJob.argtypes = (ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_int))
@@ -911,9 +912,12 @@ if os.name == "nt":
     answer = ctypes.c_int(-1)
     k32.IsProcessInJob(k32.GetCurrentProcess(), None, ctypes.byref(answer))
     in_job = answer.value
+    k32.GetConsoleWindow.restype = ctypes.c_void_p
+    console_window = bool(k32.GetConsoleWindow())
 read = sys.stdin.buffer.read()
 with open(out, "w", encoding="utf-8") as f:
-    json.dump({"argv": sys.argv, "cwd": os.getcwd(), "in_job": in_job, "stdin_eof": read == b"", "env": dict(os.environ)}, f)
+    json.dump({"argv": sys.argv, "cwd": os.getcwd(), "in_job": in_job, "console_window": console_window, "stdin_eof": read == b"",
+               "env": dict(os.environ)}, f)
 '''
 
 
@@ -966,3 +970,11 @@ def test_the_root_is_in_a_job_at_its_first_instruction(spawn_probe):
     assert record["in_job"] == 1, (
         f"The child's first instruction found itself outside a job (IsProcessInJob answered {record['in_job']}), so the tree is not "
         f"held from creation. {SPAWN_SENTENCE}")
+
+
+@pytest.mark.skipif(not WINDOWS, reason="a console window is Windows'")
+def test_the_child_has_no_console_window(spawn_probe):
+    record, _ws, _port = spawn_probe
+    assert record["console_window"] is False, (
+        "The child has a console window of its own (GetConsoleWindow answered a window), so every start opens one on the desktop, "
+        f"and closing it ends the engine outside the lifecycle. Start the child with CREATE_NO_WINDOW. {SPAWN_SENTENCE}")
