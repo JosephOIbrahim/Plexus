@@ -50,6 +50,13 @@ cmd = ["cargo", "test", "--workspace", "--quiet"]
 timeout_s = 1800
 
 [[gates]]
+name = "posix"
+# The lifecycle's POSIX cases under WSL2 Ubuntu (organ-closeout plan, D5). Added Nov 15, after this mission ran;
+# harness/plexus_loop/posix_gate.py says what it needs inside WSL.
+cmd = ["python", "harness/plexus_loop/posix_gate.py"]
+timeout_s = 900
+
+[[gates]]
 name = "unit"
 cmd = ["python", "-m", "pytest", "-q", "-x", "-m", "not integration",
        "tests/harness_plexus_loop", "tests/test_portability_guards.py",
