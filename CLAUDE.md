@@ -32,7 +32,7 @@ What Claude does without asking during a mission is in program.md, under "What C
 
 - A frozen test looks wrong.
 - The notice path below `PlexusAxon`: what lives in Python and what lives in `plexus._core`. Bring two options and the trade-off.
-- Narrowing the `unit` gate in the mission file (it runs the whole comfy-cozy suite per attempt).
+- Narrowing the `unit` gate in the mission file (since Nov 1 it runs `tests/harness_plexus_loop` and two seeded test files, about 240 s per attempt).
 - Any install outside the repo's own venv or Cargo workspace.
 - Anything that cannot be undone.
 
