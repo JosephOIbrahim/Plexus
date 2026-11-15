@@ -74,3 +74,12 @@ On top of `d57056d`, in `crates/plexus-core/src/`: `outcome.rs` (new, 217 lines 
 3. **C3:** Plexus CI's "Frozen phase 3" step, and its header says phases 1, 2 and 3. The mission branch's CI then reads red on phase 3 until E1 is kept, which is its honest state; the loop branch inherits the step, so the keep's CI run shows phase 3 on Windows and Linux.
 
 Then `check`, its output pasted here, the push of `mission/outcome-envelope` by name, and `run`.
+
+**Made on Nov 15:** C1 `ce2f04f`, C2 `8c8a8dc`, C3 `6266288`, on top of Joe's `5250952`. `check` on `mission/outcome-envelope` after C3:
+
+```
+mission outcome-envelope: worker ollama (qwen3-coder:30b), 7 gate(s), metric pytest_failures
+Houdini: absent; next attempt runs on the gpu
+worker: check does not load qwen3-coder:30b; run loads it first and refuses if it cannot
+ready
+```
