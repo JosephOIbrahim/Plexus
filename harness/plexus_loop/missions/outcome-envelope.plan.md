@@ -59,7 +59,7 @@ On top of `d57056d`, in `crates/plexus-core/src/`: `outcome.rs` (new, 217 lines 
 - **Phase 1 and 2 whole on the reference:** **301 passed, 3 skipped** (the POSIX-only cases), 4 min 46 s, as on `b900b3b`. Phase 1 alone: 30 passed, 35 s.
 - **Gates on the reference:** layers 9 passed; `core` builds clean (no warnings); `predicate_smoke` passes; `cargo test` 6 passed; `posix` 41 passed and 1 Windows-only skip, 39 s; `unit` 465 passed with the three mission files in place (3 min 56 s, as CI's Windows leg on `b900b3b`); `check` reads `ready`.
 - **Mutants: 19 of 19 caught**, one clause each: ok takes a reason (4 cases fail), not-ok without a reason (2), a payload beside a reason (2), no snake_case check (8), digits refused (1), a blank sentence passes (1), blocked names `missing` (1), the status lowercased (4), the status trimmed (3), `missing` a list (3), attributes can be added (1), ok needs a payload (1), a bare string is one missing name (1), no `repr` (1), no module name (1), `.ok` true for unavailable (1), code and sentence swapped (7), `missing` sorted (1), the payload copied (1). The status-trimmed mutant at first survived, because every status case carried a reason and `" ok"` with a reason is refused anyway; the case now gives each spelling the arguments its nearest real status accepts.
-- **Adversary pass** (its own worktree, without the reference): still running when C1 was made; its findings go into this plan when it reports, and any test change they call for is Joe's, as a second frozen commit.
+- **Adversary pass** (its own worktree, without the reference; it reported after `5250952` was placed): no draft case is wrong, and 11 builds pass all 50 cases while breaking the contract. The gravest, H1, no Python case can read: the rules kept in `py.rs`, or in an `outcome.rs` with public fields or an unchecked constructor, or an honest `outcome.rs` that `py.rs` never uses. The realistic ones a later whole-file `py.rs` could slip on: snake_case checked on one status only or with uppercase after the first letter (H2), a payload converted through Rust (`True` back as `1`, H3), `missing` a live view of the caller's list (H4), `ValueError` winning over a wrong type (H5), a newline-only reason passing as a sentence (H6), and five over-refusals (H10). Its 87 proposed cases passed on this reference and failed on the base. Section 7 records what Joe chose and what was placed.
 
 **The mission file** (`outcome-envelope.toml`): E1 gives the whole reference; metric `pytest_failures` on `test_outcome.py` alone; four known-fix anchors, each once in the brief.
 
@@ -83,3 +83,25 @@ Houdini: absent; next attempt runs on the gpu
 worker: check does not load qwen3-coder:30b; run loads it first and refuses if it cannot
 ready
 ```
+
+## 7. The run, the promotion and the tightening (Nov 15)
+
+**The run, 18:41 to 18:53.** Baseline 50 on `7fc46ce`, on the GPU. Attempt 1, step E1, kept as `9348410` on `plexus-loop/outcome-envelope`, 50 → 0, in 374 s: the worker 43 s (13,068 prompt tokens, 3,702 generated), then the gates (layers 0.8 s, core 0.9 s, predicate_smoke 0.3 s, phase1 41.5 s, cargo 0.8 s, posix 40.4 s, unit 245.1 s) and the metric 0.6 s. The three kept files are byte-identical to the reference. The reviewer: keep, no hard or soft finding; `py.rs` changes one existing line, its `pyo3::types` import, and adds the rest. Every test outside the frozen folder: 552 passed.
+
+**The promotion, Joe's word.** `mission/outcome-envelope` fast-forwarded from `7fc46ce` to `9348410`, with the capsule `d3a8f9a` on top, pushed by name. CI run 43776122333 on `7fc46ce` had failed only "Frozen phase 3", on both legs, as expected without the keep. CI run 43777865577 on `d3a8f9a` is green on both legs: Windows unit 465, phase 1 30, phase 2 271 passed and 3 skipped, phase 3 50; Linux unit 464 and 1 skipped, phase 1 30, phase 2 263 passed and 8 skipped, phase 3 50.
+
+**The adversary's findings, and Joe's four decisions, all as recommended.**
+1. Tighten `test_outcome.py` with the cases whose rule the contract already states.
+2. Four CONTRACT sentences: a wrong type wins over a broken rule; "blank" defined; no subclassing; `None` and an empty `missing` mean the same as leaving them out. Joe then accepted two changes to what was approved: "blank" is Unicode's White_Space set, the one Rust's `str::trim` uses, not Python's `str.isspace()`, which also counts U+001C to U+001F and which the kept code does not follow; and a CONTRACT section on the Rust surface the new Rust test calls.
+3. A frozen Rust test, wired into `cargo test` through a `[[test]]` entry, and the adversary's source check in the layers guard.
+4. Every later mission toml whose focus includes `crates/` carries a `phase3` gate beside `phase1` (memory `phase3-gate-in-later-missions`).
+
+**The tightening.** Joe's `adcbfd5`: `phase3/test_outcome.py` at 140 cases (the 50 unchanged and 90 more; sha256 `ab8e1ea9…`), the new `phase3/outcome_contract.rs` with nine Rust tests (`c4b0e56a…`), and `CONTRACT.md` (`edc25cfe…`). Then Claude's `bccc13d`, the `[[test]]` entry in `crates/plexus-core/Cargo.toml`, and `6ed1a64`, the guard check `test_outcome_rules_live_in_the_rust_type` (Outcome's fields private, `pub mod outcome;`, and the Python class holding one `crate::outcome::Outcome` and nothing else) with six harness cases in `test_layers_rules.py`.
+
+**Its proof, before placement.**
+- On `d3a8f9a`: phase 3 140 passed, three runs in a row, and 140 under WSL; the Rust test 9 passed on Windows and on Linux; the guards 10 passed; the harness suite 471 passed; ruff clean.
+- On `7fc46ce`: phase 3 140 failed, each on the missing class; the Rust test does not compile (no `plexus_core::outcome`); the guards pass, with nothing to check yet.
+- Every adversary build Python can see fails phase 3. Its four H1 builds pass phase 3 and fail the guard or the Rust test, but its own honest baseline fails them too, since it keeps `mod outcome` private and a different constructor API, which the contract now rules out. So three H1 builds were made on this reference: an unchecked `Outcome::new` with the rules moved into `py.rs` (phase 3 and the guard pass; the Rust test fails 5 of 9), a `pub` field on `Outcome` (the guard fails), and a second field in the Python class (the guard fails).
+- The placement script's dry run in a scratch clone printed its marker and matched all three hashes; the clone is removed.
+
+**CI run 43779811601 on `6ed1a64`:** green on both legs. Phase 3 140 passed on each. The cargo step ran the 6 unit tests and `outcome_contract.rs`'s 9 on each. Windows: unit 471, phase 1 30, phase 2 271 passed and 3 skipped. Linux: unit 470 and 1 skipped, phase 1 30, phase 2 263 passed and 8 skipped.
