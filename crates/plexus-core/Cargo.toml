@@ -16,3 +16,8 @@ python = ["dep:pyo3"]
 
 [dependencies]
 pyo3 = { version = "0.30", optional = true, features = ["extension-module", "abi3-py311"] }
+
+# The frozen Rust test of the Outcome envelope (M2b): it lives with the frozen tests, and cargo test runs it from here.
+[[test]]
+name = "outcome_contract"
+path = "../../tests/acceptance/phase3/outcome_contract.rs"
