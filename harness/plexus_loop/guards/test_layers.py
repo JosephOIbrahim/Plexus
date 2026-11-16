@@ -13,6 +13,9 @@ Rules:
   plexus/schema/__init__.py, where CONTRACT.md puts plugin_dir().
 - Rust (crates/plexus-core/src): lib.rs only declares modules; a module may use crate::X
   only for a strictly lower rank; only py.rs names pyo3.
+- The Outcome envelope's rules live in the Rust type: Outcome's fields in outcome.rs are
+  private, lib.rs declares `pub mod outcome;`, and py.rs's Outcome class holds one
+  crate::outcome::Outcome and nothing else (M2b, Nov 15).
 - Workspace: at most two members, plexus-core and plexus-usd; no build.rs.
 """
 
@@ -225,3 +228,43 @@ def test_workspace_has_at_most_two_known_members_and_no_build_scripts():
     crates = REPO / "crates"
     scripts = sorted(p.relative_to(REPO).as_posix() for p in crates.glob("*/build.rs")) if crates.is_dir() else []
     assert scripts == [], f"no build.rs in crates/ (T8 scans cargo output words): {scripts}"
+
+
+_PY_OUTCOME = re.compile(r'#\[pyclass\([^)]*name\s*=\s*"Outcome"[^)]*\)\]'
+                         r'(?:\s*(?://[^\n]*|#\[[^\]]*\]))*\s*(?:pub(?:\([^)]*\))?\s+)?struct\s+(\w+)\s*\{(.*?)\n\}', re.S)
+
+
+def test_outcome_rules_live_in_the_rust_type():
+    """The Outcome envelope's rules live in the Rust type (M2b, Joe's decision after the adversary pass, Nov 15).
+
+    outcome.rs keeps Outcome's fields private and lib.rs declares it pub, so the constructors the frozen
+    outcome_contract.rs reads are the only way to build one; py.rs's Outcome class holds one crate::outcome::Outcome and
+    nothing else, so the Python class can neither carry rules of its own nor skip the Rust ones. It passes while neither
+    outcome.rs nor a Python Outcome class exists.
+    """
+    outcome, py, lib = CORE_SRC / "outcome.rs", CORE_SRC / "py.rs", CORE_SRC / "lib.rs"
+    py_text = py.read_text(encoding="utf-8") if py.is_file() else ""
+    cls = _PY_OUTCOME.search(py_text)
+    if not outcome.is_file() and not cls:
+        return
+    bad = []
+    if not outcome.is_file():
+        bad.append("py.rs defines a Python Outcome class, but outcome.rs does not exist")
+    else:
+        if not (lib.is_file() and re.search(r"^\s*pub mod outcome;\s*$", lib.read_text(encoding="utf-8"), re.M)):
+            bad.append("lib.rs does not declare `pub mod outcome;`")
+        body = re.search(r"\bstruct\s+Outcome\b[^{;]*\{(.*?)\n\}", outcome.read_text(encoding="utf-8"), re.S)
+        if body is None:
+            bad.append("outcome.rs defines no struct Outcome")
+        elif re.search(r"^\s*pub\b", body.group(1), re.M):
+            bad.append("struct Outcome in outcome.rs has a pub field, so Rust code could build one that breaks the rules")
+    if not cls:
+        bad.append('py.rs defines no #[pyclass(name = "Outcome")] struct')
+    else:
+        fields = [f.strip() for f in re.sub(r"//[^\n]*", "", cls.group(2)).split(",") if f.strip()]
+        kind = fields[0].split(":", 1)[1].strip() if len(fields) == 1 and ":" in fields[0] else ""
+        imported = re.search(r"use\s+crate::outcome::(?:Outcome|\{[^}]*\bOutcome\b[^}]*\})\s*;", py_text)
+        if not (kind.startswith("crate::outcome::Outcome<") or (kind.startswith("Outcome<") and imported)):
+            bad.append(f"py.rs's Outcome class {cls.group(1)} must hold one crate::outcome::Outcome and nothing else; "
+                       f"it holds {fields}")
+    assert bad == [], "the Outcome rules must live in the Rust type (CONTRACT.md, plexus_core::outcome):\n" + "\n".join(bad)

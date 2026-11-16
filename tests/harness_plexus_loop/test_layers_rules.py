@@ -31,6 +31,13 @@ CLEAN = {
 }
 COMFY_COZY = "test_python_never_imports_comfy_cozy"
 WORKSPACE = "test_workspace_has_at_most_two_known_members_and_no_build_scripts"
+OUTCOME = "test_outcome_rules_live_in_the_rust_type"
+# An Outcome the way M2b keeps it: private fields, `pub mod outcome;`, and a Python class that holds one Outcome.
+HONEST = {
+    f"{SRC}/lib.rs": "pub mod outcome;\npub mod budget;\n#[cfg(feature = \"python\")]\nmod py;\n",
+    f"{SRC}/outcome.rs": "pub struct Outcome<T> {\n    status: Status,\n    payload: Option<T>,\n}\n",
+    f"{SRC}/py.rs": "use crate::outcome::{Outcome, Status};\nuse pyo3::prelude::*;\n\n#[pyclass(name = \"Outcome\", module = \"plexus._core\", frozen)]\nstruct PyOutcome {\n    inner: Outcome<Py<PyAny>>,\n}\n",
+}
 
 
 @pytest.fixture
@@ -58,6 +65,11 @@ def test_a_tree_that_keeps_every_rule_passes_all_of_them(plant):
         getattr(layers, rule)()
 
 
+def test_an_outcome_kept_in_the_rust_type_passes(plant):
+    plant({**CLEAN, **HONEST})
+    getattr(layers, OUTCOME)()
+
+
 @pytest.mark.parametrize("rule, files", [
     (COMFY_COZY, {"plexus/core/axon.py": "import agent.tools\n"}),
     (COMFY_COZY, {"plexus/core/axon.py": "def f():\n    from cognitive.core import delta\n"}),
@@ -71,6 +83,11 @@ def test_a_tree_that_keeps_every_rule_passes_all_of_them(plant):
     ("test_only_py_rs_names_pyo3", {f"{SRC}/budget.rs": "use pyo3::prelude::*;\n"}),
     (WORKSPACE, {"Cargo.toml": '[workspace]\nmembers = ["crates/plexus-core", "crates/other"]\n'}),
     (WORKSPACE, {"crates/plexus-core/build.rs": "fn main() {}\n"}),
+    (OUTCOME, {f"{SRC}/py.rs": HONEST[f"{SRC}/py.rs"]}),
+    (OUTCOME, {**HONEST, f"{SRC}/lib.rs": "mod outcome;\npub mod budget;\n"}),
+    (OUTCOME, {**HONEST, f"{SRC}/outcome.rs": "pub struct Outcome<T> {\n    pub status: Status,\n    payload: Option<T>,\n}\n"}),
+    (OUTCOME, {**HONEST, f"{SRC}/py.rs": HONEST[f"{SRC}/py.rs"].replace("    inner: Outcome<Py<PyAny>>,\n", "    status: String,\n    payload: Py<PyAny>,\n")}),
+    (OUTCOME, {**HONEST, f"{SRC}/py.rs": HONEST[f"{SRC}/py.rs"].replace("    inner: Outcome<Py<PyAny>>,\n", "    inner: Outcome<Py<PyAny>>,\n    src: Option<Py<PyAny>>,\n")}),
 ])
 def test_each_rule_fails_on_the_tree_it_forbids(plant, rule, files):
     plant({**CLEAN, **files})
